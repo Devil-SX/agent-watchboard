@@ -1,0 +1,101 @@
+{
+  "name": "agent-watchboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Desktop watchboard for orchestrating multiple code agents with PTY-backed terminals and JSON todo boards.",
+  "main": "out/main/index.js",
+  "bin": {
+    "todo_preview": "dist-node/cli/todo-preview.cjs",
+    "watchboard": "dist-node/cli/watchboard.cjs"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build && pnpm run build:node",
+    "build:node": "tsup --config tsup.config.ts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "preview": "electron-vite preview",
+    "todo_preview": "tsx src/cli/todo-preview.ts",
+    "watchboard": "tsx src/cli/watchboard.ts",
+    "dist:linux": "pnpm build && electron-builder --linux AppImage",
+    "dist:win": "node scripts/dist-win.mjs",
+    "dist:win:portable": "pnpm build && electron-builder --win portable",
+    "dist": "pnpm dist:linux && pnpm dist:win"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "chokidar": "^4.0.3",
+    "commander": "^14.0.1",
+    "electron-log": "^5.4.1",
+    "flexlayout-react": "^0.8.17",
+    "node-pty": "^1.0.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "uuid": "^13.0.0",
+    "ws": "^8.18.3",
+    "zod": "^4.1.11",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.13.5",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.0.2",
+    "electron": "^37.4.0",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^4.0.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7"
+  },
+  "packageManager": "pnpm@10.30.3",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "electron",
+      "esbuild",
+      "node-pty"
+    ]
+  },
+  "build": {
+    "appId": "com.sdu.agentwatchboard",
+    "productName": "Agent Watchboard",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "dist-node/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "dist-node/**/*",
+      "node_modules/node-pty/**/*"
+    ],
+    "extraMetadata": {
+      "main": "out/main/index.js"
+    },
+    "artifactName": "${name}-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    }
+  }
+}

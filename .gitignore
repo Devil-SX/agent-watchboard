@@ -1,0 +1,16 @@
+dist/
+dist-node/
+out/
+release/
+node_modules/
+*.log
+*.jsonl
+*.tsbuildinfo
+~
+.agent-watchboard/
+debug-bundle/
+**/workspaces.json
+**/workbench.json
+**/settings.json
+**/supervisor-state.json
+**/board.json
