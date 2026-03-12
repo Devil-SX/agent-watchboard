@@ -226,7 +226,7 @@ export const WorkbenchLayoutModelSchema = z.object({
     tabSetEnableClose: false,
     tabEnableRename: false,
     tabEnableFloat: false,
-    tabEnableClose: true
+    tabEnableClose: false
   }),
   borders: z.array(z.unknown()).default([]),
   layout: FlexLayoutRowNodeSchema
@@ -617,7 +617,7 @@ export function createEmptyWorkbenchLayoutModel(): WorkbenchLayoutModel {
       tabSetEnableClose: false,
       tabEnableRename: false,
       tabEnableFloat: false,
-      tabEnableClose: true
+      tabEnableClose: false
     },
     borders: [],
     layout: {

@@ -58,7 +58,15 @@ export function CalendarIcon({ className }: IconProps): ReactElement {
 
 export function PlusIcon({ className }: IconProps): ReactElement {
   return (
-    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M8 3v10" />
       <path d="M3 8h10" />
     </svg>

@@ -183,6 +183,13 @@ textarea::placeholder {
   display: inline-flex;
   width: 16px;
   height: 16px;
+  flex: 0 0 16px;
+}
+
+.sidebar-create-button .icon-button-glyph {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
 }
 
 .icon-button-glyph svg,
@@ -757,6 +764,47 @@ textarea::placeholder {
   background: rgba(4, 8, 13, 0.98);
 }
 
+.workbench-layout .flexlayout__tabset_tabbar_inner {
+  scrollbar-width: none;
+}
+
+.workbench-layout .flexlayout__tabset_tabbar_inner::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.workbench-layout .flexlayout__tabset_tabbar_inner::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+}
+
+.workbench-layout:hover .flexlayout__tabset_tabbar_inner::-webkit-scrollbar-thumb,
+.workbench-layout:focus-within .flexlayout__tabset_tabbar_inner::-webkit-scrollbar-thumb {
+  background: rgba(149, 176, 191, 0.34);
+  background-clip: padding-box;
+}
+
+.workbench-layout .flexlayout__tabset_tabbar_inner::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.workbench-layout .flexlayout__mini_scrollbar {
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease;
+  background: rgba(149, 176, 191, 0.22);
+}
+
+.workbench-layout .flexlayout__mini_scrollbar:hover,
+.workbench-layout .flexlayout__mini_scrollbar_container:hover .flexlayout__mini_scrollbar,
+.workbench-layout:focus-within .flexlayout__mini_scrollbar {
+  opacity: 1;
+  background: rgba(149, 176, 191, 0.42);
+}
+
 .workbench-layout .flexlayout__tab_button_content {
   flex: 1 1 auto;
   min-width: 0;
@@ -988,6 +1036,8 @@ textarea::placeholder {
 
 .board-tree-shell {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
 }
@@ -1040,9 +1090,10 @@ textarea::placeholder {
 }
 
 .board-tree {
+  flex: 1;
   min-height: 0;
-  height: 100%;
   overflow: auto;
+  overflow: overlay;
   padding-top: 6px;
   padding-right: 6px;
 }
@@ -1052,6 +1103,8 @@ textarea::placeholder {
 .config-drawer-body,
 .board-tree,
 .terminal-fallback {
+  overflow: auto;
+  overflow: overlay;
   scrollbar-width: none;
 }
 

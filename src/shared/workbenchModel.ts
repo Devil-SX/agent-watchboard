@@ -70,6 +70,13 @@ export function normalizeWorkbenchLayoutModel(
   targetTabset.selected = clampSelectedIndex(targetTabset.selected, targetTabset.children.length);
   return WorkbenchLayoutModelSchema.parse({
     ...layoutModel,
+    global: {
+      ...layoutModel.global,
+      tabSetEnableClose: false,
+      tabEnableClose: false,
+      tabEnableFloat: false,
+      tabEnableRename: false
+    },
     layout: normalizedRoot
   });
 }

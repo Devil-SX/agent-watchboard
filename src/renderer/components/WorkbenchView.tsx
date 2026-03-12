@@ -103,6 +103,9 @@ export function WorkbenchView({
   }
 
   function handleEmptyDragOver(event: React.DragEvent<HTMLDivElement>): void {
+    if (workbench.instances.length > 0) {
+      return;
+    }
     if (!event.dataTransfer.types.includes("application/x-watchboard-workspace-id")) {
       return;
     }
@@ -111,13 +114,19 @@ export function WorkbenchView({
     setIsDragActive(true);
   }
 
-function handleEmptyDragLeave(event: React.DragEvent<HTMLDivElement>): void {
+  function handleEmptyDragLeave(event: React.DragEvent<HTMLDivElement>): void {
+    if (workbench.instances.length > 0) {
+      return;
+    }
     if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) {
       setIsDragActive(false);
     }
   }
 
   function handleEmptyDrop(event: React.DragEvent<HTMLDivElement>): void {
+    if (workbench.instances.length > 0) {
+      return;
+    }
     const workspaceId = event.dataTransfer.getData("application/x-watchboard-workspace-id");
     if (!workspaceId) {
       return;
@@ -229,9 +238,9 @@ function handleEmptyDragLeave(event: React.DragEvent<HTMLDivElement>): void {
 
       <div
         className={isDragActive ? "workbench-layout-shell is-drag-active" : "workbench-layout-shell"}
-        onDragOver={handleEmptyDragOver}
-        onDragLeave={handleEmptyDragLeave}
-        onDrop={handleEmptyDrop}
+        onDragOver={workbench.instances.length === 0 ? handleEmptyDragOver : undefined}
+        onDragLeave={workbench.instances.length === 0 ? handleEmptyDragLeave : undefined}
+        onDrop={workbench.instances.length === 0 ? handleEmptyDrop : undefined}
       >
         {workbench.instances.length === 0 ? (
           <div className={isDragActive ? "workbench-empty-state is-drag-active" : "workbench-empty-state"}>
