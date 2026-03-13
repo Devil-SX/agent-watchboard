@@ -98,7 +98,40 @@ export const STARTUP_PRESETS = [
     id: "claude",
     label: "Claude",
     command: "claude"
+  },
+  {
+    id: "claude-continue",
+    label: "Claude Continue",
+    command: "claude -c"
+  },
+  {
+    id: "claude-skip-permissions",
+    label: "Claude Skip Permissions",
+    command: "claude --dangerously-skip-permissions"
   }
+] as const;
+
+export type AgentKind = "claude" | "codex" | "unknown";
+
+export function detectAgentKind(
+  profile: Pick<TerminalProfile, "startupMode" | "startupPresetId" | "startupCommand" | "startupCustomCommand">
+): AgentKind {
+  const command = resolveTerminalStartupCommand(profile);
+  if (/\bclaude\b/.test(command)) return "claude";
+  if (/\bcodex\b/.test(command)) return "codex";
+  return "unknown";
+}
+
+export type SkillEntry = {
+  name: string;
+  source: "codex" | "claude";
+  skillMdPath: string;
+};
+
+export const AGENT_CONFIG_FILES = [
+  { id: "codex-config", label: "Codex Config", path: "~/.codex/config.toml" },
+  { id: "codex-auth", label: "Codex Auth", path: "~/.codex/auth.json" },
+  { id: "claude-settings", label: "Claude Settings", path: "~/.claude/settings.json" }
 ] as const;
 
 export type StartupPresetId = (typeof STARTUP_PRESETS)[number]["id"];
@@ -583,6 +616,19 @@ export function describeTerminalLaunch(
     "shellOrProgram" | "startupMode" | "startupPresetId" | "startupCustomCommand" | "startupCommand"
   >
 ): string {
+  return resolveTerminalStartupCommand(profile) || profile.shellOrProgram;
+}
+
+export function describeTerminalLaunchShort(
+  profile: Pick<
+    TerminalProfile,
+    "shellOrProgram" | "startupMode" | "startupPresetId" | "startupCustomCommand" | "startupCommand"
+  >
+): string {
+  if (profile.startupMode === "preset" && profile.startupPresetId) {
+    const preset = getStartupPreset(profile.startupPresetId);
+    if (preset) return preset.label;
+  }
   return resolveTerminalStartupCommand(profile) || profile.shellOrProgram;
 }
 

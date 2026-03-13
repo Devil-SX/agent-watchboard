@@ -1,7 +1,7 @@
 import { useMemo, useState, type MouseEvent, type ReactElement } from "react";
 
-import { ChevronDownIcon, IconButton, PlusIcon, TrashIcon } from "@renderer/components/IconButton";
-import { describeTerminalLaunch, type SessionState, type TerminalInstance, type WorkbenchDocument, type Workspace } from "@shared/schema";
+import { ChevronDownIcon, ClaudeIcon, CodexIcon, IconButton, PlusIcon, TrashIcon } from "@renderer/components/IconButton";
+import { describeTerminalLaunchShort, detectAgentKind, type SessionState, type TerminalInstance, type WorkbenchDocument, type Workspace } from "@shared/schema";
 
 type Props = {
   workspaces: Workspace[];
@@ -116,6 +116,14 @@ export function WorkspaceSidebar({
                     event.dataTransfer.setData("text/plain", workspace.id);
                   }}
                 >
+                  {(() => {
+                    const terminal = workspace.terminals[0];
+                    if (!terminal) return null;
+                    const agentKind = detectAgentKind(terminal);
+                    if (agentKind === "claude") return <span className="workspace-agent-icon"><ClaudeIcon /></span>;
+                    if (agentKind === "codex") return <span className="workspace-agent-icon"><CodexIcon /></span>;
+                    return null;
+                  })()}
                   <span className="workspace-list-copy">
                     <strong>{workspace.name}</strong>
                     <span>{describeWorkspaceLine(workspace, instances)}</span>
@@ -214,7 +222,7 @@ function describeWorkspaceLine(workspace: Workspace, instances: TerminalInstance
     return "No terminal configured";
   }
   if (instances.length === 0) {
-    return `${terminal.target} · ${describeTerminalLaunch(terminal)}`;
+    return `${terminal.target} · ${describeTerminalLaunchShort(terminal)}`;
   }
   if (instances.length === 1) {
     return `${instances[0]?.title ?? workspace.name} · ${terminal.target}`;

@@ -252,7 +252,7 @@ textarea::placeholder {
 .workspace-list {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: overlay;
   padding: 8px 8px 12px;
 }
 
@@ -271,9 +271,22 @@ textarea::placeholder {
   min-width: 0;
 }
 
+.workspace-agent-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.workspace-agent-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
 .workspace-list-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -312,6 +325,7 @@ textarea::placeholder {
   display: grid;
   gap: 2px;
   min-width: 0;
+  flex: 1;
 }
 
 .workspace-list-copy strong,
@@ -331,6 +345,12 @@ textarea::placeholder {
   color: var(--text-muted);
 }
 
+.workspace-list-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .workspace-list-actions {
   display: flex;
   align-items: center;
@@ -347,6 +367,7 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .workspace-delete-check {
@@ -456,6 +477,9 @@ textarea::placeholder {
 }
 
 .workspace-instance-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
   font-size: 0.76rem;
 }
@@ -803,10 +827,6 @@ textarea::placeholder {
   background: rgba(149, 176, 191, 0.42);
 }
 
-.workbench-layout .flexlayout__tab {
-  scrollbar-width: none;
-}
-
 .workbench-layout .flexlayout__tab::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -826,11 +846,6 @@ textarea::placeholder {
 
 .workbench-layout .flexlayout__tab::-webkit-scrollbar-track {
   background: transparent;
-}
-
-.flexlayout__tabset:hover .flexlayout__tab {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(149, 176, 191, 0.34) transparent;
 }
 
 .workbench-layout .flexlayout__tab_button_content {
@@ -949,7 +964,7 @@ textarea::placeholder {
   inset: 0;
   margin: 0;
   padding: 14px 16px;
-  overflow: auto;
+  overflow: overlay;
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(8, 17, 24, 0.94), rgba(8, 17, 24, 0.86));
   color: #d5e0e8;
@@ -985,7 +1000,7 @@ textarea::placeholder {
 .config-drawer-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: overlay;
   padding-top: 16px;
 }
 
@@ -1120,7 +1135,7 @@ textarea::placeholder {
 .board-tree {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: overlay;
   padding-top: 6px;
   padding-right: 6px;
 }
@@ -1130,24 +1145,16 @@ textarea::placeholder {
 .config-drawer-body,
 .board-tree,
 .terminal-fallback {
-  overflow: auto;
-  scrollbar-width: none;
-}
-
-.workspace-list:hover,
-.settings-panel-body:hover,
-.config-drawer-body:hover,
-.board-tree:hover,
-.terminal-fallback:hover {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(149, 176, 191, 0.34) transparent;
+  overflow: overlay;
 }
 
 .workspace-list::-webkit-scrollbar,
 .settings-panel-body::-webkit-scrollbar,
 .config-drawer-body::-webkit-scrollbar,
 .board-tree::-webkit-scrollbar,
-.terminal-fallback::-webkit-scrollbar {
+.terminal-fallback::-webkit-scrollbar,
+.skills-list::-webkit-scrollbar,
+.skills-content-body::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
@@ -1156,7 +1163,9 @@ textarea::placeholder {
 .settings-panel-body::-webkit-scrollbar-thumb,
 .config-drawer-body::-webkit-scrollbar-thumb,
 .board-tree::-webkit-scrollbar-thumb,
-.terminal-fallback::-webkit-scrollbar-thumb {
+.terminal-fallback::-webkit-scrollbar-thumb,
+.skills-list::-webkit-scrollbar-thumb,
+.skills-content-body::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: transparent;
@@ -1167,7 +1176,9 @@ textarea::placeholder {
 .settings-panel-body:hover::-webkit-scrollbar-thumb,
 .config-drawer-body:hover::-webkit-scrollbar-thumb,
 .board-tree:hover::-webkit-scrollbar-thumb,
-.terminal-fallback:hover::-webkit-scrollbar-thumb {
+.terminal-fallback:hover::-webkit-scrollbar-thumb,
+.skills-list:hover::-webkit-scrollbar-thumb,
+.skills-content-body:hover::-webkit-scrollbar-thumb {
   background: rgba(149, 176, 191, 0.34);
   background-clip: padding-box;
 }
@@ -1176,7 +1187,9 @@ textarea::placeholder {
 .settings-panel-body::-webkit-scrollbar-track,
 .config-drawer-body::-webkit-scrollbar-track,
 .board-tree::-webkit-scrollbar-track,
-.terminal-fallback::-webkit-scrollbar-track {
+.terminal-fallback::-webkit-scrollbar-track,
+.skills-list::-webkit-scrollbar-track,
+.skills-content-body::-webkit-scrollbar-track {
   background: transparent;
 }
 
@@ -1820,6 +1833,194 @@ textarea::placeholder {
   height: 100%;
   margin: 0;
   color: #adc6cf;
+}
+
+/* Skills Panel */
+
+.skills-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  padding: 16px;
+}
+
+.skills-panel-header {
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.skills-panel-body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  padding-top: 12px;
+}
+
+.skills-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: overlay;
+}
+
+.skills-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.skills-list-item:hover,
+.skills-list-item.is-active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.skills-list-item.is-active {
+  box-shadow: inset 3px 0 0 #8ec7ff;
+}
+
+.skills-list-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.skills-list-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.skills-list-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+
+.skills-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: rgba(6, 12, 18, 0.82);
+  overflow: hidden;
+}
+
+.skills-content-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.skills-content-body {
+  flex: 1;
+  min-height: 0;
+  overflow: overlay;
+  margin: 0;
+  padding: 14px 16px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #d8e5ee;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Agent Config Panel */
+
+.agent-config-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  padding: 16px;
+}
+
+.agent-config-panel-header {
+  padding-bottom: 10px;
+}
+
+.agent-config-tabs {
+  display: flex;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.agent-config-tab {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-soft);
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.agent-config-tab:hover {
+  border-color: rgba(142, 199, 255, 0.28);
+  background: rgba(142, 199, 255, 0.08);
+}
+
+.agent-config-tab.is-active {
+  border-color: rgba(142, 199, 255, 0.4);
+  background: rgba(142, 199, 255, 0.14);
+  color: #f0f6fa;
+}
+
+.agent-config-editor {
+  flex: 1;
+  min-height: 0;
+  padding-top: 12px;
+}
+
+.agent-config-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  padding: 14px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  background: rgba(6, 10, 15, 0.96);
+  color: #d8e5ee;
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.agent-config-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.agent-config-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.agent-config-path {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
 }
 
 @media (max-width: 1380px) {
