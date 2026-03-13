@@ -78,37 +78,39 @@ export const AppSettingsSchema = z.object({
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
-export const STARTUP_PRESETS = [
-  {
-    id: "codex-resume-last",
-    label: "Codex Resume Last",
-    command: "codex resume --last"
+export const AGENT_PRESETS = {
+  claude: {
+    base: "claude",
+    continueFlag: "-c",
+    skipFlag: "--dangerously-skip-permissions"
   },
-  {
-    id: "codex-resume-last-skip-dangerous",
-    label: "Codex Resume Last Dangerous",
-    command: "codex resume --last --dangerously-bypass-approvals-and-sandbox"
-  },
-  {
-    id: "codex",
-    label: "Codex Fresh",
-    command: "codex"
-  },
-  {
-    id: "claude",
-    label: "Claude",
-    command: "claude"
-  },
-  {
-    id: "claude-continue",
-    label: "Claude Continue",
-    command: "claude -c"
-  },
-  {
-    id: "claude-skip-permissions",
-    label: "Claude Skip Permissions",
-    command: "claude --dangerously-skip-permissions"
+  codex: {
+    base: "codex",
+    continueFlag: "resume --last",
+    skipFlag: "--dangerously-bypass-approvals-and-sandbox"
   }
+} as const;
+
+export type PresetAgent = keyof typeof AGENT_PRESETS;
+
+export function buildPresetCommand(agent: PresetAgent, continueMode: boolean, skipMode: boolean): string {
+  const preset = AGENT_PRESETS[agent];
+  const parts = [preset.base];
+  if (continueMode) parts.push(preset.continueFlag);
+  if (skipMode) parts.push(preset.skipFlag);
+  return parts.join(" ");
+}
+
+// Flat list of all 8 agent × flag combinations (4 per agent)
+export const STARTUP_PRESETS = [
+  { id: "codex", label: "Codex", command: "codex" },
+  { id: "codex-resume-last", label: "Codex + Continue", command: "codex resume --last" },
+  { id: "codex-skip-dangerous", label: "Codex + Skip", command: "codex --dangerously-bypass-approvals-and-sandbox" },
+  { id: "codex-resume-last-skip-dangerous", label: "Codex + Continue + Skip", command: "codex resume --last --dangerously-bypass-approvals-and-sandbox" },
+  { id: "claude", label: "Claude", command: "claude" },
+  { id: "claude-continue", label: "Claude + Continue", command: "claude -c" },
+  { id: "claude-skip-permissions", label: "Claude + Skip", command: "claude --dangerously-skip-permissions" },
+  { id: "claude-continue-skip", label: "Claude + Continue + Skip", command: "claude -c --dangerously-skip-permissions" }
 ] as const;
 
 export type AgentKind = "claude" | "codex" | "unknown";
@@ -136,6 +138,23 @@ export const AGENT_CONFIG_FILES = [
 
 export type StartupPresetId = (typeof STARTUP_PRESETS)[number]["id"];
 export type StartupPreset = (typeof STARTUP_PRESETS)[number];
+
+export function decomposePresetId(presetId: string | undefined): { agent: PresetAgent; continueMode: boolean; skipMode: boolean } {
+  if (!presetId) return { agent: "codex", continueMode: false, skipMode: false };
+  const preset = STARTUP_PRESETS.find((p) => p.id === presetId);
+  if (!preset) return { agent: "codex", continueMode: false, skipMode: false };
+  const cmd = preset.command;
+  const agent: PresetAgent = /\bclaude\b/.test(cmd) ? "claude" : "codex";
+  const agentPreset = AGENT_PRESETS[agent];
+  const continueMode = cmd.includes(agentPreset.continueFlag);
+  const skipMode = cmd.includes(agentPreset.skipFlag);
+  return { agent, continueMode, skipMode };
+}
+
+export function findPresetId(agent: PresetAgent, continueMode: boolean, skipMode: boolean): string {
+  const command = buildPresetCommand(agent, continueMode, skipMode);
+  return STARTUP_PRESETS.find((p) => p.command === command)?.id ?? STARTUP_PRESETS[0].id;
+}
 
 export const TERMINAL_FONT_PRESETS = [
   "'JetBrains Mono', 'Cascadia Code', monospace",

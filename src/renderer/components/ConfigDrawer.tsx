@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 
 import type { PathCompletionResult } from "@shared/ipc";
-import { STARTUP_PRESETS, describeTerminalLaunch, type DiagnosticsInfo, type TerminalProfile, type Workspace } from "@shared/schema";
+import {
+  AGENT_PRESETS,
+  buildPresetCommand,
+  decomposePresetId,
+  describeTerminalLaunch,
+  findPresetId,
+  type DiagnosticsInfo,
+  type PresetAgent,
+  type TerminalProfile,
+  type Workspace
+} from "@shared/schema";
 
 type Props = {
   isOpen: boolean;
@@ -43,7 +53,7 @@ export function ConfigDrawer({
   const blurTimerRef = useRef<number | null>(null);
   const completionRequestRef = useRef(0);
   const resolvedStartupCommand = terminal ? describeTerminalLaunch(terminal) : "";
-  const defaultPreset = STARTUP_PRESETS[0];
+  const presetState = decomposePresetId(terminal?.startupPresetId);
 
   useEffect(() => {
     if (!isOpen || !terminal) {
@@ -214,12 +224,9 @@ export function ConfigDrawer({
                   onChange={(event) => {
                     const nextMode = event.target.value as TerminalProfile["startupMode"];
                     if (nextMode === "preset") {
-                      const presetId = terminal.startupPresetId ?? defaultPreset.id;
-                      onTerminalChange({
-                        startupMode: nextMode,
-                        startupPresetId: presetId,
-                        startupCommand: STARTUP_PRESETS.find((preset) => preset.id === presetId)?.command ?? defaultPreset.command
-                      });
+                      const presetId = findPresetId(presetState.agent, presetState.continueMode, presetState.skipMode);
+                      const command = buildPresetCommand(presetState.agent, presetState.continueMode, presetState.skipMode);
+                      onTerminalChange({ startupMode: nextMode, startupPresetId: presetId, startupCommand: command });
                       return;
                     }
                     onTerminalChange({
@@ -233,24 +240,50 @@ export function ConfigDrawer({
                 </select>
               </label>
               {terminal.startupMode === "preset" ? (
-                <label className="field">
-                  <span>Startup Preset</span>
-                  <select
-                    value={terminal.startupPresetId ?? defaultPreset.id}
-                    onChange={(event) =>
-                      onTerminalChange({
-                        startupPresetId: event.target.value,
-                        startupCommand: STARTUP_PRESETS.find((preset) => preset.id === event.target.value)?.command ?? ""
-                      })
-                    }
-                  >
-                    {STARTUP_PRESETS.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <>
+                  <label className="field">
+                    <span>Agent</span>
+                    <select
+                      value={presetState.agent}
+                      onChange={(event) => {
+                        const agent = event.target.value as PresetAgent;
+                        const command = buildPresetCommand(agent, presetState.continueMode, presetState.skipMode);
+                        const presetId = findPresetId(agent, presetState.continueMode, presetState.skipMode);
+                        onTerminalChange({ startupPresetId: presetId, startupCommand: command });
+                      }}
+                    >
+                      {(Object.keys(AGENT_PRESETS) as PresetAgent[]).map((agent) => (
+                        <option key={agent} value={agent}>
+                          {agent.charAt(0).toUpperCase() + agent.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field checkbox-field">
+                    <span>Continue</span>
+                    <input
+                      type="checkbox"
+                      checked={presetState.continueMode}
+                      onChange={(event) => {
+                        const command = buildPresetCommand(presetState.agent, event.target.checked, presetState.skipMode);
+                        const presetId = findPresetId(presetState.agent, event.target.checked, presetState.skipMode);
+                        onTerminalChange({ startupPresetId: presetId, startupCommand: command });
+                      }}
+                    />
+                  </label>
+                  <label className="field checkbox-field">
+                    <span>Skip Permissions</span>
+                    <input
+                      type="checkbox"
+                      checked={presetState.skipMode}
+                      onChange={(event) => {
+                        const command = buildPresetCommand(presetState.agent, presetState.continueMode, event.target.checked);
+                        const presetId = findPresetId(presetState.agent, presetState.continueMode, event.target.checked);
+                        onTerminalChange({ startupPresetId: presetId, startupCommand: command });
+                      }}
+                    />
+                  </label>
+                </>
               ) : (
                 <label className="field">
                   <span>Custom Startup Command</span>
