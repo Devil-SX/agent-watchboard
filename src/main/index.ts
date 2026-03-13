@@ -1,8 +1,8 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Menu, app, BrowserWindow, ipcMain } from "electron";
@@ -10,6 +10,7 @@ import log from "electron-log/main.js";
 
 import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
 import { completeTerminalPath } from "@main/pathCompletion";
+import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery";
 import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
 import { readAppSettings, writeAppSettings } from "@shared/settings";
 import {
@@ -610,103 +611,6 @@ async function resolveAgentHome(location: AgentPathLocation): Promise<string | n
   }
 }
 
-function scanSkillEntries(
-  rootDir: string,
-  source: SkillEntry["source"],
-  location: AgentPathLocation,
-  seen: Set<string>
-): SkillEntry[] {
-  const skills: SkillEntry[] = [];
-  const visitedDirs = new Set<string>();
-
-  const visit = (dir: string): void => {
-    let canonicalDir = dir;
-    try {
-      canonicalDir = realpathSync(dir);
-    } catch {
-      return;
-    }
-    if (visitedDirs.has(canonicalDir)) {
-      return;
-    }
-    visitedDirs.add(canonicalDir);
-
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const entryPath = join(dir, entry.name);
-      if (entry.name === "SKILL.md") {
-        const resolvedPath = canonicalizeFilePath(entryPath);
-        const dedupeKey = `${location}:${source}:${resolvedPath}`;
-        if (seen.has(dedupeKey)) {
-          continue;
-        }
-        seen.add(dedupeKey);
-        const relativeName = relative(rootDir, dirname(entryPath)).replaceAll("\\", "/");
-        skills.push({
-          name: relativeName || dirname(entryPath),
-          source,
-          location,
-          entryPath,
-          resolvedPath,
-          isSymlink: entryPath !== resolvedPath,
-          skillMdPath: resolvedPath
-        });
-        continue;
-      }
-      if (entry.isDirectory() || entry.isSymbolicLink()) {
-        visit(entryPath);
-      }
-    }
-  };
-
-  visit(rootDir);
-  return skills;
-}
-
-function scanClaudeCommandEntries(rootDir: string, location: AgentPathLocation, seen: Set<string>): SkillEntry[] {
-  try {
-    return readdirSync(rootDir, { withFileTypes: true })
-      .filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".md"))
-      .map((entry) => {
-        const entryPath = join(rootDir, entry.name);
-        const resolvedPath = canonicalizeFilePath(entryPath);
-        return {
-          name: entry.name.replace(/\.md$/, ""),
-          source: "claude-command" as const,
-          location,
-          entryPath,
-          resolvedPath,
-          isSymlink: entryPath !== resolvedPath,
-          skillMdPath: resolvedPath
-        };
-      })
-      .filter((entry) => {
-        const dedupeKey = `${entry.location}:${entry.source}:${entry.skillMdPath}`;
-        if (seen.has(dedupeKey)) {
-          return false;
-        }
-        seen.add(dedupeKey);
-        return true;
-      });
-  } catch {
-    return [];
-  }
-}
-
-function canonicalizeFilePath(filePath: string): string {
-  try {
-    return realpathSync(filePath);
-  } catch {
-    return filePath;
-  }
-}
-
 async function buildAgentConfigEntry(configId: AgentConfigFileId, location: AgentPathLocation): Promise<AgentConfigEntry> {
   const entry = AGENT_CONFIG_FILES.find((candidate) => candidate.id === configId);
   if (!entry) {
@@ -726,6 +630,14 @@ async function buildAgentConfigEntry(configId: AgentConfigFileId, location: Agen
     isSymlink: exists && isSymbolicLink(entryPath),
     exists
   };
+}
+
+function canonicalizeFilePath(filePath: string): string {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return filePath;
+  }
 }
 
 function isSymbolicLink(filePath: string): boolean {

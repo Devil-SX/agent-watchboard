@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-03-13
+
+> **Code Stats** | Total: 17939 lines | Delta: +206 (-99) = **+107 net** | Change: **+0.60%** vs v0.3.1
+
+### Added
+- Added a dedicated unit-test path for skill discovery symlink traversal and wired it into CI.
+
+### Fixed
+- Hardened skill discovery so symlinked directories and markdown files are classified from filesystem metadata instead of relying on less portable directory-entry flags, improving WSL/UNC coverage for Windows skill browsing.
+
 ## [0.3.1] - 2026-03-13
 
 > **Code Stats** | Total: 17825 lines | Delta: +2 (-2) = **+0 net** | Change: **+0.00%** vs v0.3.0
