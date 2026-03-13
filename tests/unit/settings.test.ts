@@ -28,6 +28,9 @@ test("readAppSettings migrates a legacy single boardPath into the selected env s
   assert.equal(settings.boardLocationKind, "wsl");
   assert.equal(settings.wslBoardPath, "~/legacy-board.json");
   assert.equal(settings.hostBoardPath, "~/.agent-watchboard/board.json");
+  assert.equal(settings.activeMainTab, "terminal");
+  assert.equal(settings.skillsPane.location, "host");
+  assert.equal(settings.agentConfigPane.activeConfigId, "codex-config");
 });
 
 test("writeAppSettings persists separate host and WSL board paths", async () => {
@@ -46,7 +49,21 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
       terminalFontSize: 14,
       workspaceSortMode: "last-launch",
       workspaceFilterMode: "all",
-      workspaceEnvironmentFilterMode: "all"
+      workspaceEnvironmentFilterMode: "all",
+      activeMainTab: "skills",
+      skillsPane: {
+        location: "wsl",
+        familyFilter: "claude",
+        claudeSubtypeFilter: "commands",
+        selectedSkillMdPath: "/tmp/SKILL.md",
+        isChatOpen: true,
+        chatAgent: "claude"
+      },
+      agentConfigPane: {
+        location: "wsl",
+        familyFilter: "claude",
+        activeConfigId: "claude-settings"
+      }
     },
     settingsPath
   );
@@ -55,6 +72,10 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
 
   assert.equal(saved.hostBoardPath, "~/host-board.json");
   assert.equal(saved.wslBoardPath, "~/wsl-board.json");
+  assert.equal(saved.activeMainTab, "skills");
+  assert.equal(saved.skillsPane.familyFilter, "claude");
+  assert.equal(saved.agentConfigPane.activeConfigId, "claude-settings");
   assert.equal(raw.hostBoardPath, "~/host-board.json");
   assert.equal(raw.wslBoardPath, "~/wsl-board.json");
+  assert.equal(raw.activeMainTab, "skills");
 });

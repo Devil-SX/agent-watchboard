@@ -72,6 +72,27 @@ export const WorkspaceFilterModeSchema = z.enum(["all", "codex", "claude", "othe
 export type WorkspaceFilterMode = z.infer<typeof WorkspaceFilterModeSchema>;
 export const WorkspaceEnvironmentFilterModeSchema = z.enum(["all", "host", "wsl"]);
 export type WorkspaceEnvironmentFilterMode = z.infer<typeof WorkspaceEnvironmentFilterModeSchema>;
+export const MainViewTabSchema = z.enum(["terminal", "skills", "config", "settings"]);
+export type MainViewTab = z.infer<typeof MainViewTabSchema>;
+export const SkillFamilyFilterSchema = z.enum(["all", "codex", "claude"]);
+export type SkillFamilyFilter = z.infer<typeof SkillFamilyFilterSchema>;
+export const ClaudeSubtypeFilterSchema = z.enum(["all", "commands", "skills"]);
+export type ClaudeSubtypeFilter = z.infer<typeof ClaudeSubtypeFilterSchema>;
+export const SkillsPaneStateSchema = z.object({
+  location: z.enum(["host", "wsl"]).default("host"),
+  familyFilter: SkillFamilyFilterSchema.default("all"),
+  claudeSubtypeFilter: ClaudeSubtypeFilterSchema.default("all"),
+  selectedSkillMdPath: z.string().nullable().default(null),
+  isChatOpen: z.boolean().default(false),
+  chatAgent: z.enum(["codex", "claude"]).default("codex")
+});
+export type SkillsPaneState = z.infer<typeof SkillsPaneStateSchema>;
+export const AgentConfigPaneStateSchema = z.object({
+  location: z.enum(["host", "wsl"]).default("host"),
+  familyFilter: z.enum(["all", "codex", "claude"]).default("all"),
+  activeConfigId: z.enum(["codex-config", "codex-auth", "claude-settings"]).default("codex-config")
+});
+export type AgentConfigPaneState = z.infer<typeof AgentConfigPaneStateSchema>;
 
 export const AppSettingsSchema = z.object({
   version: z.literal(1).default(1),
@@ -84,7 +105,21 @@ export const AppSettingsSchema = z.object({
   terminalFontSize: z.number().int().min(10).max(32).default(DEFAULT_TERMINAL_FONT_SIZE),
   workspaceSortMode: WorkspaceSortModeSchema.default("last-launch"),
   workspaceFilterMode: WorkspaceFilterModeSchema.default("all"),
-  workspaceEnvironmentFilterMode: WorkspaceEnvironmentFilterModeSchema.default("all")
+  workspaceEnvironmentFilterMode: WorkspaceEnvironmentFilterModeSchema.default("all"),
+  activeMainTab: MainViewTabSchema.default("terminal"),
+  skillsPane: SkillsPaneStateSchema.default({
+    location: "host",
+    familyFilter: "all",
+    claudeSubtypeFilter: "all",
+    selectedSkillMdPath: null,
+    isChatOpen: false,
+    chatAgent: "codex"
+  }),
+  agentConfigPane: AgentConfigPaneStateSchema.default({
+    location: "host",
+    familyFilter: "all",
+    activeConfigId: "codex-config"
+  })
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 

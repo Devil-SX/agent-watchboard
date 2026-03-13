@@ -11,12 +11,14 @@ import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import {
+  type AgentConfigPaneState,
   type AppSettings,
   createTerminalInstance,
   createWorkspaceTemplate,
   type BoardDocument,
   type DiagnosticsInfo,
   type SessionState,
+  type SkillsPaneState,
   type TerminalInstance,
   type TerminalProfile,
   type WorkbenchDocument,
@@ -54,6 +56,7 @@ export function App(): ReactElement {
   const bootReadyReportedRef = useRef(false);
   const boardVisibleReportedRef = useRef(false);
   const autoStartedRef = useRef<Set<string>>(new Set());
+  const persistedSettingsRef = useRef<AppSettings | null>(null);
   const workbenchSaveSequenceRef = useRef(0);
   const tabSwitchStartedAtRef = useRef<number | null>(null);
   const [workspaceList, setWorkspaceList] = useState<WorkspaceList | null>(null);
@@ -103,6 +106,8 @@ export function App(): ReactElement {
         setDiagnostics(nextDiagnostics);
         setSettings(nextSettings);
         setSettingsDraft(nextSettings);
+        persistedSettingsRef.current = nextSettings;
+        setActiveTab(nextSettings.activeMainTab);
         const initialWorkspace = workspaces.workspaces[0] ?? null;
         if (initialWorkspace) {
           loadWorkspaceIntoEditor(initialWorkspace, setSelectedWorkspaceId, setDraftWorkspace, setIsDirty);
@@ -379,6 +384,7 @@ export function App(): ReactElement {
         ...nextDraft,
         updatedAt: new Date().toISOString()
       });
+      persistedSettingsRef.current = saved;
       setSettings(saved);
       setSettingsDraft(saved);
       setIsSettingsDirty(false);
@@ -390,19 +396,27 @@ export function App(): ReactElement {
     }
   }
 
-  async function handleWorkspaceSidebarPreferenceChange(
-    update: Partial<Pick<AppSettings, "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode">>
+  async function persistSettingsPreference(
+    update: Partial<
+      Pick<
+        AppSettings,
+        "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "skillsPane" | "agentConfigPane"
+      >
+    >
   ): Promise<void> {
-    const baseSettings = settings ?? settingsDraft;
+    const baseSettings = persistedSettingsRef.current ?? settings;
     if (!baseSettings) {
       return;
     }
+    const optimisticSettings = {
+      ...baseSettings,
+      ...update,
+      updatedAt: new Date().toISOString()
+    };
+    persistedSettingsRef.current = optimisticSettings;
     try {
-      const saved = await window.watchboard.saveSettings({
-        ...baseSettings,
-        ...update,
-        updatedAt: new Date().toISOString()
-      });
+      const saved = await window.watchboard.saveSettings(optimisticSettings);
+      persistedSettingsRef.current = saved;
       setSettings(saved);
       setSettingsDraft((current) =>
         current
@@ -415,8 +429,23 @@ export function App(): ReactElement {
       );
       setError("");
     } catch (saveError) {
+      persistedSettingsRef.current = settings;
       setError(messageOf(saveError));
     }
+  }
+
+  async function handleWorkspaceSidebarPreferenceChange(
+    update: Partial<Pick<AppSettings, "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode">>
+  ): Promise<void> {
+    await persistSettingsPreference(update);
+  }
+
+  async function handleSkillsPaneStateChange(state: SkillsPaneState): Promise<void> {
+    await persistSettingsPreference({ skillsPane: state });
+  }
+
+  async function handleAgentConfigPaneStateChange(state: AgentConfigPaneState): Promise<void> {
+    await persistSettingsPreference({ agentConfigPane: state });
   }
 
   async function startWorkspaceSession(instance: TerminalInstance): Promise<void> {
@@ -828,13 +857,23 @@ export function App(): ReactElement {
     ) : activeTab === "skills" ? (
       <section className="content-pane is-active">
         <div className="single-view-panel">
-          <SkillsPanel settings={settingsDraft} sessions={sessions} diagnostics={diagnostics} />
+          <SkillsPanel
+            settings={settingsDraft}
+            sessions={sessions}
+            diagnostics={diagnostics}
+            viewState={settingsDraft.skillsPane}
+            onViewStateChange={(state) => void handleSkillsPaneStateChange(state)}
+          />
         </div>
       </section>
     ) : activeTab === "config" ? (
       <section className="content-pane is-active">
         <div className="single-view-panel">
-          <AgentConfigPanel />
+          <AgentConfigPanel
+            diagnostics={diagnostics}
+            viewState={settingsDraft.agentConfigPane}
+            onViewStateChange={(state) => void handleAgentConfigPaneStateChange(state)}
+          />
         </div>
       </section>
     ) : (
@@ -880,6 +919,7 @@ export function App(): ReactElement {
                 startTransition(() => {
                   setActiveTab(tab.id);
                 });
+                void persistSettingsPreference({ activeMainTab: tab.id });
               }}
             >
               {tab.label}

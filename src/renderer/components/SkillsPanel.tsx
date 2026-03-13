@@ -10,34 +10,37 @@ import { createSkillsChatInstance, type SkillsChatAgent } from "@renderer/compon
 import {
   type AgentPathLocation,
   type AppSettings,
+  type ClaudeSubtypeFilter,
   type DiagnosticsInfo,
   type SessionState,
+  type SkillFamilyFilter,
   type SkillEntry,
+  type SkillsPaneState,
   type TerminalInstance
 } from "@shared/schema";
-
-type SkillFamilyFilter = "all" | "codex" | "claude";
-type ClaudeSubtypeFilter = "all" | "commands" | "skills";
 
 type Props = {
   settings: AppSettings;
   sessions: Record<string, SessionState>;
   diagnostics: DiagnosticsInfo | null;
+  viewState: SkillsPaneState;
+  onViewStateChange: (state: SkillsPaneState) => void;
 };
 
-export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp }: Props): ReactElement {
+export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp, viewState, onViewStateChange }: Props): ReactElement {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
-  const [selectedSkill, setSelectedSkill] = useState<SkillEntry | null>(null);
+  const [selectedSkillPath, setSelectedSkillPath] = useState<string | null>(viewState.selectedSkillMdPath);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
-  const [location, setLocation] = useState<AgentPathLocation>("host");
-  const [familyFilter, setFamilyFilter] = useState<SkillFamilyFilter>("all");
-  const [claudeSubtypeFilter, setClaudeSubtypeFilter] = useState<ClaudeSubtypeFilter>("all");
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatAgent, setChatAgent] = useState<SkillsChatAgent>("codex");
+  const [location, setLocation] = useState<AgentPathLocation>(viewState.location);
+  const [familyFilter, setFamilyFilter] = useState<SkillFamilyFilter>(viewState.familyFilter);
+  const [claudeSubtypeFilter, setClaudeSubtypeFilter] = useState<ClaudeSubtypeFilter>(viewState.claudeSubtypeFilter);
+  const [isChatOpen, setIsChatOpen] = useState(viewState.isChatOpen);
+  const [chatAgent, setChatAgent] = useState<SkillsChatAgent>(viewState.chatAgent);
   const [chatInstance, setChatInstance] = useState<TerminalInstance | null>(null);
   const [chatError, setChatError] = useState("");
   const chatRequestRef = useRef(0);
+  const persistReadyRef = useRef(false);
   const isWindows = diagnosticsProp?.platform === "win32";
 
   useEffect(() => {
@@ -49,12 +52,13 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp }
   }, [location]);
 
   useEffect(() => {
+    const selectedSkill = skills.find((entry) => entry.skillMdPath === selectedSkillPath) ?? null;
     if (!selectedSkill) {
       setContent("");
       return;
     }
     void window.watchboard.readSkillContent(selectedSkill.skillMdPath).then(setContent);
-  }, [selectedSkill?.skillMdPath]);
+  }, [selectedSkillPath, skills]);
 
   const codexCount = skills.filter((s) => s.source === "codex").length;
   const claudeCmdCount = skills.filter((s) => s.source === "claude-command").length;
@@ -63,17 +67,21 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp }
     () => skills.filter((skill) => matchesSkillFilter(skill, familyFilter, claudeSubtypeFilter)),
     [claudeSubtypeFilter, familyFilter, skills]
   );
+  const selectedSkill = useMemo(
+    () => skills.find((entry) => entry.skillMdPath === selectedSkillPath) ?? null,
+    [selectedSkillPath, skills]
+  );
 
   useEffect(() => {
-    if (!selectedSkill) {
+    if (!selectedSkillPath) {
       return;
     }
-    const stillVisible = visibleSkills.some((entry) => entry.skillMdPath === selectedSkill.skillMdPath);
+    const stillVisible = visibleSkills.some((entry) => entry.skillMdPath === selectedSkillPath);
     if (!stillVisible) {
-      setSelectedSkill(null);
+      setSelectedSkillPath(null);
       setContent("");
     }
-  }, [selectedSkill, visibleSkills]);
+  }, [selectedSkillPath, visibleSkills]);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,6 +128,28 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp }
       void window.watchboard.stopSession(chatInstance.sessionId).catch(() => undefined);
     };
   }, [chatInstance]);
+
+  useEffect(() => {
+    if (isWindows) {
+      return;
+    }
+    setLocation("host");
+  }, [isWindows]);
+
+  useEffect(() => {
+    if (!persistReadyRef.current) {
+      persistReadyRef.current = true;
+      return;
+    }
+    onViewStateChange({
+      location,
+      familyFilter,
+      claudeSubtypeFilter,
+      selectedSkillMdPath: selectedSkillPath,
+      isChatOpen,
+      chatAgent
+    });
+  }, [chatAgent, claudeSubtypeFilter, familyFilter, isChatOpen, location, onViewStateChange, selectedSkillPath]);
 
   if (loading) {
     return (
@@ -209,7 +239,7 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp }
                 key={skill.skillMdPath}
                 type="button"
                 className={isSelected ? "skills-list-item is-active" : "skills-list-item"}
-                onClick={() => setSelectedSkill(skill)}
+                onClick={() => setSelectedSkillPath(skill.skillMdPath)}
               >
                 <span className="skills-list-icon">
                   {skill.source === "codex" ? <CodexIcon /> : <ClaudeIcon />}

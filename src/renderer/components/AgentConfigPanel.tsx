@@ -1,21 +1,34 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
-import type { AgentConfigDocument, AgentConfigEntry, AgentConfigFamily, AgentPathLocation, DiagnosticsInfo } from "@shared/schema";
+import type {
+  AgentConfigDocument,
+  AgentConfigEntry,
+  AgentConfigFamily,
+  AgentConfigPaneState,
+  AgentPathLocation,
+  DiagnosticsInfo
+} from "@shared/schema";
 
-export function AgentConfigPanel(): ReactElement {
-  const [activeConfigId, setActiveConfigId] = useState<string>("codex-config");
-  const [location, setLocation] = useState<AgentPathLocation>("host");
-  const [familyFilter, setFamilyFilter] = useState<"all" | AgentConfigFamily>("all");
-  const [diagnostics, setDiagnostics] = useState<DiagnosticsInfo | null>(null);
+type Props = {
+  diagnostics: DiagnosticsInfo | null;
+  viewState: AgentConfigPaneState;
+  onViewStateChange: (state: AgentConfigPaneState) => void;
+};
+
+export function AgentConfigPanel({ diagnostics, viewState, onViewStateChange }: Props): ReactElement {
+  const [activeConfigId, setActiveConfigId] = useState<string>(viewState.activeConfigId);
+  const [location, setLocation] = useState<AgentPathLocation>(viewState.location);
+  const [familyFilter, setFamilyFilter] = useState<"all" | AgentConfigFamily>(viewState.familyFilter);
   const [entries, setEntries] = useState<AgentConfigEntry[]>([]);
   const [originalContent, setOriginalContent] = useState("");
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const persistReadyRef = useRef(false);
 
   const isWindows = diagnostics?.platform === "win32";
   const visibleEntries = useMemo(
@@ -24,10 +37,6 @@ export function AgentConfigPanel(): ReactElement {
   );
   const activeEntry = entries.find((entry) => entry.id === activeConfigId) ?? null;
   const isDirty = editContent !== originalContent;
-
-  useEffect(() => {
-    void window.watchboard.getDiagnostics().then(setDiagnostics);
-  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -59,6 +68,27 @@ export function AgentConfigPanel(): ReactElement {
     }
     setActiveConfigId(visibleEntries[0]?.id ?? "");
   }, [activeConfigId, visibleEntries]);
+
+  useEffect(() => {
+    if (isWindows) {
+      return;
+    }
+    setLocation("host");
+  }, [isWindows]);
+
+  useEffect(() => {
+    if (!persistReadyRef.current) {
+      persistReadyRef.current = true;
+      return;
+    }
+    onViewStateChange({
+      location,
+      familyFilter,
+      activeConfigId: activeConfigId === "codex-config" || activeConfigId === "codex-auth" || activeConfigId === "claude-settings"
+        ? activeConfigId
+        : "codex-config"
+    });
+  }, [activeConfigId, familyFilter, location, onViewStateChange]);
 
   async function handleSave(): Promise<void> {
     setSaving(true);

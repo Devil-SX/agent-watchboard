@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-03-13
+
+> **Code Stats** | Total: 21316 lines | Delta: +195 (-39) = **+156 net** | Change: **+0.74%** vs v0.7.2
+
+### Added
+- Added persisted pane-memory fields for the main content tab, Skills pane, and Agent Config pane so the app can restore the last working context after restart.
+
+### Changed
+- Restored Skills filters, Host/WSL path target, selected skill entry, and scoped chat visibility/agent from saved settings instead of resetting them on reopen.
+- Restored Agent Config filters, Host/WSL path target, and active config selection with safe fallback when the previously saved entry no longer exists.
+- Hardened immediate preference persistence with an optimistic saved-settings snapshot so rapid pane-state updates do not overwrite one another.
+
 ## [0.7.2] - 2026-03-13
 
 > **Code Stats** | Total: 21160 lines | Delta: +172 (-45) = **+127 net** | Change: **+0.60%** vs v0.7.1
