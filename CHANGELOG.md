@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-03-13
+
+> **Code Stats** | Total: 18080 lines | Delta: +151 (-20) = **+131 net** | Change: **+0.73%** vs v0.3.2
+
+### Added
+- Added Host/WSL environment tags to workspace template rows and unit-test coverage for combined workspace sorting/filtering behavior.
+
+### Changed
+- Extended workspace sidebar controls with a dedicated environment filter that combines cleanly with the existing agent-family filter.
+
 ## [0.3.2] - 2026-03-13
 
 > **Code Stats** | Total: 17939 lines | Delta: +206 (-99) = **+107 net** | Change: **+0.60%** vs v0.3.1

@@ -366,11 +366,36 @@ textarea::placeholder {
   flex: 1;
 }
 
+.workspace-list-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
 .workspace-list-copy strong,
 .pane-tab-copy strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.workspace-environment-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.14rem 0.38rem;
+  border-radius: 999px;
+  background: rgba(181, 198, 210, 0.14);
+  color: #c8d7df;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.workspace-environment-tag.is-wsl {
+  background: rgba(108, 214, 186, 0.16);
+  color: #8fe3cf;
 }
 
 .workspace-list-copy span,

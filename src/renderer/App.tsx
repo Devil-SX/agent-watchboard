@@ -19,6 +19,7 @@ import {
   type TerminalProfile,
   type WorkbenchDocument,
   type WorkbenchLayoutModel,
+  type WorkspaceEnvironmentFilterMode,
   type WorkspaceFilterMode,
   type WorkspaceSortMode,
   type Workspace,
@@ -386,7 +387,7 @@ export function App(): ReactElement {
   }
 
   async function handleWorkspaceSidebarPreferenceChange(
-    update: Partial<Pick<AppSettings, "workspaceSortMode" | "workspaceFilterMode">>
+    update: Partial<Pick<AppSettings, "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode">>
   ): Promise<void> {
     const baseSettings = settings ?? settingsDraft;
     if (!baseSettings) {
@@ -710,12 +711,16 @@ export function App(): ReactElement {
               sessions={sessions}
               sortMode={settingsDraft.workspaceSortMode}
               filterMode={settingsDraft.workspaceFilterMode}
+              environmentFilterMode={settingsDraft.workspaceEnvironmentFilterMode}
               isDeleteMode={isDeleteMode}
               selectedDeleteIds={deleteSelection}
               onCreateWorkspace={() => void handleCreateWorkspace()}
               onSortModeChange={(sortMode: WorkspaceSortMode) => void handleWorkspaceSidebarPreferenceChange({ workspaceSortMode: sortMode })}
               onFilterModeChange={(filterMode: WorkspaceFilterMode) =>
                 void handleWorkspaceSidebarPreferenceChange({ workspaceFilterMode: filterMode })
+              }
+              onEnvironmentFilterModeChange={(environmentFilterMode: WorkspaceEnvironmentFilterMode) =>
+                void handleWorkspaceSidebarPreferenceChange({ workspaceEnvironmentFilterMode: environmentFilterMode })
               }
               onToggleDeleteMode={() => {
                 setIsDeleteMode(true);

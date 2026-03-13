@@ -70,6 +70,8 @@ export const WorkspaceSortModeSchema = z.enum(["last-launch", "alphabetical"]);
 export type WorkspaceSortMode = z.infer<typeof WorkspaceSortModeSchema>;
 export const WorkspaceFilterModeSchema = z.enum(["all", "codex", "claude", "other"]);
 export type WorkspaceFilterMode = z.infer<typeof WorkspaceFilterModeSchema>;
+export const WorkspaceEnvironmentFilterModeSchema = z.enum(["all", "host", "wsl"]);
+export type WorkspaceEnvironmentFilterMode = z.infer<typeof WorkspaceEnvironmentFilterModeSchema>;
 
 export const AppSettingsSchema = z.object({
   version: z.literal(1).default(1),
@@ -80,7 +82,8 @@ export const AppSettingsSchema = z.object({
   terminalFontFamily: z.string().default(DEFAULT_TERMINAL_FONT_FAMILY),
   terminalFontSize: z.number().int().min(10).max(32).default(DEFAULT_TERMINAL_FONT_SIZE),
   workspaceSortMode: WorkspaceSortModeSchema.default("last-launch"),
-  workspaceFilterMode: WorkspaceFilterModeSchema.default("all")
+  workspaceFilterMode: WorkspaceFilterModeSchema.default("all"),
+  workspaceEnvironmentFilterMode: WorkspaceEnvironmentFilterModeSchema.default("all")
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -131,6 +134,13 @@ export function detectAgentKind(
   if (/\bclaude\b/.test(command)) return "claude";
   if (/\bcodex\b/.test(command)) return "codex";
   return "unknown";
+}
+
+export function resolveWorkspaceEnvironment(
+  workspace: Pick<Workspace, "terminals"> | Pick<TerminalProfile, "target">
+): "host" | "wsl" {
+  const terminal = "terminals" in workspace ? workspace.terminals[0] : workspace;
+  return terminal?.target === "wsl" ? "wsl" : "host";
 }
 
 export type SkillEntry = {

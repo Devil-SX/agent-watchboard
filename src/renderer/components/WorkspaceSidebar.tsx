@@ -5,9 +5,11 @@ import { ChevronDownIcon, ClaudeIcon, CodexIcon, IconButton, PlusIcon, TrashIcon
 import {
   describeTerminalLaunchShort,
   detectAgentKind,
+  resolveWorkspaceEnvironment,
   type SessionState,
   type TerminalInstance,
   type WorkbenchDocument,
+  type WorkspaceEnvironmentFilterMode,
   type Workspace,
   type WorkspaceFilterMode,
   type WorkspaceSortMode
@@ -21,11 +23,13 @@ type Props = {
   sessions: Record<string, SessionState>;
   sortMode: WorkspaceSortMode;
   filterMode: WorkspaceFilterMode;
+  environmentFilterMode: WorkspaceEnvironmentFilterMode;
   isDeleteMode: boolean;
   selectedDeleteIds: string[];
   onCreateWorkspace: () => void;
   onSortModeChange: (mode: WorkspaceSortMode) => void;
   onFilterModeChange: (mode: WorkspaceFilterMode) => void;
+  onEnvironmentFilterModeChange: (mode: WorkspaceEnvironmentFilterMode) => void;
   onToggleDeleteMode: () => void;
   onCancelDeleteMode: () => void;
   onDeleteSelected: () => void;
@@ -44,11 +48,13 @@ export function WorkspaceSidebar({
   sessions,
   sortMode,
   filterMode,
+  environmentFilterMode,
   isDeleteMode,
   selectedDeleteIds,
   onCreateWorkspace,
   onSortModeChange,
   onFilterModeChange,
+  onEnvironmentFilterModeChange,
   onToggleDeleteMode,
   onCancelDeleteMode,
   onDeleteSelected,
@@ -61,8 +67,8 @@ export function WorkspaceSidebar({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const instancesByWorkspace = useMemo(() => groupInstances(workbench.instances), [workbench.instances]);
   const visibleWorkspaces = useMemo(
-    () => sortAndFilterWorkspaces(workspaces, filterMode, sortMode),
-    [filterMode, sortMode, workspaces]
+    () => sortAndFilterWorkspaces(workspaces, filterMode, environmentFilterMode, sortMode),
+    [environmentFilterMode, filterMode, sortMode, workspaces]
   );
 
   return (
@@ -82,6 +88,12 @@ export function WorkspaceSidebar({
                 value={filterMode}
                 options={WORKSPACE_FILTER_OPTIONS}
                 onChange={onFilterModeChange}
+              />
+              <CompactDropdown
+                label="Env"
+                value={environmentFilterMode}
+                options={WORKSPACE_ENVIRONMENT_FILTER_OPTIONS}
+                onChange={onEnvironmentFilterModeChange}
               />
             </div>
           ) : null}
@@ -116,6 +128,7 @@ export function WorkspaceSidebar({
           const workspaceStatus = getWorkspaceStatus(instances, sessions);
           const isSelected = workspace.id === selectedWorkspaceId;
           const hasInstances = instances.length > 0;
+          const environment = resolveWorkspaceEnvironment(workspace);
           // Sidebar disclosure is explicit. Terminal focus changes should not mutate expansion state.
           const isExpanded = hasInstances && Boolean(expandedGroups[workspace.id]);
           const isMarkedForDelete = selectedDeleteIds.includes(workspace.id);
@@ -165,7 +178,12 @@ export function WorkspaceSidebar({
                     return null;
                   })()}
                   <span className="workspace-list-copy">
-                    <strong>{workspace.name}</strong>
+                    <span className="workspace-list-title-row">
+                      <strong>{workspace.name}</strong>
+                      <span className={environment === "wsl" ? "workspace-environment-tag is-wsl" : "workspace-environment-tag"}>
+                        {environment === "wsl" ? "WSL" : "Host"}
+                      </span>
+                    </span>
                     <span>{describeWorkspaceLine(workspace)}</span>
                   </span>
                   <span className="workspace-list-status">
@@ -262,6 +280,12 @@ const WORKSPACE_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceFilterMod
   { label: "Other", value: "other" }
 ];
 
+const WORKSPACE_ENVIRONMENT_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceEnvironmentFilterMode }> = [
+  { label: "All", value: "all" },
+  { label: "Host", value: "host" },
+  { label: "WSL", value: "wsl" }
+];
+
 function groupInstances(instances: TerminalInstance[]): Map<string, TerminalInstance[]> {
   const groups = new Map<string, TerminalInstance[]>();
   for (const instance of instances) {
@@ -314,29 +338,34 @@ function getInstanceStatus(
   return "idle";
 }
 
-function sortAndFilterWorkspaces(
+export function matchesWorkspaceFilter(
+  workspace: Workspace,
+  filterMode: WorkspaceFilterMode,
+  environmentFilterMode: WorkspaceEnvironmentFilterMode
+): boolean {
+  const terminal = workspace.terminals[0];
+  const agentKind = terminal ? detectAgentKind(terminal) : "unknown";
+  const environment = resolveWorkspaceEnvironment(workspace);
+
+  const matchesAgentFilter =
+    filterMode === "all" ? true : filterMode === "other" ? agentKind === "unknown" : agentKind === filterMode;
+  const matchesEnvironmentFilter = environmentFilterMode === "all" ? true : environment === environmentFilterMode;
+
+  return matchesAgentFilter && matchesEnvironmentFilter;
+}
+
+export function sortAndFilterWorkspaces(
   workspaces: Workspace[],
   filterMode: WorkspaceFilterMode,
+  environmentFilterMode: WorkspaceEnvironmentFilterMode,
   sortMode: WorkspaceSortMode
 ): Workspace[] {
   return [...workspaces]
-    .filter((workspace) => matchesWorkspaceFilter(workspace, filterMode))
+    .filter((workspace) => matchesWorkspaceFilter(workspace, filterMode, environmentFilterMode))
     .sort((left, right) => compareWorkspaces(left, right, sortMode));
 }
 
-function matchesWorkspaceFilter(workspace: Workspace, filterMode: WorkspaceFilterMode): boolean {
-  if (filterMode === "all") {
-    return true;
-  }
-  const terminal = workspace.terminals[0];
-  const agentKind = terminal ? detectAgentKind(terminal) : "unknown";
-  if (filterMode === "other") {
-    return agentKind === "unknown";
-  }
-  return agentKind === filterMode;
-}
-
-function compareWorkspaces(left: Workspace, right: Workspace, sortMode: WorkspaceSortMode): number {
+export function compareWorkspaces(left: Workspace, right: Workspace, sortMode: WorkspaceSortMode): number {
   if (sortMode === "alphabetical") {
     return compareWorkspaceNames(left, right);
   }
