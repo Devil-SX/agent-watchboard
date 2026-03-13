@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
+import { SkillMarkdownDocument } from "@renderer/components/SkillMarkdownDocument";
 import type { AgentPathLocation, DiagnosticsInfo, SkillEntry } from "@shared/schema";
 
 type SkillFamilyFilter = "all" | "codex" | "claude";
@@ -161,7 +162,7 @@ export function SkillsPanel(): ReactElement {
                 <code>{selectedSkill.entryPath}</code>
                 {selectedSkill.resolvedPath !== selectedSkill.entryPath ? <code>{selectedSkill.resolvedPath}</code> : null}
               </div>
-              <pre className="skills-content-body">{content || "(empty)"}</pre>
+              {content ? <SkillMarkdownDocument content={content} /> : <pre className="skills-content-body">(empty)</pre>}
             </>
           ) : (
             <div className="panel-empty panel-empty-large">

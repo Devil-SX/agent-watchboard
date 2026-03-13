@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-13
+
+> **Code Stats** | Total: 19955 lines | Delta: +1013 (-2) = **+1011 net** | Change: **+5.32%** vs v0.4.0
+
+### Added
+- Added markdown rendering for `SKILL.md` previews in the Skills pane, including headings, lists, links, tables, and fenced code blocks.
+- Added renderer-side unit coverage to verify markdown previews render structured HTML instead of raw preformatted text.
+
 ## [0.4.0] - 2026-03-13
 
 > **Code Stats** | Total: 18455 lines | Delta: +778 (-1) = **+777 net** | Change: **+4.27%** vs v0.3.4

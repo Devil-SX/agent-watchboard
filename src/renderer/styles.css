@@ -2333,6 +2333,99 @@ textarea::placeholder {
   word-break: break-word;
 }
 
+.skills-markdown-body {
+  flex: 1;
+  min-height: 0;
+  overflow: overlay;
+  padding: 12px 14px;
+  color: #d8e5ee;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.skills-markdown-body > *:first-child {
+  margin-top: 0;
+}
+
+.skills-markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.skills-markdown-body h1,
+.skills-markdown-body h2,
+.skills-markdown-body h3,
+.skills-markdown-body h4 {
+  margin: 1.1em 0 0.45em;
+  color: #f0f6fa;
+  line-height: 1.25;
+}
+
+.skills-markdown-body h1 {
+  font-size: 1.28rem;
+}
+
+.skills-markdown-body h2 {
+  font-size: 1.08rem;
+}
+
+.skills-markdown-body h3,
+.skills-markdown-body h4 {
+  font-size: 0.96rem;
+}
+
+.skills-markdown-body p,
+.skills-markdown-body ul,
+.skills-markdown-body ol,
+.skills-markdown-body blockquote,
+.skills-markdown-body table {
+  margin: 0 0 0.9em;
+}
+
+.skills-markdown-body ul,
+.skills-markdown-body ol {
+  padding-left: 1.2rem;
+}
+
+.skills-markdown-body li + li {
+  margin-top: 0.22rem;
+}
+
+.skills-markdown-body a {
+  color: #9fd3ff;
+}
+
+.skills-markdown-body blockquote {
+  padding: 0.1rem 0 0.1rem 0.9rem;
+  border-left: 2px solid rgba(142, 199, 255, 0.26);
+  color: #b9c9d1;
+}
+
+.skills-markdown-body code {
+  padding: 0.08rem 0.32rem;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f1d59a;
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+  font-size: 0.78rem;
+}
+
+.skills-markdown-pre {
+  margin: 0 0 0.95em;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(3, 8, 12, 0.88);
+  overflow: auto;
+}
+
+.skills-markdown-pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  color: #dce8ef;
+  line-height: 1.5;
+  white-space: pre;
+}
+
 /* Agent Config Panel */
 
 .agent-config-panel {
