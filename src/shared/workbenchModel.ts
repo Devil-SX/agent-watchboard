@@ -91,6 +91,41 @@ export function restoreInstance(
   });
 }
 
+export function attachExistingInstance(
+  document: WorkbenchDocument,
+  instanceId: string,
+  openMode: WorkbenchOpenMode = "tab",
+  anchorPaneId?: string | null
+): WorkbenchDocument {
+  const base = normalizeWorkbenchDocument(document);
+  const target = base.instances.find((instance) => instance.instanceId === instanceId);
+  if (!target) {
+    return base;
+  }
+  if (target.collapsed) {
+    return restoreInstance(base, instanceId, openMode, anchorPaneId);
+  }
+
+  const visibleInstances = base.instances.filter((instance) => !instance.collapsed);
+  if (visibleInstances.length <= 1) {
+    return updateWorkbenchActivePane(base, target.paneId);
+  }
+
+  const nextLayout = insertInstanceIntoLayout(
+    removePaneFromLayout(base.layoutModel, target.paneId, base.instances),
+    target,
+    openMode,
+    anchorPaneId ?? base.activePaneId
+  );
+
+  return normalizeWorkbenchDocument({
+    ...base,
+    updatedAt: nowIso(),
+    activePaneId: target.paneId,
+    layoutModel: nextLayout
+  });
+}
+
 export function normalizeWorkbenchLayoutModel(
   layoutModel: WorkbenchLayoutModel,
   instances: TerminalInstance[]

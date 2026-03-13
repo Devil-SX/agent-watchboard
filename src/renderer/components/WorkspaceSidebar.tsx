@@ -40,6 +40,7 @@ type Props = {
   onClosePane: (instanceId: string) => void;
   onCollapsePane: (instanceId: string) => void;
   onRestorePane: (instanceId: string) => void;
+  onDragInstanceStart?: (instanceId: string) => void;
 };
 
 export function WorkspaceSidebar({
@@ -65,7 +66,8 @@ export function WorkspaceSidebar({
   onFocusPane,
   onClosePane,
   onCollapsePane,
-  onRestorePane
+  onRestorePane,
+  onDragInstanceStart
 }: Props): ReactElement {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<{
@@ -278,7 +280,14 @@ export function WorkspaceSidebar({
                         key={instance.instanceId}
                         type="button"
                         className={itemClass}
+                        draggable
                         onClick={() => instance.collapsed ? onRestorePane(instance.instanceId) : onFocusPane(instance.paneId)}
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("application/x-watchboard-instance-id", instance.instanceId);
+                          event.dataTransfer.setData("text/plain", instance.title);
+                          onDragInstanceStart?.(instance.instanceId);
+                        }}
                         onContextMenu={(event) => {
                           event.preventDefault();
                           event.stopPropagation();

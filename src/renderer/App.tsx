@@ -30,6 +30,7 @@ import {
 } from "@shared/schema";
 import {
   addInstanceToWorkbench,
+  attachExistingInstance,
   collapseInstance,
   collectLayoutInstanceIds,
   findActivePaneId,
@@ -667,6 +668,21 @@ export function App(): ReactElement {
     stageWorkbench(restoreInstance(workbench, instanceId));
   }
 
+  async function registerDraggedInstance(
+    instanceId: string,
+    options?: {
+      openMode?: "tab" | "left" | "right" | "up" | "down";
+      anchorPaneId?: string | null;
+    }
+  ): Promise<void> {
+    if (!workbench) {
+      return;
+    }
+    stageWorkbench(
+      attachExistingInstance(workbench, instanceId, options?.openMode ?? "tab", options?.anchorPaneId ?? workbench.activePaneId)
+    );
+  }
+
   function handleWorkbenchLayoutChange(layoutModel: WorkbenchLayoutModel): void {
     if (!workbench) {
       return;
@@ -764,6 +780,7 @@ export function App(): ReactElement {
               onClosePane={(instanceId) => void handleClosePane(instanceId)}
               onCollapsePane={handleCollapsePane}
               onRegisterDraggedWorkspace={registerDraggedWorkspace}
+              onRegisterDraggedInstance={registerDraggedInstance}
             />
           </Profiler>
 

@@ -580,12 +580,17 @@ textarea::placeholder {
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.02);
   text-align: left;
+  cursor: grab;
 }
 
 .workspace-instance-item:hover,
 .workspace-instance-item.is-active {
   border-color: rgba(142, 199, 255, 0.16);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.workspace-instance-item:active {
+  cursor: grabbing;
 }
 
 .workspace-instance-item.is-collapsed {

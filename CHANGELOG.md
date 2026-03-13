@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-03-13
+
+> **Code Stats** | Total: 20780 lines | Delta: +144 (-5) = **+139 net** | Change: **+0.68%** vs v0.6.1
+
+### Added
+- Added unit coverage for reattaching existing runtime instances so collapsed and visible sidebar instances can be moved back into the workbench without duplicating sessions.
+
+### Fixed
+- Allowed sidebar runtime instances to be dragged back into the workbench, including collapsed/background instances, by reattaching the existing `TerminalInstance` instead of forcing click-only restore or creating duplicate panes.
+
 ## [0.6.1] - 2026-03-13
 
 > **Code Stats** | Total: 20630 lines | Delta: +3 (-3) = **+0 net** | Change: **+0.00%** vs v0.6.0

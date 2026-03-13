@@ -27,6 +27,13 @@ type Props = {
       anchorPaneId?: string | null;
     }
   ) => Promise<TerminalInstance | null>;
+  onRegisterDraggedInstance: (
+    instanceId: string,
+    options?: {
+      openMode?: "tab" | "left" | "right" | "up" | "down";
+      anchorPaneId?: string | null;
+    }
+  ) => Promise<void>;
 };
 
 export function WorkbenchView({
@@ -43,7 +50,8 @@ export function WorkbenchView({
   onSplitPane,
   onClosePane,
   onCollapsePane,
-  onRegisterDraggedWorkspace
+  onRegisterDraggedWorkspace,
+  onRegisterDraggedInstance
 }: Props): ReactElement {
   const layoutRef = useRef<Layout | null>(null);
   const serializedLayout = useMemo(() => JSON.stringify(workbench.layoutModel), [workbench.layoutModel]);
@@ -51,6 +59,7 @@ export function WorkbenchView({
   const [model, setModel] = useState(() => Model.fromJson(workbench.layoutModel as never));
   const [isDragActive, setIsDragActive] = useState(false);
   const dragWorkspaceIdRef = useRef<string | null>(null);
+  const dragInstanceIdRef = useRef<string | null>(null);
   const instanceMap = useMemo(
     () => new Map(workbench.instances.map((instance) => [instance.instanceId, instance] as const)),
     [workbench.instances]
@@ -113,6 +122,29 @@ export function WorkbenchView({
         });
         return;
       }
+      let pendingInstanceId = getPendingInstanceId(action);
+      if (pendingInstanceId === "__drag_instance_placeholder__" && dragInstanceIdRef.current) {
+        pendingInstanceId = dragInstanceIdRef.current;
+        dragInstanceIdRef.current = null;
+      }
+      if (pendingInstanceId && pendingInstanceId !== "__drag_instance_placeholder__") {
+        const openMode = mapDockLocationToOpenMode(action.data.location);
+        const anchorPaneId = resolveAnchorPaneId(nextModel, action.data.toNode);
+        lastLayoutRef.current = serializedLayout;
+        setModel(Model.fromJson(workbench.layoutModel as never));
+        void onRegisterDraggedInstance(pendingInstanceId, {
+          openMode,
+          anchorPaneId
+        }).catch((error) => {
+          console.error("instance-external-drop-failed", {
+            instanceId: pendingInstanceId,
+            openMode,
+            anchorPaneId,
+            message: error instanceof Error ? error.message : String(error)
+          });
+        });
+        return;
+      }
     }
     const nextLayout = WorkbenchLayoutModelSchema.parse(nextModel.toJson());
     lastLayoutRef.current = JSON.stringify(nextLayout);
@@ -123,11 +155,13 @@ export function WorkbenchView({
     if (workbench.instances.length > 0) {
       return;
     }
-    if (!event.dataTransfer.types.includes("application/x-watchboard-workspace-id")) {
+    const hasWorkspace = event.dataTransfer.types.includes("application/x-watchboard-workspace-id");
+    const hasInstance = event.dataTransfer.types.includes("application/x-watchboard-instance-id");
+    if (!hasWorkspace && !hasInstance) {
       return;
     }
     event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
+    event.dataTransfer.dropEffect = hasInstance ? "move" : "copy";
     setIsDragActive(true);
   }
 
@@ -142,6 +176,16 @@ export function WorkbenchView({
 
   function handleEmptyDrop(event: React.DragEvent<HTMLDivElement>): void {
     if (workbench.instances.length > 0) {
+      return;
+    }
+    const instanceId = event.dataTransfer.getData("application/x-watchboard-instance-id");
+    if (instanceId) {
+      event.preventDefault();
+      setIsDragActive(false);
+      void onRegisterDraggedInstance(instanceId, {
+        openMode: "tab",
+        anchorPaneId: workbench.activePaneId
+      });
       return;
     }
     const workspaceId = event.dataTransfer.getData("application/x-watchboard-workspace-id");
@@ -286,6 +330,10 @@ export function WorkbenchView({
             if (workspaceId) {
               dragWorkspaceIdRef.current = workspaceId;
             }
+            const instanceId = event.dataTransfer.getData("application/x-watchboard-instance-id");
+            if (instanceId) {
+              dragInstanceIdRef.current = instanceId;
+            }
           }}
         >
           <Layout
@@ -298,8 +346,28 @@ export function WorkbenchView({
               if (workbench.instances.length === 0) {
                 return undefined;
               }
-              if (!event.dataTransfer.types.includes("application/x-watchboard-workspace-id")) {
+              const hasWorkspace = event.dataTransfer.types.includes("application/x-watchboard-workspace-id");
+              const hasInstance = event.dataTransfer.types.includes("application/x-watchboard-instance-id");
+              if (!hasWorkspace && !hasInstance) {
                 return undefined;
+              }
+              if (hasInstance) {
+                return {
+                  json: {
+                    type: "tab",
+                    id: "pending-external-instance-drag",
+                    name: "Runtime",
+                    component: "terminal-instance",
+                    enableClose: false,
+                    config: {
+                      pendingInstanceId: "__drag_instance_placeholder__",
+                      pendingLabel: "Runtime"
+                    }
+                  },
+                  onDrop: () => {
+                    setIsDragActive(false);
+                  }
+                };
               }
               return {
                 json: {
@@ -342,6 +410,11 @@ function createExternalWorkspaceTab(workspace: Workspace): Record<string, unknow
 function getPendingWorkspaceId(action: Action): string {
   const config = action.data?.json?.config;
   return typeof config?.pendingWorkspaceId === "string" ? config.pendingWorkspaceId : "";
+}
+
+function getPendingInstanceId(action: Action): string {
+  const config = action.data?.json?.config;
+  return typeof config?.pendingInstanceId === "string" ? config.pendingInstanceId : "";
 }
 
 function mapDockLocationToOpenMode(location: string): "tab" | "left" | "right" | "up" | "down" {
