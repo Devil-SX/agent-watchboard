@@ -43,6 +43,10 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
   const [fallbackText, setFallbackText] = useState<string>("");
   const [hasVisibleContent, setHasVisibleContent] = useState(false);
 
+  const focusTerminal = (): void => {
+    terminalRef.current?.focus();
+  };
+
   useEffect(() => {
     if (!hostRef.current) {
       return;
@@ -295,6 +299,7 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
     }
     void waitForNextPaint().then(() => {
       scheduleFitRef.current?.("tab-visible");
+      focusTerminal();
     });
   }, [isVisible, sessionId]);
 
@@ -397,7 +402,16 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
     <div className="terminal-pane">
       {localError ? <div className="terminal-error">{localError}</div> : null}
       <div className="terminal-host-shell">
-        <div ref={hostRef} className="terminal-host" />
+        <div
+          ref={hostRef}
+          className="terminal-host"
+          onMouseDown={() => {
+            focusTerminal();
+          }}
+          onClick={() => {
+            focusTerminal();
+          }}
+        />
         {showFallback ? <pre className="terminal-fallback">{fallbackText}</pre> : null}
       </div>
     </div>

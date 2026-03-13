@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-13
+
+> **Code Stats** | Total: 17005 lines | Delta: +1071 (-109) = **+962 net** | Change: **+6.00%** vs v0.1.2
+
+### Changed
+- Improved terminal pane activation so selecting a pane updates active focus without rebuilding the full FlexLayout model.
+
+### Fixed
+- Restored terminal input focus on pane activation and direct clicks so the terminal no longer flashes, resets to the top, or stops accepting keyboard input after being selected.
+- Fixed TypeScript preset-command assembly typing so `pnpm check` and CI pass under the current toolchain.
+
 ## [0.1.2] - 2026-03-13
 
 > **Code Stats** | Total: 10394 | Delta: +68 (-31) = +37 | Change: +0.36% vs 0.1.1

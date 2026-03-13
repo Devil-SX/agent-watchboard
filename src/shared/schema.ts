@@ -95,7 +95,7 @@ export type PresetAgent = keyof typeof AGENT_PRESETS;
 
 export function buildPresetCommand(agent: PresetAgent, continueMode: boolean, skipMode: boolean): string {
   const preset = AGENT_PRESETS[agent];
-  const parts = [preset.base];
+  const parts: string[] = [preset.base];
   if (continueMode) parts.push(preset.continueFlag);
   if (skipMode) parts.push(preset.skipFlag);
   return parts.join(" ");

@@ -15,6 +15,7 @@ type Props = {
   canCreatePane: boolean;
   canSplitPane: boolean;
   onLayoutChange: (layoutModel: WorkbenchLayoutModel) => void;
+  onFocusPane: (paneId: string) => void;
   onNewPane: () => Promise<void>;
   onSplitPane: (direction: "right" | "down") => Promise<void>;
   onClosePane: (instanceId: string) => Promise<void> | void;
@@ -37,6 +38,7 @@ export function WorkbenchView({
   canCreatePane,
   canSplitPane,
   onLayoutChange,
+  onFocusPane,
   onNewPane,
   onSplitPane,
   onClosePane,
@@ -79,6 +81,14 @@ export function WorkbenchView({
   }, [model, workbench.activePaneId]);
 
   function handleModelChange(nextModel: Model, action?: Action): void {
+    if (action?.type === Actions.SELECT_TAB || action?.type === Actions.SET_ACTIVE_TABSET) {
+      const nextLayout = WorkbenchLayoutModelSchema.parse(nextModel.toJson());
+      const activePaneId = findSelectedPaneId(nextLayout);
+      if (activePaneId && activePaneId !== workbench.activePaneId) {
+        onFocusPane(activePaneId);
+      }
+      return;
+    }
     if (action?.type === Actions.ADD_NODE) {
       let pendingWorkspaceId = getPendingWorkspaceId(action);
       if (pendingWorkspaceId === "__drag_placeholder__" && dragWorkspaceIdRef.current) {

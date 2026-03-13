@@ -677,6 +677,7 @@ export function App(): ReactElement {
               canCreatePane={workspaceList.workspaces.length > 0}
               canSplitPane={Boolean(activePaneInstance ?? selectedWorkspace)}
               onLayoutChange={handleWorkbenchLayoutChange}
+              onFocusPane={handleFocusPane}
               onNewPane={handleNewPane}
               onSplitPane={handleSplitPane}
               onClosePane={(instanceId) => void handleClosePane(instanceId)}
