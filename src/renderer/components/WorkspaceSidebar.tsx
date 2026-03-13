@@ -1,4 +1,5 @@
-import { useMemo, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ChevronDownIcon, ClaudeIcon, CodexIcon, IconButton, PlusIcon, TrashIcon } from "@renderer/components/IconButton";
@@ -36,6 +37,7 @@ type Props = {
   onToggleDeleteSelection: (workspaceId: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onFocusPane: (paneId: string) => void;
+  onClosePane: (instanceId: string) => void;
   onCollapsePane: (instanceId: string) => void;
   onRestorePane: (instanceId: string) => void;
 };
@@ -61,15 +63,40 @@ export function WorkspaceSidebar({
   onToggleDeleteSelection,
   onSelectWorkspace,
   onFocusPane,
+  onClosePane,
   onCollapsePane,
   onRestorePane
 }: Props): ReactElement {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [contextMenu, setContextMenu] = useState<{
+    instanceId: string;
+    style: CSSProperties;
+  } | null>(null);
   const instancesByWorkspace = useMemo(() => groupInstances(workbench.instances), [workbench.instances]);
   const visibleWorkspaces = useMemo(
     () => sortAndFilterWorkspaces(workspaces, filterMode, environmentFilterMode, sortMode),
     [environmentFilterMode, filterMode, sortMode, workspaces]
   );
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+    const handlePointerDown = (): void => {
+      setContextMenu(null);
+    };
+    const handleEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [contextMenu]);
 
   return (
     <aside className="workspace-sidebar">
@@ -247,6 +274,14 @@ export function WorkspaceSidebar({
                         type="button"
                         className={itemClass}
                         onClick={() => instance.collapsed ? onRestorePane(instance.instanceId) : onFocusPane(instance.paneId)}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setContextMenu({
+                            instanceId: instance.instanceId,
+                            style: getContextMenuStyle(event.clientX, event.clientY)
+                          });
+                        }}
                         title={instance.collapsed ? "Click to restore" : undefined}
                       >
                         <span className="workspace-instance-copy">
@@ -269,6 +304,23 @@ export function WorkspaceSidebar({
           </div>
         ) : null}
       </div>
+      {contextMenu
+        ? createPortal(
+            <div className="workspace-context-menu" style={contextMenu.style}>
+              <button
+                type="button"
+                className="workspace-context-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  onClosePane(contextMenu.instanceId);
+                }}
+              >
+                Close
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
     </aside>
   );
 }
@@ -393,6 +445,17 @@ function compareWorkspaceNames(left: Workspace, right: Workspace): number {
 function handleAction(event: MouseEvent<HTMLButtonElement>, action: () => void): void {
   event.stopPropagation();
   action();
+}
+
+export function getContextMenuStyle(clientX: number, clientY: number): CSSProperties {
+  const menuWidth = 156;
+  const menuHeight = 44;
+  return {
+    position: "fixed",
+    left: Math.min(clientX, window.innerWidth - menuWidth - 8),
+    top: Math.min(clientY, window.innerHeight - menuHeight - 8),
+    zIndex: 1000
+  };
 }
 
 function statusClassName(status: "healthy" | "warning" | "idle"): string {

@@ -739,6 +739,7 @@ export function App(): ReactElement {
               }}
               onSelectWorkspace={(workspaceId) => void selectWorkspace(workspaceId, { openConfig: true })}
               onFocusPane={handleFocusPane}
+              onClosePane={(instanceId) => void handleClosePane(instanceId)}
               onCollapsePane={handleCollapsePane}
               onRestorePane={handleRestorePane}
             />

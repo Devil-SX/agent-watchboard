@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-03-13
+
+> **Code Stats** | Total: 18201 lines | Delta: +113 (-2) = **+111 net** | Change: **+0.61%** vs v0.3.3
+
+### Added
+- Added a right-click workspace-instance context menu with a direct `Close` action and viewport-clamping unit-test coverage for the menu positioning helper.
+
 ## [0.3.3] - 2026-03-13
 
 > **Code Stats** | Total: 18080 lines | Delta: +151 (-20) = **+131 net** | Change: **+0.73%** vs v0.3.2

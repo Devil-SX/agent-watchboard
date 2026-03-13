@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { matchesWorkspaceFilter, compareWorkspaces } from "../../src/renderer/components/WorkspaceSidebar";
+import { compareWorkspaces, getContextMenuStyle, matchesWorkspaceFilter } from "../../src/renderer/components/WorkspaceSidebar";
 import type { Workspace } from "../../src/shared/schema";
 
 function makeWorkspace(
@@ -59,4 +59,26 @@ test("compareWorkspaces keeps last-launch ordering ahead of alphabetical fallbac
   assert.ok(compareWorkspaces(newer, older, "last-launch") < 0);
   assert.ok(compareWorkspaces(older, noLaunch, "last-launch") < 0);
   assert.ok(compareWorkspaces(newer, older, "alphabetical") < 0);
+});
+
+test("getContextMenuStyle keeps instance context menu within the viewport", () => {
+  Object.assign(globalThis, {
+    window: {
+      innerWidth: 300,
+      innerHeight: 200
+    }
+  });
+
+  assert.deepEqual(getContextMenuStyle(50, 60), {
+    position: "fixed",
+    left: 50,
+    top: 60,
+    zIndex: 1000
+  });
+  assert.deepEqual(getContextMenuStyle(290, 190), {
+    position: "fixed",
+    left: 136,
+    top: 148,
+    zIndex: 1000
+  });
 });
