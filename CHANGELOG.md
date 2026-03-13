@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-13
+
+> **Code Stats** | Total: 17823 lines | Delta: +1030 (-187) = **+843 net** | Change: **+4.96%** vs v0.2.0
+
+### Added
+- Added persistent workspace sorting and filtering controls with last-launch ordering, alphabetical ordering, and agent-family filtering.
+- Added Host/WSL path switching for Skills and Agent Config panes, plus softlink badges and resolved-path metadata for discovered entries.
+
+### Changed
+- Reworked Workspaces, Todo Board, Skills, and Agent Config toolbars into a denser compact-control layout with unified toggle and dropdown behavior.
+- Updated pane headers so Workspaces, Todo Board, and Runtime Panes use the simplified eyebrow-only title treatment.
+
+### Fixed
+- Fixed workspace filter dropdown layering and clipping so its menu renders fully above the surrounding UI and remains clickable.
+- Fixed skill discovery so nested and symlinked entries under `.codex` and `.claude` are surfaced consistently instead of being skipped.
+
 ## [0.2.0] - 2026-03-13
 
 > **Code Stats** | Total: 17005 lines | Delta: +1071 (-109) = **+962 net** | Change: **+6.00%** vs v0.1.2

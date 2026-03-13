@@ -1,4 +1,7 @@
 import type {
+  AgentConfigDocument,
+  AgentConfigEntry,
+  AgentPathLocation,
   AppSettings,
   BoardDocument,
   DiagnosticsInfo,
@@ -48,8 +51,9 @@ export type WatchboardApi = {
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
   onSessionState: (listener: (session: SessionState) => void) => () => void;
   onBoardUpdate: (listener: (document: BoardDocument) => void) => () => void;
-  listSkills: () => Promise<SkillEntry[]>;
+  listSkills: (location: AgentPathLocation) => Promise<SkillEntry[]>;
   readSkillContent: (skillPath: string) => Promise<string>;
-  readAgentConfig: (configId: string) => Promise<string>;
-  writeAgentConfig: (configId: string, content: string) => Promise<void>;
+  listAgentConfigs: (location: AgentPathLocation) => Promise<AgentConfigEntry[]>;
+  readAgentConfig: (configId: string, location: AgentPathLocation) => Promise<AgentConfigDocument>;
+  writeAgentConfig: (configId: string, location: AgentPathLocation, content: string) => Promise<void>;
 };

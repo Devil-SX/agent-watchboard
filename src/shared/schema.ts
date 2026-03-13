@@ -66,6 +66,10 @@ export type StartupMode = z.infer<typeof StartupModeSchema>;
 
 export const WorkbenchOpenModeSchema = z.enum(["tab", "left", "right", "up", "down"]);
 export type WorkbenchOpenMode = z.infer<typeof WorkbenchOpenModeSchema>;
+export const WorkspaceSortModeSchema = z.enum(["last-launch", "alphabetical"]);
+export type WorkspaceSortMode = z.infer<typeof WorkspaceSortModeSchema>;
+export const WorkspaceFilterModeSchema = z.enum(["all", "codex", "claude", "other"]);
+export type WorkspaceFilterMode = z.infer<typeof WorkspaceFilterModeSchema>;
 
 export const AppSettingsSchema = z.object({
   version: z.literal(1).default(1),
@@ -74,7 +78,9 @@ export const AppSettingsSchema = z.object({
   boardLocationKind: z.enum(["host", "wsl"]).default("host"),
   boardWslDistro: z.string().optional(),
   terminalFontFamily: z.string().default(DEFAULT_TERMINAL_FONT_FAMILY),
-  terminalFontSize: z.number().int().min(10).max(32).default(DEFAULT_TERMINAL_FONT_SIZE)
+  terminalFontSize: z.number().int().min(10).max(32).default(DEFAULT_TERMINAL_FONT_SIZE),
+  workspaceSortMode: WorkspaceSortModeSchema.default("last-launch"),
+  workspaceFilterMode: WorkspaceFilterModeSchema.default("all")
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -114,6 +120,9 @@ export const STARTUP_PRESETS = [
 ] as const;
 
 export type AgentKind = "claude" | "codex" | "unknown";
+export type AgentPathLocation = "host" | "wsl";
+export type SkillSource = "codex" | "claude-command" | "claude-skill";
+export type AgentConfigFamily = "codex" | "claude";
 
 export function detectAgentKind(
   profile: Pick<TerminalProfile, "startupMode" | "startupPresetId" | "startupCommand" | "startupCustomCommand">
@@ -126,15 +135,33 @@ export function detectAgentKind(
 
 export type SkillEntry = {
   name: string;
-  source: "codex" | "claude-command" | "claude-skill";
+  source: SkillSource;
+  location: AgentPathLocation;
+  entryPath: string;
+  resolvedPath: string;
+  isSymlink: boolean;
   skillMdPath: string;
 };
 
 export const AGENT_CONFIG_FILES = [
-  { id: "codex-config", label: "Codex Config", path: "~/.codex/config.toml" },
-  { id: "codex-auth", label: "Codex Auth", path: "~/.codex/auth.json" },
-  { id: "claude-settings", label: "Claude Settings", path: "~/.claude/settings.json" }
+  { id: "codex-config", label: "Codex Config", family: "codex", path: "~/.codex/config.toml" },
+  { id: "codex-auth", label: "Codex Auth", family: "codex", path: "~/.codex/auth.json" },
+  { id: "claude-settings", label: "Claude Settings", family: "claude", path: "~/.claude/settings.json" }
 ] as const;
+export type AgentConfigFileId = (typeof AGENT_CONFIG_FILES)[number]["id"];
+export type AgentConfigEntry = {
+  id: AgentConfigFileId;
+  label: string;
+  family: AgentConfigFamily;
+  location: AgentPathLocation;
+  entryPath: string;
+  resolvedPath: string;
+  isSymlink: boolean;
+  exists: boolean;
+};
+export type AgentConfigDocument = AgentConfigEntry & {
+  content: string;
+};
 
 export type StartupPresetId = (typeof STARTUP_PRESETS)[number]["id"];
 export type StartupPreset = (typeof STARTUP_PRESETS)[number];
@@ -319,6 +346,7 @@ export const WorkspaceSchema = z.object({
   autoReconnect: z.boolean().default(true),
   terminals: z.array(TerminalProfileSchema).length(1),
   layoutTree: LayoutNodeSchema,
+  lastLaunchedAt: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });

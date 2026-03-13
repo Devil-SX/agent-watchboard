@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
-import { CalendarIcon, IconButton, ListIcon } from "@renderer/components/IconButton";
+import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import type { BoardDocument, BoardItem, BoardSection } from "@shared/schema";
 
 type Props = {
@@ -86,36 +86,16 @@ export function BoardTree({ document }: Props): ReactElement {
     <div className="board-tree-shell">
       <div className="board-toolbar">
         <div className="board-toolbar-group">
-          <IconButton label="List" icon={<ListIcon />} isActive={viewMode === "list"} onClick={() => setViewMode("list")} />
-          <IconButton
-            label="Calendar"
-            icon={<CalendarIcon />}
-            isActive={viewMode === "calendar"}
-            onClick={() => setViewMode("calendar")}
+          <CompactToggleButton
+            label="View"
+            value={viewMode === "list" ? "List" : "Calendar"}
+            onClick={() => setViewMode((current) => (current === "list" ? "calendar" : "list"))}
           />
         </div>
 
         <div className="board-toolbar-group">
-          <label className="board-filter">
-            <span>Status</span>
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
-              <option value="all">All</option>
-              <option value="todo">Todo</option>
-              <option value="done">Done</option>
-            </select>
-          </label>
-
-          <label className="board-filter">
-            <span>DDL</span>
-            <select value={deadlineFilter} onChange={(event) => setDeadlineFilter(event.target.value as DeadlineFilter)}>
-              <option value="all">All</option>
-              <option value="has-ddl">Has DDL</option>
-              <option value="no-ddl">No DDL</option>
-              <option value="overdue">Overdue</option>
-              <option value="7d">Next 7 Days</option>
-              <option value="30d">Next 30 Days</option>
-            </select>
-          </label>
+          <CompactDropdown label="Status" value={statusFilter} options={STATUS_FILTER_OPTIONS} onChange={setStatusFilter} />
+          <CompactDropdown label="DDL" value={deadlineFilter} options={DEADLINE_FILTER_OPTIONS} onChange={setDeadlineFilter} />
         </div>
       </div>
 
@@ -303,6 +283,21 @@ export function BoardTree({ document }: Props): ReactElement {
     </div>
   );
 }
+
+const STATUS_FILTER_OPTIONS: Array<{ label: string; value: StatusFilter }> = [
+  { label: "All", value: "all" },
+  { label: "Todo", value: "todo" },
+  { label: "Done", value: "done" }
+];
+
+const DEADLINE_FILTER_OPTIONS: Array<{ label: string; value: DeadlineFilter }> = [
+  { label: "All", value: "all" },
+  { label: "Has DDL", value: "has-ddl" },
+  { label: "No DDL", value: "no-ddl" },
+  { label: "Overdue", value: "overdue" },
+  { label: "Next 7 Days", value: "7d" },
+  { label: "Next 30 Days", value: "30d" }
+];
 
 function CalendarDayEvents({
   day,

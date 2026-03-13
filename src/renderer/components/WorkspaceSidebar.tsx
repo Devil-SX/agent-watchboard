@@ -1,7 +1,17 @@
-import { useMemo, useState, type MouseEvent, type ReactElement } from "react";
+import { useMemo, useState, type MouseEvent, type ReactElement, type ReactNode } from "react";
 
+import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ChevronDownIcon, ClaudeIcon, CodexIcon, IconButton, PlusIcon, TrashIcon } from "@renderer/components/IconButton";
-import { describeTerminalLaunchShort, detectAgentKind, type SessionState, type TerminalInstance, type WorkbenchDocument, type Workspace } from "@shared/schema";
+import {
+  describeTerminalLaunchShort,
+  detectAgentKind,
+  type SessionState,
+  type TerminalInstance,
+  type WorkbenchDocument,
+  type Workspace,
+  type WorkspaceFilterMode,
+  type WorkspaceSortMode
+} from "@shared/schema";
 
 type Props = {
   workspaces: Workspace[];
@@ -9,9 +19,13 @@ type Props = {
   activePaneId: string | null;
   workbench: WorkbenchDocument;
   sessions: Record<string, SessionState>;
+  sortMode: WorkspaceSortMode;
+  filterMode: WorkspaceFilterMode;
   isDeleteMode: boolean;
   selectedDeleteIds: string[];
   onCreateWorkspace: () => void;
+  onSortModeChange: (mode: WorkspaceSortMode) => void;
+  onFilterModeChange: (mode: WorkspaceFilterMode) => void;
   onToggleDeleteMode: () => void;
   onCancelDeleteMode: () => void;
   onDeleteSelected: () => void;
@@ -28,9 +42,13 @@ export function WorkspaceSidebar({
   activePaneId,
   workbench,
   sessions,
+  sortMode,
+  filterMode,
   isDeleteMode,
   selectedDeleteIds,
   onCreateWorkspace,
+  onSortModeChange,
+  onFilterModeChange,
   onToggleDeleteMode,
   onCancelDeleteMode,
   onDeleteSelected,
@@ -42,13 +60,31 @@ export function WorkspaceSidebar({
 }: Props): ReactElement {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const instancesByWorkspace = useMemo(() => groupInstances(workbench.instances), [workbench.instances]);
+  const visibleWorkspaces = useMemo(
+    () => sortAndFilterWorkspaces(workspaces, filterMode, sortMode),
+    [filterMode, sortMode, workspaces]
+  );
 
   return (
     <aside className="workspace-sidebar">
       <header className="workspace-sidebar-header">
-        <div>
+        <div className="workspace-sidebar-header-copy">
           <p className="panel-eyebrow">Workspaces</p>
-          <h2>Profiles</h2>
+          {!isDeleteMode ? (
+            <div className="workspace-sidebar-controls">
+              <CompactToggleButton
+                label="Sort"
+                value={sortMode === "last-launch" ? "Last Launch" : "A-Z"}
+                onClick={() => onSortModeChange(sortMode === "last-launch" ? "alphabetical" : "last-launch")}
+              />
+              <CompactDropdown
+                label="Filter"
+                value={filterMode}
+                options={WORKSPACE_FILTER_OPTIONS}
+                onChange={onFilterModeChange}
+              />
+            </div>
+          ) : null}
         </div>
         <div className="workspace-sidebar-header-actions">
           {isDeleteMode ? (
@@ -75,7 +111,7 @@ export function WorkspaceSidebar({
       </header>
 
       <div className="workspace-list" role="list">
-        {workspaces.map((workspace) => {
+        {visibleWorkspaces.map((workspace) => {
           const instances = instancesByWorkspace.get(workspace.id) ?? [];
           const workspaceStatus = getWorkspaceStatus(instances, sessions);
           const isSelected = workspace.id === selectedWorkspaceId;
@@ -208,10 +244,23 @@ export function WorkspaceSidebar({
             </div>
           );
         })}
+        {!isDeleteMode && visibleWorkspaces.length === 0 ? (
+          <div className="workspace-list-empty">
+            <p>No workspaces match the current filter.</p>
+            <span>Switch to another agent filter or create a new workspace.</span>
+          </div>
+        ) : null}
       </div>
     </aside>
   );
 }
+
+const WORKSPACE_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceFilterMode; icon?: ReactNode }> = [
+  { label: "All", value: "all" },
+  { label: "Codex", value: "codex", icon: <CodexIcon /> },
+  { label: "Claude", value: "claude", icon: <ClaudeIcon /> },
+  { label: "Other", value: "other" }
+];
 
 function groupInstances(instances: TerminalInstance[]): Map<string, TerminalInstance[]> {
   const groups = new Map<string, TerminalInstance[]>();
@@ -263,6 +312,53 @@ function getInstanceStatus(
     return "warning";
   }
   return "idle";
+}
+
+function sortAndFilterWorkspaces(
+  workspaces: Workspace[],
+  filterMode: WorkspaceFilterMode,
+  sortMode: WorkspaceSortMode
+): Workspace[] {
+  return [...workspaces]
+    .filter((workspace) => matchesWorkspaceFilter(workspace, filterMode))
+    .sort((left, right) => compareWorkspaces(left, right, sortMode));
+}
+
+function matchesWorkspaceFilter(workspace: Workspace, filterMode: WorkspaceFilterMode): boolean {
+  if (filterMode === "all") {
+    return true;
+  }
+  const terminal = workspace.terminals[0];
+  const agentKind = terminal ? detectAgentKind(terminal) : "unknown";
+  if (filterMode === "other") {
+    return agentKind === "unknown";
+  }
+  return agentKind === filterMode;
+}
+
+function compareWorkspaces(left: Workspace, right: Workspace, sortMode: WorkspaceSortMode): number {
+  if (sortMode === "alphabetical") {
+    return compareWorkspaceNames(left, right);
+  }
+  const leftLaunch = left.lastLaunchedAt ?? "";
+  const rightLaunch = right.lastLaunchedAt ?? "";
+  if (leftLaunch && rightLaunch && leftLaunch !== rightLaunch) {
+    return rightLaunch.localeCompare(leftLaunch);
+  }
+  if (leftLaunch) {
+    return -1;
+  }
+  if (rightLaunch) {
+    return 1;
+  }
+  return compareWorkspaceNames(left, right);
+}
+
+function compareWorkspaceNames(left: Workspace, right: Workspace): number {
+  return left.name.localeCompare(right.name, undefined, {
+    sensitivity: "base",
+    numeric: true
+  });
 }
 
 function handleAction(event: MouseEvent<HTMLButtonElement>, action: () => void): void {

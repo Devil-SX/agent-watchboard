@@ -248,8 +248,7 @@ export function WorkbenchView({
     <section className="center-panel">
       <header className="workbench-toolbar">
         <div className="workbench-toolbar-copy">
-          <p className="panel-eyebrow">Workbench</p>
-          <h2>Runtime Panes</h2>
+          <p className="panel-eyebrow">Runtime Panes</p>
         </div>
         <div className="workbench-toolbar-actions">
           <IconButton label="New Pane" icon={<PlusIcon />} onClick={() => void onNewPane()} disabled={!canCreatePane} />

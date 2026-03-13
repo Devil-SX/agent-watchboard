@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Menu, app, BrowserWindow, ipcMain } from "electron";
@@ -14,6 +14,10 @@ import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
 import { readAppSettings, writeAppSettings } from "@shared/settings";
 import {
   AGENT_CONFIG_FILES,
+  type AgentConfigDocument,
+  type AgentConfigEntry,
+  type AgentConfigFileId,
+  type AgentPathLocation,
   BoardDocument,
   type AppSettings,
   type DiagnosticsInfo,
@@ -30,6 +34,7 @@ import { resolveElectronRuntimePaths, type RuntimePaths } from "@shared/runtimeP
 import { SupervisorClient } from "@shared/supervisorClient";
 import { readWorkbenchDocument, writeWorkbenchDocument } from "@shared/workbench";
 import { deleteWorkspace, readWorkspaceList, upsertWorkspace } from "@shared/workspaces";
+import { updateWorkspace } from "@shared/workspaces";
 
 let mainWindow: BrowserWindow | null = null;
 let stopWatchingBoard: (() => void) | null = null;
@@ -439,6 +444,7 @@ function setupIpc(): void {
     if (existing && existing.status !== "stopped") {
       return existing;
     }
+    const launchedAt = new Date().toISOString();
     supervisorClient.send({
       type: "start-session",
       sessionId,
@@ -446,6 +452,23 @@ function setupIpc(): void {
       workspaceId: instance.workspaceId,
       profile: instance.terminalProfileSnapshot
     });
+    try {
+      await updateWorkspace(
+        instance.workspaceId,
+        (workspace) => ({
+          ...workspace,
+          lastLaunchedAt: launchedAt
+        }),
+        runtimePaths.workspaceStorePath,
+        defaultWorkspaceSeed()
+      );
+    } catch (error) {
+      log.error("workspace-launch-stamp-failed", {
+        workspaceId: instance.workspaceId,
+        launchedAt,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
     return (
       sessionStates.get(sessionId) ?? {
         sessionId,
@@ -456,7 +479,7 @@ function setupIpc(): void {
         status: "running-active",
         lastPtyActivityAt: new Date().toISOString(),
         lastLogHeartbeatAt: null,
-        startedAt: new Date().toISOString(),
+        startedAt: launchedAt,
         endedAt: null
       }
     );
@@ -502,57 +525,28 @@ function setupIpc(): void {
     return selectBoard(settings);
   });
 
-  ipcMain.handle("watchboard:list-skills", async (): Promise<SkillEntry[]> => {
-    const homes = await resolveAgentHomes();
-    const skills: SkillEntry[] = [];
-
-    for (const home of homes) {
-      // Scan ~/.codex/skills/*/SKILL.md
-      const codexSkillsDir = join(home, ".codex", "skills");
-      try {
-        const entries = readdirSync(codexSkillsDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            const skillMdPath = join(codexSkillsDir, entry.name, "SKILL.md");
-            if (existsSync(skillMdPath)) {
-              skills.push({ name: entry.name, source: "codex", skillMdPath });
-            }
-          }
-        }
-      } catch {
-        // directory may not exist
-      }
-
-      // Scan ~/.claude/commands/*.md
-      const claudeCommandsDir = join(home, ".claude", "commands");
-      try {
-        const entries = readdirSync(claudeCommandsDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isFile() && entry.name.endsWith(".md")) {
-            const skillMdPath = join(claudeCommandsDir, entry.name);
-            skills.push({ name: entry.name.replace(/\.md$/, ""), source: "claude-command", skillMdPath });
-          }
-        }
-      } catch {
-        // directory may not exist
-      }
-
-      // Scan ~/.claude/skills/*/SKILL.md
-      const claudeSkillsDir = join(home, ".claude", "skills");
-      try {
-        const entries = readdirSync(claudeSkillsDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            const skillMdPath = join(claudeSkillsDir, entry.name, "SKILL.md");
-            if (existsSync(skillMdPath)) {
-              skills.push({ name: entry.name, source: "claude-skill", skillMdPath });
-            }
-          }
-        }
-      } catch {
-        // directory may not exist
-      }
+  ipcMain.handle("watchboard:list-skills", async (_event, location: AgentPathLocation): Promise<SkillEntry[]> => {
+    const home = await resolveAgentHome(location);
+    if (!home) {
+      return [];
     }
+    const skills: SkillEntry[] = [];
+    const seen = new Set<string>();
+    const codexSkillsDir = join(home, ".codex", "skills");
+    skills.push(...scanSkillEntries(codexSkillsDir, "codex", location, seen));
+
+    const claudeCommandsDir = join(home, ".claude", "commands");
+    skills.push(...scanClaudeCommandEntries(claudeCommandsDir, location, seen));
+
+    const claudeSkillsDir = join(home, ".claude", "skills");
+    skills.push(...scanSkillEntries(claudeSkillsDir, "claude-skill", location, seen));
+
+    skills.sort((left, right) => {
+      if (left.source !== right.source) {
+        return left.source.localeCompare(right.source);
+      }
+      return left.name.localeCompare(right.name);
+    });
 
     return skills;
   });
@@ -565,51 +559,181 @@ function setupIpc(): void {
     }
   });
 
-  ipcMain.handle("watchboard:read-agent-config", async (_event, configId: string): Promise<string> => {
-    const entry = AGENT_CONFIG_FILES.find((c) => c.id === configId);
-    if (!entry) return "";
-    const filePath = await resolveAgentConfigPath(entry.path);
+  ipcMain.handle("watchboard:list-agent-configs", async (_event, location: AgentPathLocation): Promise<AgentConfigEntry[]> => {
+    const entries = await Promise.all(AGENT_CONFIG_FILES.map((entry) => buildAgentConfigEntry(entry.id, location)));
+    return entries;
+  });
+
+  ipcMain.handle("watchboard:read-agent-config", async (_event, configId: AgentConfigFileId, location: AgentPathLocation): Promise<AgentConfigDocument> => {
+    const entry = await buildAgentConfigEntry(configId, location);
     try {
-      return await readFile(filePath, "utf8");
+      const content = entry.exists ? await readFile(entry.entryPath, "utf8") : "";
+      return {
+        ...entry,
+        content
+      };
     } catch {
-      return "";
+      return {
+        ...entry,
+        content: ""
+      };
     }
   });
 
-  ipcMain.handle("watchboard:write-agent-config", async (_event, configId: string, content: string): Promise<void> => {
-    const entry = AGENT_CONFIG_FILES.find((c) => c.id === configId);
-    if (!entry) throw new Error(`Unknown config: ${configId}`);
-    const filePath = await resolveAgentConfigPath(entry.path);
-    await writeFile(filePath, content, "utf8");
-  });
+  ipcMain.handle(
+    "watchboard:write-agent-config",
+    async (_event, configId: AgentConfigFileId, location: AgentPathLocation, content: string): Promise<void> => {
+      const entry = await buildAgentConfigEntry(configId, location);
+      if (!entry.entryPath || entry.entryPath.startsWith("~")) {
+        throw new Error(`Unable to resolve ${location.toUpperCase()} path for ${configId}`);
+      }
+      mkdirSync(dirname(entry.entryPath), { recursive: true });
+      await writeFile(entry.entryPath, content, "utf8");
+    }
+  );
 }
 
-async function resolveAgentHomes(): Promise<string[]> {
+async function resolveAgentHome(location: AgentPathLocation): Promise<string | null> {
   const nativeHome = homedir();
-  if (process.platform !== "win32") {
-    return [nativeHome];
+  if (location === "host") {
+    return nativeHome;
   }
-  // On Windows, try WSL home first, then fall back to native
+  if (process.platform !== "win32") {
+    return null;
+  }
   try {
     const distro = await resolveWslDistro();
     const wslLinuxHome = await resolveWslHome(distro);
-    const wslWindowsHome = `\\\\wsl.localhost\\${distro}${wslLinuxHome.replaceAll("/", "\\")}`;
-    return [wslWindowsHome, nativeHome];
+    return `\\\\wsl.localhost\\${distro}${wslLinuxHome.replaceAll("/", "\\")}`;
   } catch {
-    return [nativeHome];
+    return null;
   }
 }
 
-async function resolveAgentConfigPath(tildeRelPath: string): Promise<string> {
-  const homes = await resolveAgentHomes();
-  for (const home of homes) {
-    const candidate = tildeRelPath.replace(/^~/, home);
-    if (existsSync(candidate)) {
-      return candidate;
+function scanSkillEntries(
+  rootDir: string,
+  source: SkillEntry["source"],
+  location: AgentPathLocation,
+  seen: Set<string>
+): SkillEntry[] {
+  const skills: SkillEntry[] = [];
+  const visitedDirs = new Set<string>();
+
+  const visit = (dir: string): void => {
+    let canonicalDir = dir;
+    try {
+      canonicalDir = realpathSync(dir);
+    } catch {
+      return;
     }
+    if (visitedDirs.has(canonicalDir)) {
+      return;
+    }
+    visitedDirs.add(canonicalDir);
+
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const entryPath = join(dir, entry.name);
+      if (entry.name === "SKILL.md") {
+        const resolvedPath = canonicalizeFilePath(entryPath);
+        const dedupeKey = `${location}:${source}:${resolvedPath}`;
+        if (seen.has(dedupeKey)) {
+          continue;
+        }
+        seen.add(dedupeKey);
+        const relativeName = relative(rootDir, dirname(entryPath)).replaceAll("\\", "/");
+        skills.push({
+          name: relativeName || dirname(entryPath),
+          source,
+          location,
+          entryPath,
+          resolvedPath,
+          isSymlink: entryPath !== resolvedPath,
+          skillMdPath: resolvedPath
+        });
+        continue;
+      }
+      if (entry.isDirectory() || entry.isSymbolicLink()) {
+        visit(entryPath);
+      }
+    }
+  };
+
+  visit(rootDir);
+  return skills;
+}
+
+function scanClaudeCommandEntries(rootDir: string, location: AgentPathLocation, seen: Set<string>): SkillEntry[] {
+  try {
+    return readdirSync(rootDir, { withFileTypes: true })
+      .filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".md"))
+      .map((entry) => {
+        const entryPath = join(rootDir, entry.name);
+        const resolvedPath = canonicalizeFilePath(entryPath);
+        return {
+          name: entry.name.replace(/\.md$/, ""),
+          source: "claude-command" as const,
+          location,
+          entryPath,
+          resolvedPath,
+          isSymlink: entryPath !== resolvedPath,
+          skillMdPath: resolvedPath
+        };
+      })
+      .filter((entry) => {
+        const dedupeKey = `${entry.location}:${entry.source}:${entry.skillMdPath}`;
+        if (seen.has(dedupeKey)) {
+          return false;
+        }
+        seen.add(dedupeKey);
+        return true;
+      });
+  } catch {
+    return [];
   }
-  // Default to first home (will create file there if needed)
-  return tildeRelPath.replace(/^~/, homes[0]!);
+}
+
+function canonicalizeFilePath(filePath: string): string {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return filePath;
+  }
+}
+
+async function buildAgentConfigEntry(configId: AgentConfigFileId, location: AgentPathLocation): Promise<AgentConfigEntry> {
+  const entry = AGENT_CONFIG_FILES.find((candidate) => candidate.id === configId);
+  if (!entry) {
+    throw new Error(`Unknown config: ${configId}`);
+  }
+  const home = await resolveAgentHome(location);
+  const entryPath = home ? entry.path.replace(/^~/, home) : entry.path;
+  const exists = home ? existsSync(entryPath) : false;
+  const resolvedPath = exists ? canonicalizeFilePath(entryPath) : entryPath;
+  return {
+    id: entry.id,
+    label: entry.label,
+    family: entry.family,
+    location,
+    entryPath,
+    resolvedPath,
+    isSymlink: exists && isSymbolicLink(entryPath),
+    exists
+  };
+}
+
+function isSymbolicLink(filePath: string): boolean {
+  try {
+    return lstatSync(filePath).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 async function bootstrap(): Promise<void> {

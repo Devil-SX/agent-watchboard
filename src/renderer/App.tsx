@@ -19,6 +19,8 @@ import {
   type TerminalProfile,
   type WorkbenchDocument,
   type WorkbenchLayoutModel,
+  type WorkspaceFilterMode,
+  type WorkspaceSortMode,
   type Workspace,
   type WorkspaceList,
   resolveTerminalStartupCommand
@@ -243,7 +245,7 @@ export function App(): ReactElement {
         continue;
       }
       autoStartedRef.current.add(instance.sessionId);
-      void window.watchboard.startSession(instance).catch((startError) => {
+      void startWorkspaceSession(instance).catch((startError) => {
         autoStartedRef.current.delete(instance.sessionId);
         setError(messageOf(startError));
       });
@@ -302,6 +304,36 @@ export function App(): ReactElement {
     setWorkbenchDirty(true);
   }
 
+  function markWorkspaceLaunched(workspaceId: string, launchedAt: string): void {
+    setWorkspaceList((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        updatedAt: launchedAt,
+        workspaces: current.workspaces.map((workspace) =>
+          workspace.id === workspaceId
+            ? {
+                ...workspace,
+                lastLaunchedAt: launchedAt,
+                updatedAt: launchedAt
+              }
+            : workspace
+        )
+      };
+    });
+    setDraftWorkspace((current) =>
+      current && current.id === workspaceId
+        ? {
+            ...current,
+            lastLaunchedAt: launchedAt,
+            updatedAt: launchedAt
+          }
+        : current
+    );
+  }
+
   async function handleWorkspaceSave(workspaceOverride?: Workspace): Promise<void> {
     const workspace = workspaceOverride ?? selectedWorkspace;
     if (!workspace) {
@@ -351,6 +383,40 @@ export function App(): ReactElement {
     } finally {
       setIsSavingSettings(false);
     }
+  }
+
+  async function handleWorkspaceSidebarPreferenceChange(
+    update: Partial<Pick<AppSettings, "workspaceSortMode" | "workspaceFilterMode">>
+  ): Promise<void> {
+    const baseSettings = settings ?? settingsDraft;
+    if (!baseSettings) {
+      return;
+    }
+    try {
+      const saved = await window.watchboard.saveSettings({
+        ...baseSettings,
+        ...update,
+        updatedAt: new Date().toISOString()
+      });
+      setSettings(saved);
+      setSettingsDraft((current) =>
+        current
+          ? {
+              ...current,
+              ...update,
+              updatedAt: saved.updatedAt
+            }
+          : saved
+      );
+      setError("");
+    } catch (saveError) {
+      setError(messageOf(saveError));
+    }
+  }
+
+  async function startWorkspaceSession(instance: TerminalInstance): Promise<void> {
+    const session = await window.watchboard.startSession(instance);
+    markWorkspaceLaunched(instance.workspaceId, session.startedAt);
   }
 
   async function handleCreateWorkspace(): Promise<void> {
@@ -642,9 +708,15 @@ export function App(): ReactElement {
               activePaneId={workbench.activePaneId}
               workbench={workbench}
               sessions={sessions}
+              sortMode={settingsDraft.workspaceSortMode}
+              filterMode={settingsDraft.workspaceFilterMode}
               isDeleteMode={isDeleteMode}
               selectedDeleteIds={deleteSelection}
               onCreateWorkspace={() => void handleCreateWorkspace()}
+              onSortModeChange={(sortMode: WorkspaceSortMode) => void handleWorkspaceSidebarPreferenceChange({ workspaceSortMode: sortMode })}
+              onFilterModeChange={(filterMode: WorkspaceFilterMode) =>
+                void handleWorkspaceSidebarPreferenceChange({ workspaceFilterMode: filterMode })
+              }
               onToggleDeleteMode={() => {
                 setIsDeleteMode(true);
                 setDeleteSelection([]);
@@ -690,7 +762,6 @@ export function App(): ReactElement {
             <header className="board-panel-header">
               <div>
                 <p className="panel-eyebrow">Todo Board</p>
-                <h2>{boardDocument?.title ?? "Shared Board"}</h2>
               </div>
               <div className="board-panel-meta">
                 <span className="timestamp">
