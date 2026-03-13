@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-03-13
+
+> **Code Stats** | Total: 20167 lines | Delta: +163 (-12) = **+151 net** | Change: **+0.76%** vs v0.5.0
+
+### Added
+- Added reusable `Host` / `WSL` location badges with dedicated icons and renderer-side unit coverage for the new location visual system.
+
+### Changed
+- Strengthened the Skills and Agent Config path toggles so the active location is shown as a colored pill instead of plain text.
+- Added compact location context strips and explicit `Entry` / `Resolved` path labels in selected skill and config metadata so filesystem context is obvious before reading the full path.
+
 ## [0.5.0] - 2026-03-13
 
 > **Code Stats** | Total: 19955 lines | Delta: +1013 (-2) = **+1011 net** | Change: **+5.32%** vs v0.4.0

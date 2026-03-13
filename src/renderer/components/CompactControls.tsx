@@ -5,7 +5,7 @@ import { ChevronDownIcon } from "@renderer/components/IconButton";
 
 type ToggleButtonProps = {
   label: string;
-  value: string;
+  value: ReactNode;
   onClick: () => void;
 };
 
@@ -26,7 +26,7 @@ export function CompactToggleButton({ label, value, onClick }: ToggleButtonProps
   return (
     <button type="button" className="compact-control-button" onClick={onClick}>
       <span className="compact-control-label">{label}</span>
-      <strong className="compact-control-value">{value}</strong>
+      <span className="compact-control-value">{value}</span>
     </button>
   );
 }

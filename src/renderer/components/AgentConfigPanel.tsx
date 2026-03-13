@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
+import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
 import type { AgentConfigDocument, AgentConfigEntry, AgentConfigFamily, AgentPathLocation, DiagnosticsInfo } from "@shared/schema";
 
 export function AgentConfigPanel(): ReactElement {
@@ -87,7 +88,7 @@ export function AgentConfigPanel(): ReactElement {
           {isWindows ? (
             <CompactToggleButton
               label="Path"
-              value={location === "host" ? "Host" : "WSL"}
+              value={<LocationBadge location={location} />}
               onClick={() => setLocation((current) => (current === "host" ? "wsl" : "host"))}
             />
           ) : null}
@@ -153,8 +154,13 @@ export function AgentConfigPanel(): ReactElement {
         <div className="entry-meta is-compact">
           {activeEntry ? (
             <>
-              <span>{activeEntry.location === "host" ? "Host" : "WSL"}</span>
+              <div className="entry-context-strip is-compact">
+                <LocationBadge location={activeEntry.location} tone="strong" />
+                <span className="entry-context-copy">{getLocationLabel(activeEntry.location)} config source</span>
+              </div>
+              <span className="entry-meta-label">Entry</span>
               <code>{activeEntry.entryPath}</code>
+              {activeEntry.resolvedPath !== activeEntry.entryPath ? <span className="entry-meta-label">Resolved</span> : null}
               {activeEntry.resolvedPath !== activeEntry.entryPath ? <code>{activeEntry.resolvedPath}</code> : null}
             </>
           ) : (

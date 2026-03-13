@@ -116,6 +116,27 @@ export function ChevronDownIcon({ className }: IconProps): ReactElement {
   );
 }
 
+export function HostIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2.25" y="3" width="11.5" height="8" rx="1.8" />
+      <path d="M6 13h4" />
+      <path d="M8 11v2" />
+    </svg>
+  );
+}
+
+export function WslIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.75 4.25 5 2.75v10.5l-2.25-1.5Z" />
+      <path d="M5 4.25h8.25v7.5H5" />
+      <path d="M8 6.5h2.75" />
+      <path d="M8 9.5h2.75" />
+    </svg>
+  );
+}
+
 export function ClaudeIcon({ className }: IconProps): ReactElement {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="#D4A27F">

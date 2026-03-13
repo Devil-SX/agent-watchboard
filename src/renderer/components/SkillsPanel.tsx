@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
+import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
 import { SkillMarkdownDocument } from "@renderer/components/SkillMarkdownDocument";
 import type { AgentPathLocation, DiagnosticsInfo, SkillEntry } from "@shared/schema";
 
@@ -92,7 +93,7 @@ export function SkillsPanel(): ReactElement {
           {isWindows ? (
             <CompactToggleButton
               label="Path"
-              value={location === "host" ? "Host" : "WSL"}
+              value={<LocationBadge location={location} />}
               onClick={() => setLocation((current) => (current === "host" ? "wsl" : "host"))}
             />
           ) : null}
@@ -151,15 +152,24 @@ export function SkillsPanel(): ReactElement {
           {selectedSkill ? (
             <>
               <div className="skills-content-header">
-                <span className="skills-list-icon">
-                  {selectedSkill.source === "codex" ? <CodexIcon /> : <ClaudeIcon />}
-                </span>
-                <strong>{selectedSkill.name}</strong>
-                {selectedSkill.isSymlink ? <span className="entry-badge">Softlink</span> : null}
+                <div className="entry-title-stack">
+                  <div className="entry-title-row">
+                    <span className="skills-list-icon">
+                      {selectedSkill.source === "codex" ? <CodexIcon /> : <ClaudeIcon />}
+                    </span>
+                    <strong>{selectedSkill.name}</strong>
+                    {selectedSkill.isSymlink ? <span className="entry-badge">Softlink</span> : null}
+                  </div>
+                  <div className="entry-context-strip">
+                    <LocationBadge location={selectedSkill.location} tone="strong" />
+                    <span className="entry-context-copy">{getLocationLabel(selectedSkill.location)} skill source</span>
+                  </div>
+                </div>
               </div>
               <div className="entry-meta">
-                <span>{selectedSkill.location === "host" ? "Host" : "WSL"}</span>
+                <span className="entry-meta-label">Entry</span>
                 <code>{selectedSkill.entryPath}</code>
+                {selectedSkill.resolvedPath !== selectedSkill.entryPath ? <span className="entry-meta-label">Resolved</span> : null}
                 {selectedSkill.resolvedPath !== selectedSkill.entryPath ? <code>{selectedSkill.resolvedPath}</code> : null}
               </div>
               {content ? <SkillMarkdownDocument content={content} /> : <pre className="skills-content-body">(empty)</pre>}
