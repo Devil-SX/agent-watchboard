@@ -14,6 +14,7 @@ import {
   createSessionId,
   createWorkspaceTemplate,
   describeTerminalLaunch,
+  getActiveBoardPath,
   nowIso,
   normalizeBoardDocumentPath,
   type Workspace
@@ -157,25 +158,48 @@ settings
     const current = await readAppSettings(runtimePaths.settingsStorePath);
     print(
       current,
-      `boardPath=${current.boardPath}\nboardTarget=${current.boardLocationKind}\nboardDistro=${current.boardWslDistro ?? "-"}\nfontFamily=${current.terminalFontFamily}\nfontSize=${current.terminalFontSize}\nupdatedAt=${current.updatedAt}`
+      `activeBoardPath=${getActiveBoardPath(current)}\nhostBoardPath=${current.hostBoardPath}\nwslBoardPath=${current.wslBoardPath}\nboardTarget=${current.boardLocationKind}\nboardDistro=${current.boardWslDistro ?? "-"}\nfontFamily=${current.terminalFontFamily}\nfontSize=${current.terminalFontSize}\nupdatedAt=${current.updatedAt}`
     );
   });
 
 settings
   .command("set")
   .description("Update global application settings")
-  .option("--board-path <path>", "shared board file path")
+  .option("--board-path <path>", "legacy alias: update the current board target path")
+  .option("--host-board-path <path>", "host board file path")
+  .option("--wsl-board-path <path>", "WSL board file path")
   .option("--board-target <kind>", "host or wsl")
   .option("--board-distro <name>", "shared board WSL distro")
   .option("--font-family <family>", "terminal font family")
   .option("--font-size <size>", "terminal font size")
-  .action(async (options: { boardPath?: string; boardTarget?: "host" | "wsl"; boardDistro?: string; fontFamily?: string; fontSize?: string }) => {
+  .action(async (options: {
+    boardPath?: string;
+    hostBoardPath?: string;
+    wslBoardPath?: string;
+    boardTarget?: "host" | "wsl";
+    boardDistro?: string;
+    fontFamily?: string;
+    fontSize?: string;
+  }) => {
     const current = await readAppSettings(runtimePaths.settingsStorePath);
+    const targetKind = options.boardTarget ?? current.boardLocationKind;
+    const legacyBoardPath = options.boardPath ? normalizeBoardDocumentPath(options.boardPath) : null;
     const next = await writeAppSettings(
       {
         ...current,
-        boardPath: options.boardPath ? normalizeBoardDocumentPath(options.boardPath) : current.boardPath,
-        boardLocationKind: options.boardTarget ?? current.boardLocationKind,
+        hostBoardPath:
+          options.hostBoardPath
+            ? normalizeBoardDocumentPath(options.hostBoardPath)
+            : targetKind === "host" && legacyBoardPath
+              ? legacyBoardPath
+              : current.hostBoardPath,
+        wslBoardPath:
+          options.wslBoardPath
+            ? normalizeBoardDocumentPath(options.wslBoardPath)
+            : targetKind === "wsl" && legacyBoardPath
+              ? legacyBoardPath
+              : current.wslBoardPath,
+        boardLocationKind: targetKind,
         boardWslDistro: options.boardTarget === "wsl" ? options.boardDistro ?? current.boardWslDistro : options.boardDistro ?? current.boardWslDistro,
         terminalFontFamily: options.fontFamily ?? current.terminalFontFamily,
         terminalFontSize: options.fontSize ? Number.parseInt(options.fontSize, 10) : current.terminalFontSize
@@ -184,7 +208,7 @@ settings
     );
     print(
       next,
-      `Updated settings\nboardPath=${next.boardPath}\nboardTarget=${next.boardLocationKind}\nboardDistro=${next.boardWslDistro ?? "-"}\nfontFamily=${next.terminalFontFamily}\nfontSize=${next.terminalFontSize}`
+      `Updated settings\nactiveBoardPath=${getActiveBoardPath(next)}\nhostBoardPath=${next.hostBoardPath}\nwslBoardPath=${next.wslBoardPath}\nboardTarget=${next.boardLocationKind}\nboardDistro=${next.boardWslDistro ?? "-"}\nfontFamily=${next.terminalFontFamily}\nfontSize=${next.terminalFontSize}`
     );
   });
 

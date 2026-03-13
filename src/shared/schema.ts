@@ -76,8 +76,9 @@ export type WorkspaceEnvironmentFilterMode = z.infer<typeof WorkspaceEnvironment
 export const AppSettingsSchema = z.object({
   version: z.literal(1).default(1),
   updatedAt: z.string(),
-  boardPath: z.string().default(DEFAULT_BOARD_PATH),
   boardLocationKind: z.enum(["host", "wsl"]).default("host"),
+  hostBoardPath: z.string().default(DEFAULT_BOARD_PATH),
+  wslBoardPath: z.string().default(DEFAULT_BOARD_PATH),
   boardWslDistro: z.string().optional(),
   terminalFontFamily: z.string().default(DEFAULT_TERMINAL_FONT_FAMILY),
   terminalFontSize: z.number().int().min(10).max(32).default(DEFAULT_TERMINAL_FONT_SIZE),
@@ -660,17 +661,38 @@ export function getStartupPreset(presetId: string | undefined): StartupPreset | 
   return STARTUP_PRESETS.find((preset) => preset.id === presetId);
 }
 
-export function createDefaultAppSettings(overrides: Partial<AppSettings> = {}): AppSettings {
+export function createDefaultAppSettings(overrides: Partial<AppSettings> & { boardPath?: string } = {}): AppSettings {
   const platform = typeof process !== "undefined" ? process.platform : "linux";
   const isWindows = platform === "win32";
+  const legacyBoardPath = overrides.boardPath;
+  const defaultLocationKind = overrides.boardLocationKind ?? (isWindows ? "wsl" : "host");
+  const normalizedLegacyBoardPath = legacyBoardPath ? normalizeBoardDocumentPath(legacyBoardPath) : DEFAULT_BOARD_PATH;
+  const hostBoardPath =
+    overrides.hostBoardPath ?? (defaultLocationKind === "host" ? normalizedLegacyBoardPath : DEFAULT_BOARD_PATH);
+  const wslBoardPath =
+    overrides.wslBoardPath ?? (defaultLocationKind === "wsl" ? normalizedLegacyBoardPath : DEFAULT_BOARD_PATH);
   return AppSettingsSchema.parse({
     version: 1,
     updatedAt: nowIso(),
-    boardPath: overrides.boardPath ?? DEFAULT_BOARD_PATH,
-    boardLocationKind: overrides.boardLocationKind ?? (isWindows ? "wsl" : "host"),
+    boardLocationKind: defaultLocationKind,
+    hostBoardPath,
+    wslBoardPath,
     boardWslDistro: overrides.boardWslDistro,
     ...overrides
   });
+}
+
+export function getBoardPathForLocation(
+  settings: Pick<AppSettings, "hostBoardPath" | "wslBoardPath">,
+  location: "host" | "wsl"
+): string {
+  return location === "wsl" ? settings.wslBoardPath : settings.hostBoardPath;
+}
+
+export function getActiveBoardPath(
+  settings: Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath">
+): string {
+  return getBoardPathForLocation(settings, settings.boardLocationKind);
 }
 
 export function normalizeBoardDocumentPath(value: string | undefined, fallback = DEFAULT_BOARD_PATH): string {

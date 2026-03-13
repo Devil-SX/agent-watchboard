@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-13
+
+> **Code Stats** | Total: 20953 lines | Delta: +128 (-35) = **+93 net** | Change: **+0.45%** vs v0.6.2
+
+### Added
+- Added Todo Board Host/WSL switching in the board toolbar, backed by separate persisted host and WSL board-path defaults.
+- Added settings migration coverage so legacy single-path board settings upgrade into the new per-environment layout without losing the previously selected path.
+
+### Changed
+- Reworked shared board settings storage to keep `hostBoardPath` and `wslBoardPath` separately while preserving `boardLocationKind` and WSL distro handling.
+- Updated the `watchboard settings` CLI output and update flow to expose separate host and WSL board paths, while keeping `--board-path` as a compatibility alias for the currently selected target.
+
 ## [0.6.2] - 2026-03-13
 
 > **Code Stats** | Total: 20780 lines | Delta: +144 (-5) = **+139 net** | Change: **+0.68%** vs v0.6.1

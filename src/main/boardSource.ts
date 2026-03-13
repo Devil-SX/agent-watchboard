@@ -2,28 +2,31 @@ import chokidar, { type FSWatcher } from "chokidar";
 import log from "electron-log/main.js";
 
 import { ensureBoardDocument, readBoardDocument } from "@shared/board";
-import { BoardDocument, DEFAULT_BOARD_PATH, type AppSettings, normalizeBoardDocumentPath } from "@shared/schema";
+import { BoardDocument, DEFAULT_BOARD_PATH, getActiveBoardPath, type AppSettings, normalizeBoardDocumentPath } from "@shared/schema";
 import { expandHomePath } from "@shared/nodePath";
 import { resolveWslDistro, resolveWslHome } from "./wslPaths";
 
 type StopWatching = () => void;
 
-export async function loadBoardDocument(settings: Pick<AppSettings, "boardPath" | "boardLocationKind" | "boardWslDistro">): Promise<BoardDocument> {
+export async function loadBoardDocument(
+  settings: Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro">
+): Promise<BoardDocument> {
+  const activeBoardPath = getActiveBoardPath(settings);
   log.info("loadBoardDocument", {
     boardLocationKind: settings.boardLocationKind,
-    boardPath: settings.boardPath
+    boardPath: activeBoardPath
   });
   if (settings.boardLocationKind === "wsl" && process.platform === "win32") {
     return readBoardFromWsl(settings);
   }
   return ensureBoardDocument(
-    normalizeBoardDocumentPath(settings.boardPath, settings.boardPath || DEFAULT_BOARD_PATH),
+    normalizeBoardDocumentPath(activeBoardPath, activeBoardPath || DEFAULT_BOARD_PATH),
     "global"
   );
 }
 
 export async function watchBoardDocument(
-  settings: Pick<AppSettings, "boardPath" | "boardLocationKind" | "boardWslDistro">,
+  settings: Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro">,
   onUpdate: (document: BoardDocument) => void
 ): Promise<StopWatching> {
   if (settings.boardLocationKind === "wsl" && process.platform === "win32") {
@@ -52,7 +55,7 @@ export async function watchBoardDocument(
   }
 
   const resolvedPath = expandHomePath(
-    normalizeBoardDocumentPath(settings.boardPath, settings.boardPath || DEFAULT_BOARD_PATH)
+    normalizeBoardDocumentPath(getActiveBoardPath(settings), getActiveBoardPath(settings) || DEFAULT_BOARD_PATH)
   );
   let watcher: FSWatcher | null = chokidar.watch(resolvedPath, {
     ignoreInitial: true
@@ -71,14 +74,14 @@ export async function watchBoardDocument(
 }
 
 async function readBoardFromWsl(
-  settings: Pick<AppSettings, "boardPath" | "boardLocationKind" | "boardWslDistro">
+  settings: Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro">
 ): Promise<BoardDocument> {
   const windowsPath = await resolveWslBoardWindowsPath(settings);
   try {
     return await ensureBoardDocument(windowsPath, "global");
   } catch (error) {
     log.error("readBoardFromWsl:error", {
-      boardPath: settings.boardPath,
+      boardPath: getActiveBoardPath(settings),
       windowsPath,
       distro: settings.boardWslDistro ?? null,
       message: error instanceof Error ? error.message : String(error)
@@ -100,10 +103,10 @@ function normalizeWslBoardPath(path: string): string {
 }
 
 async function resolveWslBoardWindowsPath(
-  settings: Pick<AppSettings, "boardPath" | "boardWslDistro">
+  settings: Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro">
 ): Promise<string> {
   const distro = await resolveWslDistro(settings.boardWslDistro);
-  const linuxPath = normalizeWslBoardPath(settings.boardPath);
+  const linuxPath = normalizeWslBoardPath(getActiveBoardPath(settings));
   const resolvedLinuxPath = linuxPath.startsWith("~/")
     ? `${await resolveWslHome(distro)}/${linuxPath.slice(2)}`
     : linuxPath;

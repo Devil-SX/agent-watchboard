@@ -156,7 +156,7 @@ export function App(): ReactElement {
       .catch((selectError) => {
         setError(messageOf(selectError));
       });
-  }, [settings?.boardLocationKind, settings?.boardPath, settings?.boardWslDistro, settings?.updatedAt, boardDocument]);
+  }, [settings?.boardLocationKind, settings?.hostBoardPath, settings?.wslBoardPath, settings?.boardWslDistro, settings?.updatedAt, boardDocument]);
 
   useEffect(() => {
     if (!workspaceList || !workbench || !settingsDraft || bootReadyReportedRef.current) {
@@ -559,7 +559,7 @@ export function App(): ReactElement {
   }
 
   function handleSettingsFieldChange(
-    field: "terminalFontFamily" | "terminalFontSize" | "boardPath" | "boardLocationKind" | "boardWslDistro",
+    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardLocationKind" | "boardWslDistro",
     value: string | number
   ): void {
     if (!settingsDraft) {
@@ -580,6 +580,25 @@ export function App(): ReactElement {
     setSettingsDraft(structuredClone(settings));
     setIsSettingsDirty(false);
     setError("");
+  }
+
+  async function handleBoardLocationChange(location: "host" | "wsl"): Promise<void> {
+    if (!settingsDraft) {
+      return;
+    }
+    try {
+      const saved = await window.watchboard.saveSettings({
+        ...settingsDraft,
+        boardLocationKind: location,
+        updatedAt: new Date().toISOString()
+      });
+      setSettings(saved);
+      setSettingsDraft(saved);
+      setIsSettingsDirty(false);
+      setError("");
+    } catch (saveError) {
+      setError(messageOf(saveError));
+    }
   }
 
   async function registerDraggedWorkspace(
@@ -796,7 +815,12 @@ export function App(): ReactElement {
               </div>
             </header>
             <Profiler id="BoardTree" onRender={handleProfilerRender}>
-              <BoardTree document={boardDocument} />
+              <BoardTree
+                document={boardDocument}
+                boardLocationKind={settingsDraft.boardLocationKind}
+                canSwitchLocation={diagnostics?.platform === "win32"}
+                onBoardLocationChange={(location) => void handleBoardLocationChange(location)}
+              />
             </Profiler>
           </aside>
         </div>

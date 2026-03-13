@@ -19,11 +19,13 @@ export async function readAppSettings(filePath = DEFAULT_SETTINGS_STORE_PATH): P
   const resolvedPath = expandHomePath(filePath);
   try {
     const content = await readFile(resolvedPath, "utf8");
-    const parsed = JSON.parse(content) as Partial<AppSettings>;
+    const parsed = JSON.parse(content) as Partial<AppSettings> & { boardPath?: string };
     const normalized = normalizeSettingsForPlatform(
       createDefaultAppSettings({
         ...parsed,
-        boardPath: normalizeBoardDocumentPath(parsed.boardPath)
+        boardPath: normalizeBoardDocumentPath(parsed.boardPath),
+        ...(parsed.hostBoardPath ? { hostBoardPath: normalizeBoardDocumentPath(parsed.hostBoardPath) } : {}),
+        ...(parsed.wslBoardPath ? { wslBoardPath: normalizeBoardDocumentPath(parsed.wslBoardPath) } : {})
       })
     );
     if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
@@ -43,7 +45,8 @@ export async function writeAppSettings(settings: AppSettings, filePath = DEFAULT
   const normalized = normalizeSettingsForPlatform(
     createDefaultAppSettings({
       ...settings,
-      boardPath: normalizeBoardDocumentPath(settings.boardPath),
+      hostBoardPath: normalizeBoardDocumentPath(settings.hostBoardPath),
+      wslBoardPath: normalizeBoardDocumentPath(settings.wslBoardPath),
       updatedAt: nowIso()
     })
   );
@@ -68,7 +71,7 @@ function normalizeSettingsForPlatform(settings: AppSettings): AppSettings {
   if (
     process.platform === "win32" &&
     normalized.boardLocationKind === "host" &&
-    normalized.boardPath === "~/.agent-watchboard/board.json" &&
+    normalized.hostBoardPath === "~/.agent-watchboard/board.json" &&
     !normalized.boardWslDistro
   ) {
     return {

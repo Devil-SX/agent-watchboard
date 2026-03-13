@@ -32,7 +32,8 @@ import {
   type SkillEntry,
   type TerminalInstance,
   Workspace,
-  createDefaultAppSettings
+  createDefaultAppSettings,
+  getActiveBoardPath
 } from "@shared/schema";
 import { createPerfEvent, type PerfEvent } from "@shared/perf";
 import { PerfRecorder } from "@shared/perfNode";
@@ -267,9 +268,10 @@ async function spawnSupervisor(): Promise<void> {
 
 async function selectBoard(settings: AppSettings): Promise<BoardDocument> {
   const startedAt = performance.now();
+  const activeBoardPath = getActiveBoardPath(settings);
   log.info("selectBoard:start", {
     boardLocationKind: settings.boardLocationKind,
-    boardPath: settings.boardPath
+    boardPath: activeBoardPath
   });
   stopWatchingBoard?.();
   currentBoard = await loadBoardDocument(settings);
@@ -284,7 +286,7 @@ async function selectBoard(settings: AppSettings): Promise<BoardDocument> {
     durationMs: performance.now() - startedAt,
     extra: {
       boardLocationKind: settings.boardLocationKind,
-      boardPath: settings.boardPath,
+      boardPath: activeBoardPath,
       sectionCount: currentBoard.sections.length,
       itemCount: currentBoard.sections.reduce((count, section) => count + section.items.length, 0)
     }

@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
-import type { BoardDocument, BoardItem, BoardSection } from "@shared/schema";
+import { LocationBadge } from "@renderer/components/LocationBadge";
+import type { AgentPathLocation, BoardDocument, BoardItem, BoardSection } from "@shared/schema";
 
 type Props = {
   document: BoardDocument | null;
+  boardLocationKind: AgentPathLocation;
+  canSwitchLocation: boolean;
+  onBoardLocationChange: (location: AgentPathLocation) => void;
 };
 
 type SelectedBoardItem = {
@@ -40,7 +44,7 @@ type CalendarCell = {
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
-export function BoardTree({ document }: Props): ReactElement {
+export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBoardLocationChange }: Props): ReactElement {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<BoardViewMode>("list");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -86,6 +90,13 @@ export function BoardTree({ document }: Props): ReactElement {
     <div className="board-tree-shell">
       <div className="board-toolbar">
         <div className="board-toolbar-group">
+          {canSwitchLocation ? (
+            <CompactToggleButton
+              label="Path"
+              value={<LocationBadge location={boardLocationKind} />}
+              onClick={() => onBoardLocationChange(boardLocationKind === "host" ? "wsl" : "host")}
+            />
+          ) : null}
           <CompactToggleButton
             label="View"
             value={viewMode === "list" ? "List" : "Calendar"}

@@ -8,7 +8,7 @@ type Props = {
   isDirty: boolean;
   isSaving: boolean;
   onChange: (
-    field: "terminalFontFamily" | "terminalFontSize" | "boardPath" | "boardLocationKind" | "boardWslDistro",
+    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardLocationKind" | "boardWslDistro",
     value: string | number
   ) => void;
   onSave: () => void;
@@ -51,8 +51,12 @@ export function SettingsPanel({
           <p className="panel-eyebrow">Shared Board</p>
           <div className="form-grid">
             <label className="field">
-              <span>Board Path</span>
-              <input value={settings.boardPath} onChange={(event) => onChange("boardPath", event.target.value)} />
+              <span>Host Board Path</span>
+              <input value={settings.hostBoardPath} onChange={(event) => onChange("hostBoardPath", event.target.value)} />
+            </label>
+            <label className="field">
+              <span>WSL Board Path</span>
+              <input value={settings.wslBoardPath} onChange={(event) => onChange("wslBoardPath", event.target.value)} />
             </label>
             <label className="field">
               <span>Board Target</span>
