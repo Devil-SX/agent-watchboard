@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-03-13
+
+> **Code Stats** | Total: 20630 lines | Delta: +3 (-3) = **+0 net** | Change: **+0.00%** vs v0.6.0
+
+### Changed
+- Upgraded the GitHub Actions CI workflow from `actions/checkout@v4` and `actions/setup-node@v4` to `v5` to remove the Node 20 deprecation warning while keeping the existing CI steps unchanged.
+
 ## [0.6.0] - 2026-03-13
 
 > **Code Stats** | Total: 20555 lines | Delta: +168 (-12) = **+156 net** | Change: **+0.76%** vs v0.5.3
