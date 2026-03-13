@@ -10,6 +10,7 @@ import log from "electron-log/main.js";
 
 import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
 import { completeTerminalPath } from "@main/pathCompletion";
+import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
 import { readAppSettings, writeAppSettings } from "@shared/settings";
 import {
   AGENT_CONFIG_FILES,
@@ -502,53 +503,55 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:list-skills", async (): Promise<SkillEntry[]> => {
-    const home = homedir();
+    const homes = await resolveAgentHomes();
     const skills: SkillEntry[] = [];
 
-    // Scan ~/.codex/skills/*/SKILL.md
-    const codexSkillsDir = join(home, ".codex", "skills");
-    try {
-      const entries = readdirSync(codexSkillsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const skillMdPath = join(codexSkillsDir, entry.name, "SKILL.md");
-          if (existsSync(skillMdPath)) {
-            skills.push({ name: entry.name, source: "codex", skillMdPath });
+    for (const home of homes) {
+      // Scan ~/.codex/skills/*/SKILL.md
+      const codexSkillsDir = join(home, ".codex", "skills");
+      try {
+        const entries = readdirSync(codexSkillsDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const skillMdPath = join(codexSkillsDir, entry.name, "SKILL.md");
+            if (existsSync(skillMdPath)) {
+              skills.push({ name: entry.name, source: "codex", skillMdPath });
+            }
           }
         }
+      } catch {
+        // directory may not exist
       }
-    } catch {
-      // directory may not exist
-    }
 
-    // Scan ~/.claude/commands/*.md
-    const claudeCommandsDir = join(home, ".claude", "commands");
-    try {
-      const entries = readdirSync(claudeCommandsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith(".md")) {
-          const skillMdPath = join(claudeCommandsDir, entry.name);
-          skills.push({ name: entry.name.replace(/\.md$/, ""), source: "claude-command", skillMdPath });
-        }
-      }
-    } catch {
-      // directory may not exist
-    }
-
-    // Scan ~/.claude/skills/*/SKILL.md
-    const claudeSkillsDir = join(home, ".claude", "skills");
-    try {
-      const entries = readdirSync(claudeSkillsDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const skillMdPath = join(claudeSkillsDir, entry.name, "SKILL.md");
-          if (existsSync(skillMdPath)) {
-            skills.push({ name: entry.name, source: "claude-skill", skillMdPath });
+      // Scan ~/.claude/commands/*.md
+      const claudeCommandsDir = join(home, ".claude", "commands");
+      try {
+        const entries = readdirSync(claudeCommandsDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile() && entry.name.endsWith(".md")) {
+            const skillMdPath = join(claudeCommandsDir, entry.name);
+            skills.push({ name: entry.name.replace(/\.md$/, ""), source: "claude-command", skillMdPath });
           }
         }
+      } catch {
+        // directory may not exist
       }
-    } catch {
-      // directory may not exist
+
+      // Scan ~/.claude/skills/*/SKILL.md
+      const claudeSkillsDir = join(home, ".claude", "skills");
+      try {
+        const entries = readdirSync(claudeSkillsDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const skillMdPath = join(claudeSkillsDir, entry.name, "SKILL.md");
+            if (existsSync(skillMdPath)) {
+              skills.push({ name: entry.name, source: "claude-skill", skillMdPath });
+            }
+          }
+        }
+      } catch {
+        // directory may not exist
+      }
     }
 
     return skills;
@@ -565,7 +568,7 @@ function setupIpc(): void {
   ipcMain.handle("watchboard:read-agent-config", async (_event, configId: string): Promise<string> => {
     const entry = AGENT_CONFIG_FILES.find((c) => c.id === configId);
     if (!entry) return "";
-    const filePath = entry.path.replace(/^~/, homedir());
+    const filePath = await resolveAgentConfigPath(entry.path);
     try {
       return await readFile(filePath, "utf8");
     } catch {
@@ -576,9 +579,37 @@ function setupIpc(): void {
   ipcMain.handle("watchboard:write-agent-config", async (_event, configId: string, content: string): Promise<void> => {
     const entry = AGENT_CONFIG_FILES.find((c) => c.id === configId);
     if (!entry) throw new Error(`Unknown config: ${configId}`);
-    const filePath = entry.path.replace(/^~/, homedir());
+    const filePath = await resolveAgentConfigPath(entry.path);
     await writeFile(filePath, content, "utf8");
   });
+}
+
+async function resolveAgentHomes(): Promise<string[]> {
+  const nativeHome = homedir();
+  if (process.platform !== "win32") {
+    return [nativeHome];
+  }
+  // On Windows, try WSL home first, then fall back to native
+  try {
+    const distro = await resolveWslDistro();
+    const wslLinuxHome = await resolveWslHome(distro);
+    const wslWindowsHome = `\\\\wsl.localhost\\${distro}${wslLinuxHome.replaceAll("/", "\\")}`;
+    return [wslWindowsHome, nativeHome];
+  } catch {
+    return [nativeHome];
+  }
+}
+
+async function resolveAgentConfigPath(tildeRelPath: string): Promise<string> {
+  const homes = await resolveAgentHomes();
+  for (const home of homes) {
+    const candidate = tildeRelPath.replace(/^~/, home);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  // Default to first home (will create file there if needed)
+  return tildeRelPath.replace(/^~/, homes[0]!);
 }
 
 async function bootstrap(): Promise<void> {
