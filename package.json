@@ -1,6 +1,6 @@
 {
   "name": "agent-watchboard",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Desktop watchboard for orchestrating multiple code agents with PTY-backed terminals and JSON todo boards.",
@@ -20,7 +20,8 @@
     "dist:linux": "pnpm build && electron-builder --linux AppImage",
     "dist:win": "node scripts/dist-win.mjs",
     "dist:win:portable": "pnpm build && electron-builder --win portable",
-    "dist": "pnpm dist:linux && pnpm dist:win"
+    "dist": "pnpm dist:linux && pnpm dist:win",
+    "lint:css": "stylelint 'src/**/*.css'"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
@@ -47,6 +48,8 @@
     "electron": "^37.4.0",
     "electron-builder": "^26.0.12",
     "electron-vite": "^4.0.0",
+    "stylelint": "^17.4.0",
+    "stylelint-config-standard": "^40.0.0",
     "tsup": "^8.5.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",

@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-03-13
+
+> **Code Stats** | Total: 10394 | Delta: +68 (-31) = +37 | Change: +0.36% vs 0.1.1
+
+### Added
+- Added stylelint with standard config for CSS linting.
+
+### Changed
+- Disabled FlexLayout built-in tab close button by defaulting `enableClose` to `false` across schema and tab creation.
+
+### Fixed
+- Fixed scrollbar hover bleed so hovering the sidebar or board no longer triggers workbench scrollbar visibility; each panel's scrollbars now respond independently.
+- Fixed external workspace drag into workbench using a deferred placeholder approach to avoid reading drag data before the drop event.
+- Removed all `:focus-within` scrollbar triggers and deprecated `overflow: overlay` declarations.
+
 ## [0.1.1] - 2026-03-12
 
 > **Code Stats** | Total: 15196 | Delta: +102 (-9) = +93 | Change: +0.62% vs 0.1.0

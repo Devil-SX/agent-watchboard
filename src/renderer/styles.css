@@ -780,8 +780,7 @@ textarea::placeholder {
   background-clip: padding-box;
 }
 
-.workbench-layout:hover .flexlayout__tabset_tabbar_inner::-webkit-scrollbar-thumb,
-.workbench-layout:focus-within .flexlayout__tabset_tabbar_inner::-webkit-scrollbar-thumb {
+.flexlayout__tabset:hover .flexlayout__tabset_tabbar_inner::-webkit-scrollbar-thumb {
   background: rgba(149, 176, 191, 0.34);
   background-clip: padding-box;
 }
@@ -799,10 +798,39 @@ textarea::placeholder {
 }
 
 .workbench-layout .flexlayout__mini_scrollbar:hover,
-.workbench-layout .flexlayout__mini_scrollbar_container:hover .flexlayout__mini_scrollbar,
-.workbench-layout:focus-within .flexlayout__mini_scrollbar {
+.workbench-layout .flexlayout__mini_scrollbar_container:hover .flexlayout__mini_scrollbar {
   opacity: 1;
   background: rgba(149, 176, 191, 0.42);
+}
+
+.workbench-layout .flexlayout__tab {
+  scrollbar-width: none;
+}
+
+.workbench-layout .flexlayout__tab::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.workbench-layout .flexlayout__tab::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+}
+
+.flexlayout__tabset:hover .flexlayout__tab::-webkit-scrollbar-thumb {
+  background: rgba(149, 176, 191, 0.34);
+  background-clip: padding-box;
+}
+
+.workbench-layout .flexlayout__tab::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.flexlayout__tabset:hover .flexlayout__tab {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(149, 176, 191, 0.34) transparent;
 }
 
 .workbench-layout .flexlayout__tab_button_content {
@@ -1093,7 +1121,6 @@ textarea::placeholder {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  overflow: overlay;
   padding-top: 6px;
   padding-right: 6px;
 }
@@ -1104,20 +1131,14 @@ textarea::placeholder {
 .board-tree,
 .terminal-fallback {
   overflow: auto;
-  overflow: overlay;
   scrollbar-width: none;
 }
 
 .workspace-list:hover,
-.workspace-list:focus-within,
 .settings-panel-body:hover,
-.settings-panel-body:focus-within,
 .config-drawer-body:hover,
-.config-drawer-body:focus-within,
 .board-tree:hover,
-.board-tree:focus-within,
-.terminal-fallback:hover,
-.terminal-fallback:focus-within {
+.terminal-fallback:hover {
   scrollbar-width: thin;
   scrollbar-color: rgba(149, 176, 191, 0.34) transparent;
 }
@@ -1143,15 +1164,10 @@ textarea::placeholder {
 }
 
 .workspace-list:hover::-webkit-scrollbar-thumb,
-.workspace-list:focus-within::-webkit-scrollbar-thumb,
 .settings-panel-body:hover::-webkit-scrollbar-thumb,
-.settings-panel-body:focus-within::-webkit-scrollbar-thumb,
 .config-drawer-body:hover::-webkit-scrollbar-thumb,
-.config-drawer-body:focus-within::-webkit-scrollbar-thumb,
 .board-tree:hover::-webkit-scrollbar-thumb,
-.board-tree:focus-within::-webkit-scrollbar-thumb,
-.terminal-fallback:hover::-webkit-scrollbar-thumb,
-.terminal-fallback:focus-within::-webkit-scrollbar-thumb {
+.terminal-fallback:hover::-webkit-scrollbar-thumb {
   background: rgba(149, 176, 191, 0.34);
   background-clip: padding-box;
 }

@@ -46,6 +46,7 @@ export function WorkbenchView({
   const lastLayoutRef = useRef(serializedLayout);
   const [model, setModel] = useState(() => Model.fromJson(workbench.layoutModel as never));
   const [isDragActive, setIsDragActive] = useState(false);
+  const dragWorkspaceIdRef = useRef<string | null>(null);
   const instanceMap = useMemo(
     () => new Map(workbench.instances.map((instance) => [instance.instanceId, instance] as const)),
     [workbench.instances]
@@ -77,8 +78,12 @@ export function WorkbenchView({
 
   function handleModelChange(nextModel: Model, action?: Action): void {
     if (action?.type === Actions.ADD_NODE) {
-      const pendingWorkspaceId = getPendingWorkspaceId(action);
-      if (pendingWorkspaceId) {
+      let pendingWorkspaceId = getPendingWorkspaceId(action);
+      if (pendingWorkspaceId === "__drag_placeholder__" && dragWorkspaceIdRef.current) {
+        pendingWorkspaceId = dragWorkspaceIdRef.current;
+        dragWorkspaceIdRef.current = null;
+      }
+      if (pendingWorkspaceId && pendingWorkspaceId !== "__drag_placeholder__") {
         const openMode = mapDockLocationToOpenMode(action.data.location);
         const anchorPaneId = resolveAnchorPaneId(nextModel, action.data.toNode);
         lastLayoutRef.current = serializedLayout;
@@ -248,7 +253,15 @@ export function WorkbenchView({
             <span>Drag from the left list, or create a new pane from the toolbar.</span>
           </div>
         ) : null}
-        <div className="workbench-layout flexlayout__theme_dark">
+        <div
+          className="workbench-layout flexlayout__theme_dark"
+          onDropCapture={(event) => {
+            const workspaceId = event.dataTransfer.getData("application/x-watchboard-workspace-id");
+            if (workspaceId) {
+              dragWorkspaceIdRef.current = workspaceId;
+            }
+          }}
+        >
           <Layout
             ref={layoutRef}
             model={model}
@@ -259,16 +272,21 @@ export function WorkbenchView({
               if (workbench.instances.length === 0) {
                 return undefined;
               }
-              const workspaceId = event.dataTransfer.getData("application/x-watchboard-workspace-id");
-              if (!workspaceId) {
-                return undefined;
-              }
-              const workspace = workspaceMap.get(workspaceId);
-              if (!workspace) {
+              if (!event.dataTransfer.types.includes("application/x-watchboard-workspace-id")) {
                 return undefined;
               }
               return {
-                json: createExternalWorkspaceTab(workspace),
+                json: {
+                  type: "tab",
+                  id: "pending-external-drag",
+                  name: "Workspace",
+                  component: "terminal-instance",
+                  enableClose: false,
+                  config: {
+                    pendingWorkspaceId: "__drag_placeholder__",
+                    pendingLabel: "Workspace"
+                  }
+                },
                 onDrop: () => {
                   setIsDragActive(false);
                 }
