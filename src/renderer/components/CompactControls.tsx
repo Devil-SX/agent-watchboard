@@ -13,6 +13,7 @@ type DropdownOption<T extends string> = {
   value: T;
   label: string;
   icon?: ReactNode;
+  content?: ReactNode;
 };
 
 type DropdownProps<T extends string> = {
@@ -105,8 +106,18 @@ export function CompactDropdown<T extends string>({ label, value, options, onCha
       >
         <span className="compact-control-label">{label}</span>
         <span className="compact-dropdown-value">
-          {selected?.icon ? <span className="compact-dropdown-icon">{selected.icon}</span> : null}
-          <strong className="compact-control-value">{selected?.label}</strong>
+          {selected ? (
+            <span className="compact-dropdown-option-content">
+              {selected.content ? (
+                selected.content
+              ) : (
+                <>
+                  {selected.icon ? <span className="compact-dropdown-icon">{selected.icon}</span> : null}
+                  <strong className="compact-control-value">{selected.label}</strong>
+                </>
+              )}
+            </span>
+          ) : null}
         </span>
         <span className="compact-dropdown-caret" aria-hidden="true">
           <ChevronDownIcon />
@@ -125,8 +136,14 @@ export function CompactDropdown<T extends string>({ label, value, options, onCha
                     onChange(option.value);
                   }}
                 >
-                  {option.icon ? <span className="compact-dropdown-icon">{option.icon}</span> : null}
-                  <span>{option.label}</span>
+                  {option.content ? (
+                    <span className="compact-dropdown-option-content">{option.content}</span>
+                  ) : (
+                    <>
+                      {option.icon ? <span className="compact-dropdown-icon">{option.icon}</span> : null}
+                      <span>{option.label}</span>
+                    </>
+                  )}
                 </button>
               ))}
             </div>,

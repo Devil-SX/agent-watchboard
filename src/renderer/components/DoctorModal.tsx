@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
+import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown } from "@renderer/components/CompactControls";
-import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
+import { LocationBadge } from "@renderer/components/LocationBadge";
 import type {
   DiagnosticsInfo,
   DoctorAgent,
@@ -17,8 +18,8 @@ type Props = {
 };
 
 const DOCTOR_AGENT_OPTIONS = [
-  { label: "Codex", value: "codex" as const, icon: <CodexIcon /> },
-  { label: "Claude", value: "claude" as const, icon: <ClaudeIcon /> }
+  { label: "Codex", value: "codex" as const, content: <AgentBadge agent="codex" /> },
+  { label: "Claude", value: "claude" as const, content: <AgentBadge agent="claude" /> }
 ];
 
 export function DoctorModal({ diagnostics, isOpen, onClose }: Props): ReactElement | null {
@@ -32,10 +33,10 @@ export function DoctorModal({ diagnostics, isOpen, onClose }: Props): ReactEleme
     () =>
       isWindows
         ? [
-            { label: "Host", value: "host" as const },
-            { label: "WSL", value: "wsl" as const }
+            { label: "Host", value: "host" as const, content: <LocationBadge location="host" /> },
+            { label: "WSL", value: "wsl" as const, content: <LocationBadge location="wsl" /> }
           ]
-        : [{ label: "Host", value: "host" as const }],
+        : [{ label: "Host", value: "host" as const, content: <LocationBadge location="host" /> }],
     [isWindows]
   );
   const activeKey = `${location}:${agent}`;
@@ -137,7 +138,10 @@ export function DoctorModal({ diagnostics, isOpen, onClose }: Props): ReactEleme
                     setAgent(result.agent);
                   }}
                 >
-                  <strong>{result.location.toUpperCase()} · {result.agent}</strong>
+                  <strong className="doctor-result-heading">
+                    <LocationBadge location={result.location} tone="strong" />
+                    <AgentBadge agent={result.agent} tone="strong" />
+                  </strong>
                   <span>{result.status === "success" ? "Healthy" : "Failed"}</span>
                   <span>{new Date(result.finishedAt).toLocaleString()}</span>
                 </button>
@@ -166,7 +170,8 @@ function DoctorResultDetail({ result }: { result: DoctorCheckResult }): ReactEle
         <span className={result.status === "success" ? "entry-badge" : "entry-badge doctor-badge-error"}>
           {result.status === "success" ? "Healthy" : "Failed"}
         </span>
-        <span>{result.location.toUpperCase()} · {result.agent}</span>
+        <LocationBadge location={result.location} tone="strong" />
+        <AgentBadge agent={result.agent} tone="strong" />
         <span>{Math.round(result.durationMs)} ms</span>
         <span>{new Date(result.finishedAt).toLocaleString()}</span>
       </div>

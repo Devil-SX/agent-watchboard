@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 
+import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
-import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
 import type { AgentConfigDocument, AgentConfigEntry, AgentConfigFamily, AgentPathLocation, DiagnosticsInfo } from "@shared/schema";
 
@@ -97,8 +97,8 @@ export function AgentConfigPanel(): ReactElement {
             value={familyFilter}
             options={[
               { label: "All", value: "all" },
-              { label: "Codex", value: "codex", icon: <CodexIcon /> },
-              { label: "Claude", value: "claude", icon: <ClaudeIcon /> }
+              { label: "Codex", value: "codex", content: <AgentBadge agent="codex" /> },
+              { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> }
             ]}
             onChange={setFamilyFilter}
           />
@@ -155,6 +155,7 @@ export function AgentConfigPanel(): ReactElement {
           {activeEntry ? (
             <>
               <div className="entry-context-strip is-compact">
+                <AgentBadge agent={activeEntry.family} tone="strong" />
                 <LocationBadge location={activeEntry.location} tone="strong" />
                 <span className="entry-context-copy">{getLocationLabel(activeEntry.location)} config source</span>
               </div>

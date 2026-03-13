@@ -2014,6 +2014,11 @@ textarea::placeholder {
   gap: 6px;
 }
 
+.field .compact-dropdown,
+.field .compact-control-button {
+  width: 100%;
+}
+
 .path-field-shell {
   position: relative;
   display: grid;
@@ -2246,6 +2251,13 @@ textarea::placeholder {
   min-width: 0;
 }
 
+.compact-dropdown-option-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .compact-dropdown-icon {
   display: inline-flex;
   width: 14px;
@@ -2299,6 +2311,13 @@ textarea::placeholder {
 .compact-dropdown-option:hover,
 .compact-dropdown-option.is-active {
   background: rgba(142, 199, 255, 0.1);
+}
+
+.compact-dropdown-option .location-badge,
+.compact-dropdown-option .agent-badge,
+.compact-dropdown-value .location-badge,
+.compact-dropdown-value .agent-badge {
+  font-size: 0.7rem;
 }
 
 .skills-panel-body {
@@ -2473,6 +2492,60 @@ textarea::placeholder {
 .location-badge-icon svg {
   width: 100%;
   height: 100%;
+}
+
+.agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  padding: 0.16rem 0.44rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.agent-badge.is-codex {
+  border-color: rgba(16, 163, 127, 0.34);
+  background: rgba(16, 163, 127, 0.14);
+  color: #71ddb8;
+}
+
+.agent-badge.is-claude {
+  border-color: rgba(212, 162, 127, 0.34);
+  background: rgba(212, 162, 127, 0.14);
+  color: #efc3a4;
+}
+
+.agent-badge.is-strong {
+  padding-inline: 0.54rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.agent-badge-icon {
+  display: inline-flex;
+  width: 0.84rem;
+  height: 0.84rem;
+  flex: none;
+}
+
+.agent-badge-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.workspace-identity-stack .location-badge {
+  justify-content: center;
+  min-width: 3rem;
+}
+
+.doctor-result-heading {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .entry-meta {

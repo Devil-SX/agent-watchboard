@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
+import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
@@ -163,8 +164,8 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp }
             value={familyFilter}
             options={[
               { label: "All", value: "all" },
-              { label: "Codex", value: "codex", icon: <CodexIcon /> },
-              { label: "Claude", value: "claude", icon: <ClaudeIcon /> }
+              { label: "Codex", value: "codex", content: <AgentBadge agent="codex" /> },
+              { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> }
             ]}
             onChange={setFamilyFilter}
           />
@@ -190,8 +191,8 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp }
               label="Agent"
               value={chatAgent}
               options={[
-                { label: "Codex", value: "codex", icon: <CodexIcon /> },
-                { label: "Claude", value: "claude", icon: <ClaudeIcon /> }
+                { label: "Codex", value: "codex", content: <AgentBadge agent="codex" /> },
+                { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> }
               ]}
               onChange={setChatAgent}
             />
@@ -238,6 +239,7 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp }
                     {selectedSkill.isSymlink ? <span className="entry-badge">Softlink</span> : null}
                   </div>
                   <div className="entry-context-strip">
+                    <AgentBadge agent={selectedSkill.source === "codex" ? "codex" : "claude"} tone="strong" />
                     <LocationBadge location={selectedSkill.location} tone="strong" />
                     <span className="entry-context-copy">{getLocationLabel(selectedSkill.location)} skill source</span>
                   </div>

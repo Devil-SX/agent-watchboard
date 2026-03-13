@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ChevronDownIcon, ClaudeIcon, CodexIcon, IconButton, PlusIcon, TrashIcon } from "@renderer/components/IconButton";
+import { LocationBadge } from "@renderer/components/LocationBadge";
 import {
   describeTerminalLaunchShort,
   detectAgentKind,
@@ -210,9 +212,7 @@ export function WorkspaceSidebar({
                       }
                       return <span className="workspace-agent-icon is-placeholder" aria-hidden="true" />;
                     })()}
-                    <span className={environment === "wsl" ? "workspace-environment-tag is-wsl" : "workspace-environment-tag"}>
-                      {environment === "wsl" ? "WSL" : "Host"}
-                    </span>
+                    <LocationBadge location={environment} />
                   </span>
                   <span className="workspace-list-copy">
                     <span className="workspace-list-title-row">
@@ -344,17 +344,17 @@ export function WorkspaceSidebar({
   );
 }
 
-const WORKSPACE_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceFilterMode; icon?: ReactNode }> = [
+const WORKSPACE_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceFilterMode; icon?: ReactNode; content?: ReactNode }> = [
   { label: "All", value: "all" },
-  { label: "Codex", value: "codex", icon: <CodexIcon /> },
-  { label: "Claude", value: "claude", icon: <ClaudeIcon /> },
+  { label: "Codex", value: "codex", content: <AgentBadge agent="codex" /> },
+  { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> },
   { label: "Other", value: "other" }
 ];
 
-const WORKSPACE_ENVIRONMENT_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceEnvironmentFilterMode }> = [
+const WORKSPACE_ENVIRONMENT_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceEnvironmentFilterMode; content?: ReactNode }> = [
   { label: "All", value: "all" },
-  { label: "Host", value: "host" },
-  { label: "WSL", value: "wsl" }
+  { label: "Host", value: "host", content: <LocationBadge location="host" /> },
+  { label: "WSL", value: "wsl", content: <LocationBadge location="wsl" /> }
 ];
 
 function groupInstances(instances: TerminalInstance[]): Map<string, TerminalInstance[]> {

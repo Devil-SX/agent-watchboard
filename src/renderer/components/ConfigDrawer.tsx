@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 
+import { AgentBadge } from "@renderer/components/AgentBadge";
+import { CompactDropdown } from "@renderer/components/CompactControls";
 import type { PathCompletionResult } from "@shared/ipc";
 import {
-  AGENT_PRESETS,
   buildPresetCommand,
   decomposePresetId,
   describeTerminalLaunch,
@@ -243,21 +244,20 @@ export function ConfigDrawer({
                 <>
                   <label className="field">
                     <span>Agent</span>
-                    <select
+                    <CompactDropdown
+                      label="Preset"
                       value={presetState.agent}
-                      onChange={(event) => {
-                        const agent = event.target.value as PresetAgent;
+                      options={[
+                        { label: "Codex", value: "codex", content: <AgentBadge agent="codex" /> },
+                        { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> }
+                      ]}
+                      onChange={(value) => {
+                        const agent = value as PresetAgent;
                         const command = buildPresetCommand(agent, presetState.continueMode, presetState.skipMode);
                         const presetId = findPresetId(agent, presetState.continueMode, presetState.skipMode);
                         onTerminalChange({ startupPresetId: presetId, startupCommand: command });
                       }}
-                    >
-                      {(Object.keys(AGENT_PRESETS) as PresetAgent[]).map((agent) => (
-                        <option key={agent} value={agent}>
-                          {agent.charAt(0).toUpperCase() + agent.slice(1)}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </label>
                   <label className="field checkbox-field">
                     <span>Continue</span>

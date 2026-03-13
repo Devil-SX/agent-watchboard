@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-03-13
+
+> **Code Stats** | Total: 21160 lines | Delta: +172 (-45) = **+127 net** | Change: **+0.60%** vs v0.7.1
+
+### Added
+- Added a reusable `AgentBadge` visual system for Codex and Claude identity so agent selectors and metadata can share the same icon, color, and spacing treatment.
+
+### Changed
+- Upgraded compact dropdown controls to render badge-based options, allowing Host/WSL and Codex/Claude selections to stay dense without falling back to plain text labels.
+- Unified Host/WSL and Codex/Claude treatments across Workspace filters, Skills, Agent Config, Doctor diagnostics, Settings board-target selection, and Config Drawer preset-agent selection.
+
 ## [0.7.1] - 2026-03-13
 
 > **Code Stats** | Total: 21033 lines | Delta: +38 (-30) = **+8 net** | Change: **+0.04%** vs v0.7.0

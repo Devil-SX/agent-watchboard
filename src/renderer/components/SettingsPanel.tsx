@@ -1,5 +1,7 @@
 import type { ReactElement } from "react";
 
+import { CompactDropdown } from "@renderer/components/CompactControls";
+import { LocationBadge } from "@renderer/components/LocationBadge";
 import { TERMINAL_FONT_PRESETS, type AppSettings, type DiagnosticsInfo } from "@shared/schema";
 
 type Props = {
@@ -60,13 +62,15 @@ export function SettingsPanel({
             </label>
             <label className="field">
               <span>Board Target</span>
-              <select
+              <CompactDropdown
+                label="Target"
                 value={settings.boardLocationKind}
-                onChange={(event) => onChange("boardLocationKind", event.target.value)}
-              >
-                <option value="host">Host</option>
-                <option value="wsl">WSL</option>
-              </select>
+                options={[
+                  { label: "Host", value: "host", content: <LocationBadge location="host" /> },
+                  { label: "WSL", value: "wsl", content: <LocationBadge location="wsl" /> }
+                ]}
+                onChange={(value) => onChange("boardLocationKind", value)}
+              />
             </label>
             {settings.boardLocationKind === "wsl" ? (
               <label className="field">
