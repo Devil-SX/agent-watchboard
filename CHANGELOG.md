@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-03-13
+
+> **Code Stats** | Total: 20392 lines | Delta: +80 (-1) = **+79 net** | Change: **+0.39%** vs v0.5.2
+
+### Added
+- Expanded the README with `todo_preview` skill onboarding, board-path assumptions, and practical command examples for listing, adding, updating, moving, renaming, and importing task data.
+
 ## [0.5.2] - 2026-03-13
 
 > **Code Stats** | Total: 20305 lines | Delta: +94 (-12) = **+82 net** | Change: **+0.41%** vs v0.5.1
