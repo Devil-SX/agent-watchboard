@@ -14,3 +14,5 @@ debug-bundle/
 **/settings.json
 **/supervisor-state.json
 **/board.json
+test-results/
+playwright-report/

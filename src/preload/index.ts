@@ -50,7 +50,11 @@ const api: WatchboardApi = {
     const wrapped = (_event: unknown, document: unknown) => listener(document as never);
     ipcRenderer.on("board-update", wrapped);
     return () => ipcRenderer.removeListener("board-update", wrapped);
-  }
+  },
+  listSkills: () => ipcRenderer.invoke("watchboard:list-skills"),
+  readSkillContent: (skillPath) => ipcRenderer.invoke("watchboard:read-skill-content", skillPath),
+  readAgentConfig: (configId) => ipcRenderer.invoke("watchboard:read-agent-config", configId),
+  writeAgentConfig: (configId, content) => ipcRenderer.invoke("watchboard:write-agent-config", configId, content)
 };
 
 contextBridge.exposeInMainWorld("watchboard", api);

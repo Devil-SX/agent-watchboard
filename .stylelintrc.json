@@ -1,7 +1,9 @@
 {
   "extends": "stylelint-config-standard",
   "rules": {
-    "declaration-property-value-no-unknown": true,
+    "declaration-property-value-no-unknown": [true, {
+      "propertiesSyntax": { "overflow": "| overlay", "overflow-x": "| overlay", "overflow-y": "| overlay" }
+    }],
     "alpha-value-notation": null,
     "color-function-alias-notation": null,
     "color-function-notation": null,

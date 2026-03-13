@@ -3,6 +3,7 @@ import type {
   BoardDocument,
   DiagnosticsInfo,
   SessionState,
+  SkillEntry,
   TerminalProfile,
   TerminalInstance,
   WorkbenchDocument,
@@ -47,4 +48,8 @@ export type WatchboardApi = {
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
   onSessionState: (listener: (session: SessionState) => void) => () => void;
   onBoardUpdate: (listener: (document: BoardDocument) => void) => () => void;
+  listSkills: () => Promise<SkillEntry[]>;
+  readSkillContent: (skillPath: string) => Promise<string>;
+  readAgentConfig: (configId: string) => Promise<string>;
+  writeAgentConfig: (configId: string, content: string) => Promise<void>;
 };
