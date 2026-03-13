@@ -131,3 +131,16 @@ export function CodexIcon({ className }: IconProps): ReactElement {
     </svg>
   );
 }
+
+export function DoctorIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 2.75h6" />
+      <path d="M8 2.75v2.5" />
+      <path d="M3.75 6.25h8.5" />
+      <path d="M6.25 9h3.5" />
+      <path d="M8 7.25v3.5" />
+      <rect x="2.75" y="4.75" width="10.5" height="8.5" rx="2.25" />
+    </svg>
+  );
+}

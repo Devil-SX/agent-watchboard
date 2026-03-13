@@ -18,6 +18,7 @@ export type RuntimePaths = {
   workspaceStorePath: string;
   workbenchStorePath: string;
   settingsStorePath: string;
+  doctorDiagnosticsPath: string;
   supervisorStatePath: string;
   defaultHostBoardPath: string;
   defaultWslBoardPath: string;
@@ -37,6 +38,7 @@ export function resolveRuntimePaths(baseDir: string): RuntimePaths {
     workspaceStorePath: join(baseDir, "workspaces.json"),
     workbenchStorePath: join(baseDir, "workbench.json"),
     settingsStorePath: join(baseDir, "settings.json"),
+    doctorDiagnosticsPath: join(baseDir, "doctor-diagnostics.json"),
     supervisorStatePath: join(baseDir, "supervisor-state.json"),
     defaultHostBoardPath: DEFAULT_BOARD_PATH,
     defaultWslBoardPath: DEFAULT_BOARD_PATH

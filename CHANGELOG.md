@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-13
+
+> **Code Stats** | Total: 18455 lines | Delta: +778 (-1) = **+777 net** | Change: **+4.27%** vs v0.3.4
+
+### Added
+- Added a Doctor utility entry in the main rail that opens a centered diagnostics modal instead of switching the primary content pane.
+- Added persisted headless diagnostics for `host/wsl × codex/claude` targets, including saved stdout, stderr, last-message output, status, timing, and command summaries.
+- Added unit-test coverage for doctor target keys, host-side command construction, and persisted diagnostic result storage.
+
+### Fixed
+- Added timeout protection to headless doctor checks so stalled agent invocations fail cleanly instead of hanging indefinitely.
+
 ## [0.3.4] - 2026-03-13
 
 > **Code Stats** | Total: 18201 lines | Delta: +113 (-2) = **+111 net** | Change: **+0.61%** vs v0.3.3

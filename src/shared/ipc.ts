@@ -4,6 +4,10 @@ import type {
   AgentPathLocation,
   AppSettings,
   BoardDocument,
+  DoctorAgent,
+  DoctorCheckResult,
+  DoctorDiagnosticsDocument,
+  DoctorLocation,
   DiagnosticsInfo,
   SessionState,
   SkillEntry,
@@ -56,4 +60,6 @@ export type WatchboardApi = {
   listAgentConfigs: (location: AgentPathLocation) => Promise<AgentConfigEntry[]>;
   readAgentConfig: (configId: string, location: AgentPathLocation) => Promise<AgentConfigDocument>;
   writeAgentConfig: (configId: string, location: AgentPathLocation, content: string) => Promise<void>;
+  getDoctorDiagnostics: () => Promise<DoctorDiagnosticsDocument>;
+  runDoctorCheck: (location: DoctorLocation, agent: DoctorAgent) => Promise<DoctorCheckResult>;
 };

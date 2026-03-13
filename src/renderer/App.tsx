@@ -3,10 +3,12 @@ import { Profiler, startTransition, useEffect, useRef, useState, type CSSPropert
 import { AgentConfigPanel } from "@renderer/components/AgentConfigPanel";
 import { BoardTree } from "@renderer/components/BoardTree";
 import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
+import { DoctorModal } from "@renderer/components/DoctorModal";
 import { SettingsPanel } from "@renderer/components/SettingsPanel";
 import { SkillsPanel } from "@renderer/components/SkillsPanel";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
+import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import {
   type AppSettings,
@@ -73,6 +75,7 @@ export function App(): ReactElement {
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [deleteSelection, setDeleteSelection] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<MainTabId>("terminal");
+  const [isDoctorOpen, setIsDoctorOpen] = useState(false);
 
   const savedWorkspace = workspaceList?.workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedWorkspace =
@@ -841,6 +844,13 @@ export function App(): ReactElement {
               {tab.label}
             </button>
           ))}
+          <div className="content-tab-spacer" />
+          <IconButton
+            className="content-tab-utility-button"
+            label="Doctor"
+            icon={<DoctorIcon />}
+            onClick={() => setIsDoctorOpen(true)}
+          />
         </nav>
 
         <div className="content-tab-panel">
@@ -863,6 +873,7 @@ export function App(): ReactElement {
         onWorkspaceFieldChange={handleWorkspaceFieldChange}
         onTerminalChange={handleTerminalChange}
       />
+      <DoctorModal diagnostics={diagnostics} isOpen={isDoctorOpen} onClose={() => setIsDoctorOpen(false)} />
     </main>
   );
 }

@@ -9,15 +9,20 @@ import { Menu, app, BrowserWindow, ipcMain } from "electron";
 import log from "electron-log/main.js";
 
 import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
+import { runDoctorCheck } from "@main/doctor";
 import { completeTerminalPath } from "@main/pathCompletion";
 import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery";
 import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
+import { readDoctorDiagnostics, upsertDoctorCheckResult } from "@shared/doctorDiagnostics";
 import { readAppSettings, writeAppSettings } from "@shared/settings";
 import {
   AGENT_CONFIG_FILES,
   type AgentConfigDocument,
   type AgentConfigEntry,
   type AgentConfigFileId,
+  type DoctorAgent,
+  type DoctorCheckResult,
+  type DoctorLocation,
   type AgentPathLocation,
   BoardDocument,
   type AppSettings,
@@ -563,6 +568,20 @@ function setupIpc(): void {
   ipcMain.handle("watchboard:list-agent-configs", async (_event, location: AgentPathLocation): Promise<AgentConfigEntry[]> => {
     const entries = await Promise.all(AGENT_CONFIG_FILES.map((entry) => buildAgentConfigEntry(entry.id, location)));
     return entries;
+  });
+
+  ipcMain.handle("watchboard:get-doctor-diagnostics", async () => {
+    return readDoctorDiagnostics(runtimePaths.doctorDiagnosticsPath);
+  });
+
+  ipcMain.handle("watchboard:run-doctor-check", async (_event, location: DoctorLocation, agent: DoctorAgent): Promise<DoctorCheckResult> => {
+    const result = await runDoctorCheck(location, agent, {
+      platform: process.platform,
+      hostHome: homedir(),
+      appDataDir: runtimePaths.appDataDir
+    });
+    await upsertDoctorCheckResult(result, runtimePaths.doctorDiagnosticsPath);
+    return result;
   });
 
   ipcMain.handle("watchboard:read-agent-config", async (_event, configId: AgentConfigFileId, location: AgentPathLocation): Promise<AgentConfigDocument> => {

@@ -55,7 +55,9 @@ const api: WatchboardApi = {
   readSkillContent: (skillPath) => ipcRenderer.invoke("watchboard:read-skill-content", skillPath),
   listAgentConfigs: (location) => ipcRenderer.invoke("watchboard:list-agent-configs", location),
   readAgentConfig: (configId, location) => ipcRenderer.invoke("watchboard:read-agent-config", configId, location),
-  writeAgentConfig: (configId, location, content) => ipcRenderer.invoke("watchboard:write-agent-config", configId, location, content)
+  writeAgentConfig: (configId, location, content) => ipcRenderer.invoke("watchboard:write-agent-config", configId, location, content),
+  getDoctorDiagnostics: () => ipcRenderer.invoke("watchboard:get-doctor-diagnostics"),
+  runDoctorCheck: (location, agent) => ipcRenderer.invoke("watchboard:run-doctor-check", location, agent)
 };
 
 contextBridge.exposeInMainWorld("watchboard", api);

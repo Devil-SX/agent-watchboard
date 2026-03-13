@@ -631,6 +631,11 @@ textarea::placeholder {
   background: var(--rail-bg);
 }
 
+.content-tab-spacer {
+  flex: 1;
+  min-height: 18px;
+}
+
 .content-tab-peninsula {
   position: absolute;
   left: 10px;
@@ -689,6 +694,12 @@ textarea::placeholder {
 .content-tab-button:hover,
 .content-tab-button.is-active {
   color: #f0f6fa;
+}
+
+.content-tab-utility-button {
+  align-self: flex-start;
+  margin-left: 10px;
+  margin-bottom: 10px;
 }
 
 .content-tab-panel {
@@ -1747,6 +1758,149 @@ textarea::placeholder {
   z-index: 20;
   border: 0;
   background: rgba(0, 0, 0, 0.34);
+}
+
+.doctor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  background: rgba(2, 6, 10, 0.56);
+  backdrop-filter: blur(6px);
+}
+
+.doctor-modal {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  z-index: 42;
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc(100vw - 64px));
+  height: min(720px, calc(100vh - 64px));
+  padding: 18px;
+  border: 1px solid var(--panel-border-strong);
+  border-radius: 24px;
+  background: rgba(10, 14, 19, 0.98);
+  box-shadow: var(--shadow);
+  transform: translate(-50%, -50%);
+}
+
+.doctor-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.doctor-modal-header h2 {
+  margin: 4px 0 0;
+  font-size: 1.02rem;
+}
+
+.doctor-modal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 10px;
+}
+
+.doctor-modal-body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+
+.doctor-result-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 0;
+  overflow: overlay;
+}
+
+.doctor-result-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  text-align: left;
+}
+
+.doctor-result-item:hover,
+.doctor-result-item.is-active {
+  border-color: rgba(142, 199, 255, 0.24);
+  background: rgba(142, 199, 255, 0.08);
+}
+
+.doctor-result-item span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.doctor-results-empty {
+  min-height: 140px;
+}
+
+.doctor-result-detail {
+  min-height: 0;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 18px;
+  background: rgba(6, 12, 18, 0.62);
+  overflow: hidden;
+}
+
+.doctor-detail-shell {
+  display: grid;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 14px;
+  overflow: overlay;
+}
+
+.doctor-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.doctor-badge-error {
+  background: rgba(255, 143, 166, 0.14);
+  color: #ffafbf;
+}
+
+.doctor-detail-section {
+  display: grid;
+  gap: 6px;
+}
+
+.doctor-detail-section strong {
+  font-size: 0.78rem;
+}
+
+.doctor-detail-section code,
+.doctor-detail-section pre {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(3, 8, 12, 0.88);
+  color: #dce8ef;
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+  font-size: 0.77rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .config-drawer-header {

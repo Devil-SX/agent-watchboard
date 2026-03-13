@@ -429,6 +429,46 @@ export type DiagnosticsInfo = {
   defaultWslBoardPath: string;
 };
 
+export const DoctorAgentSchema = z.enum(["codex", "claude"]);
+export type DoctorAgent = z.infer<typeof DoctorAgentSchema>;
+
+export const DoctorLocationSchema = z.enum(["host", "wsl"]);
+export type DoctorLocation = z.infer<typeof DoctorLocationSchema>;
+
+export const DoctorCheckStatusSchema = z.enum(["success", "error"]);
+export type DoctorCheckStatus = z.infer<typeof DoctorCheckStatusSchema>;
+
+export const DoctorTargetSchema = z.object({
+  agent: DoctorAgentSchema,
+  location: DoctorLocationSchema
+});
+export type DoctorTarget = z.infer<typeof DoctorTargetSchema>;
+
+export const DoctorCheckResultSchema = z.object({
+  key: z.string(),
+  agent: DoctorAgentSchema,
+  location: DoctorLocationSchema,
+  status: DoctorCheckStatusSchema,
+  commandSummary: z.string(),
+  cwd: z.string(),
+  stdout: z.string(),
+  stderr: z.string(),
+  lastMessage: z.string(),
+  exitCode: z.number().int().nullable(),
+  errorMessage: z.string().default(""),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+  durationMs: z.number().nonnegative()
+});
+export type DoctorCheckResult = z.infer<typeof DoctorCheckResultSchema>;
+
+export const DoctorDiagnosticsDocumentSchema = z.object({
+  version: z.literal(1).default(1),
+  updatedAt: z.string(),
+  results: z.record(z.string(), DoctorCheckResultSchema).default({})
+});
+export type DoctorDiagnosticsDocument = z.infer<typeof DoctorDiagnosticsDocumentSchema>;
+
 export function nowIso(): string {
   return new Date().toISOString();
 }
