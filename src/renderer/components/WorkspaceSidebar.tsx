@@ -116,8 +116,8 @@ export function WorkspaceSidebar({
           const workspaceStatus = getWorkspaceStatus(instances, sessions);
           const isSelected = workspace.id === selectedWorkspaceId;
           const hasInstances = instances.length > 0;
-          const hasActivePane = instances.some((instance) => instance.paneId === activePaneId);
-          const isExpanded = hasInstances && (expandedGroups[workspace.id] ?? hasActivePane);
+          // Sidebar disclosure is explicit. Terminal focus changes should not mutate expansion state.
+          const isExpanded = hasInstances && Boolean(expandedGroups[workspace.id]);
           const isMarkedForDelete = selectedDeleteIds.includes(workspace.id);
 
           return (

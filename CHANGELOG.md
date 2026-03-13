@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-03-13
+
+> **Code Stats** | Total: 17825 lines | Delta: +2 (-2) = **+0 net** | Change: **+0.00%** vs v0.3.0
+
+### Fixed
+- Decoupled workspace sidebar disclosure from active terminal focus so clicking panes in the workbench no longer implicitly expands or collapses workspace runtime groups.
+
 ## [0.3.0] - 2026-03-13
 
 > **Code Stats** | Total: 17823 lines | Delta: +1030 (-187) = **+843 net** | Change: **+4.96%** vs v0.2.0
