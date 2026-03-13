@@ -464,6 +464,20 @@ textarea::placeholder {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.workspace-instance-item.is-collapsed {
+  opacity: 0.45;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.workspace-instance-item.is-collapsed:hover {
+  opacity: 0.7;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.status-dot.is-collapsed {
+  background: rgba(149, 176, 191, 0.3);
+}
+
 .workspace-instance-copy {
   display: grid;
   gap: 2px;
@@ -897,6 +911,7 @@ textarea::placeholder {
   white-space: nowrap;
 }
 
+.pane-tab-collapse,
 .pane-tab-close {
   width: 18px;
   height: 18px;
@@ -907,8 +922,10 @@ textarea::placeholder {
   line-height: 1;
   padding: 0;
   font-size: 12px;
+  cursor: pointer;
 }
 
+.pane-tab-collapse:hover,
 .pane-tab-close:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #f3f8fb;

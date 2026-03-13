@@ -1,8 +1,10 @@
 import { Profiler, startTransition, useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 
+import { AgentConfigPanel } from "@renderer/components/AgentConfigPanel";
 import { BoardTree } from "@renderer/components/BoardTree";
 import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
 import { SettingsPanel } from "@renderer/components/SettingsPanel";
+import { SkillsPanel } from "@renderer/components/SkillsPanel";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
@@ -23,16 +25,19 @@ import {
 } from "@shared/schema";
 import {
   addInstanceToWorkbench,
+  collapseInstance,
   collectLayoutInstanceIds,
   findActivePaneId,
   normalizeWorkbenchDocument,
   removeInstanceFromWorkbench,
+  restoreInstance,
   updateWorkbenchActivePane
 } from "@shared/workbenchModel";
 
 const MAIN_TABS = [
   { id: "terminal", label: "terminal" },
   { id: "skills", label: "skills" },
+  { id: "config", label: "config" },
   { id: "settings", label: "settings" }
 ] as const;
 
@@ -582,6 +587,16 @@ export function App(): ReactElement {
     stageWorkbench(removeInstanceFromWorkbench(workbench, instanceId));
   }
 
+  function handleCollapsePane(instanceId: string): void {
+    if (!workbench) return;
+    stageWorkbench(collapseInstance(workbench, instanceId));
+  }
+
+  function handleRestorePane(instanceId: string): void {
+    if (!workbench) return;
+    stageWorkbench(restoreInstance(workbench, instanceId));
+  }
+
   function handleWorkbenchLayoutChange(layoutModel: WorkbenchLayoutModel): void {
     if (!workbench) {
       return;
@@ -647,6 +662,8 @@ export function App(): ReactElement {
               }}
               onSelectWorkspace={(workspaceId) => void selectWorkspace(workspaceId, { openConfig: true })}
               onFocusPane={handleFocusPane}
+              onCollapsePane={handleCollapsePane}
+              onRestorePane={handleRestorePane}
             />
           </Profiler>
 
@@ -663,6 +680,7 @@ export function App(): ReactElement {
               onNewPane={handleNewPane}
               onSplitPane={handleSplitPane}
               onClosePane={(instanceId) => void handleClosePane(instanceId)}
+              onCollapsePane={handleCollapsePane}
               onRegisterDraggedWorkspace={registerDraggedWorkspace}
             />
           </Profiler>
@@ -688,10 +706,13 @@ export function App(): ReactElement {
     ) : activeTab === "skills" ? (
       <section className="content-pane is-active">
         <div className="single-view-panel">
-          <div className="panel-empty panel-empty-large">
-            <p>Skills panel is reserved for the next iteration.</p>
-            <span>Workspace-linked skills will surface here once the integration is wired in.</span>
-          </div>
+          <SkillsPanel />
+        </div>
+      </section>
+    ) : activeTab === "config" ? (
+      <section className="content-pane is-active">
+        <div className="single-view-panel">
+          <AgentConfigPanel />
         </div>
       </section>
     ) : (

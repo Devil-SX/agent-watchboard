@@ -18,6 +18,8 @@ type Props = {
   onToggleDeleteSelection: (workspaceId: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
   onFocusPane: (paneId: string) => void;
+  onCollapsePane: (instanceId: string) => void;
+  onRestorePane: (instanceId: string) => void;
 };
 
 export function WorkspaceSidebar({
@@ -34,7 +36,9 @@ export function WorkspaceSidebar({
   onDeleteSelected,
   onToggleDeleteSelection,
   onSelectWorkspace,
-  onFocusPane
+  onFocusPane,
+  onCollapsePane,
+  onRestorePane
 }: Props): ReactElement {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const instancesByWorkspace = useMemo(() => groupInstances(workbench.instances), [workbench.instances]);
@@ -177,19 +181,25 @@ export function WorkspaceSidebar({
                 <div className="workspace-instance-list">
                   {instances.map((instance) => {
                     const status = getInstanceStatus(instance, sessions);
-                    const isPaneActive = instance.paneId === activePaneId;
+                    const isPaneActive = !instance.collapsed && instance.paneId === activePaneId;
+                    const itemClass = instance.collapsed
+                      ? "workspace-instance-item is-collapsed"
+                      : isPaneActive
+                        ? "workspace-instance-item is-active"
+                        : "workspace-instance-item";
                     return (
                       <button
                         key={instance.instanceId}
                         type="button"
-                        className={isPaneActive ? "workspace-instance-item is-active" : "workspace-instance-item"}
-                        onClick={() => onFocusPane(instance.paneId)}
+                        className={itemClass}
+                        onClick={() => instance.collapsed ? onRestorePane(instance.instanceId) : onFocusPane(instance.paneId)}
+                        title={instance.collapsed ? "Click to restore" : undefined}
                       >
                         <span className="workspace-instance-copy">
                           <strong>{instance.title}</strong>
                           <span>{instance.terminalProfileSnapshot.cwd}</span>
                         </span>
-                        <span className={`status-dot ${statusClassName(status)}`} title={status} />
+                        <span className={`status-dot ${instance.collapsed ? "is-collapsed" : statusClassName(status)}`} title={instance.collapsed ? "collapsed" : status} />
                       </button>
                     );
                   })}

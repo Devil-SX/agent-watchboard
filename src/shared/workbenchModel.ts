@@ -38,15 +38,69 @@ export function normalizeWorkbenchDocument(document: WorkbenchDocument): Workben
   });
 }
 
+export function collapseInstance(document: WorkbenchDocument, instanceId: string): WorkbenchDocument {
+  const base = normalizeWorkbenchDocument(document);
+  const target = base.instances.find((instance) => instance.instanceId === instanceId);
+  if (!target || target.collapsed) return base;
+
+  const nextInstances = base.instances.map((instance) =>
+    instance.instanceId === instanceId ? { ...instance, collapsed: true, updatedAt: nowIso() } : instance
+  );
+  const visibleInstances = nextInstances.filter((i) => !i.collapsed);
+  const nextLayout = removePaneFromLayout(base.layoutModel, target.paneId, visibleInstances);
+  const fallbackPaneId = base.activePaneId === target.paneId
+    ? visibleInstances[visibleInstances.length - 1]?.paneId ?? null
+    : base.activePaneId;
+
+  return normalizeWorkbenchDocument({
+    ...base,
+    updatedAt: nowIso(),
+    activePaneId: fallbackPaneId,
+    instances: nextInstances,
+    layoutModel: nextLayout
+  });
+}
+
+export function restoreInstance(
+  document: WorkbenchDocument,
+  instanceId: string,
+  openMode: WorkbenchOpenMode = "tab",
+  anchorPaneId?: string | null
+): WorkbenchDocument {
+  const base = normalizeWorkbenchDocument(document);
+  const target = base.instances.find((instance) => instance.instanceId === instanceId);
+  if (!target || !target.collapsed) return base;
+
+  const nextInstances = base.instances.map((instance) =>
+    instance.instanceId === instanceId ? { ...instance, collapsed: false, updatedAt: nowIso() } : instance
+  );
+  const visibleInstances = nextInstances.filter((i) => !i.collapsed);
+  let nextLayout: WorkbenchLayoutModel;
+  if (visibleInstances.length === 1) {
+    nextLayout = createWorkbenchLayoutModel(visibleInstances);
+  } else {
+    nextLayout = insertInstanceIntoLayout(base.layoutModel, target, openMode, anchorPaneId ?? base.activePaneId);
+  }
+
+  return normalizeWorkbenchDocument({
+    ...base,
+    updatedAt: nowIso(),
+    activePaneId: target.paneId,
+    instances: nextInstances,
+    layoutModel: nextLayout
+  });
+}
+
 export function normalizeWorkbenchLayoutModel(
   layoutModel: WorkbenchLayoutModel,
   instances: TerminalInstance[]
 ): WorkbenchLayoutModel {
-  if (instances.length === 0) {
+  const visibleInstances = instances.filter((i) => !i.collapsed);
+  if (visibleInstances.length === 0) {
     return createEmptyWorkbenchLayoutModel();
   }
 
-  const instanceMap = new Map(instances.map((instance) => [instance.instanceId, instance] as const));
+  const instanceMap = new Map(visibleInstances.map((instance) => [instance.instanceId, instance] as const));
   const seen = new Set<string>();
   let firstTabset: FlexLayoutTabSetNode | null = null;
 
@@ -57,11 +111,11 @@ export function normalizeWorkbenchLayoutModel(
   });
 
   if (!firstTabset) {
-    return createWorkbenchLayoutModel(instances);
+    return createWorkbenchLayoutModel(visibleInstances);
   }
   const targetTabset: FlexLayoutTabSetNode = firstTabset;
 
-  for (const instance of instances) {
+  for (const instance of visibleInstances) {
     if (!seen.has(instance.instanceId)) {
       targetTabset.children.push(createWorkbenchTab(instance));
     }

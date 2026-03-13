@@ -296,6 +296,7 @@ export const TerminalInstanceSchema = z.object({
   sessionId: z.string(),
   terminalProfileSnapshot: TerminalProfileSchema,
   autoStart: z.boolean().default(true),
+  collapsed: z.boolean().default(false),
   createdAt: z.string(),
   updatedAt: z.string()
 });

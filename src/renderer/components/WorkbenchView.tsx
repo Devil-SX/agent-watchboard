@@ -18,6 +18,7 @@ type Props = {
   onNewPane: () => Promise<void>;
   onSplitPane: (direction: "right" | "down") => Promise<void>;
   onClosePane: (instanceId: string) => Promise<void> | void;
+  onCollapsePane: (instanceId: string) => void;
   onRegisterDraggedWorkspace: (
     workspaceId: string,
     options?: {
@@ -39,6 +40,7 @@ export function WorkbenchView({
   onNewPane,
   onSplitPane,
   onClosePane,
+  onCollapsePane,
   onRegisterDraggedWorkspace
 }: Props): ReactElement {
   const layoutRef = useRef<Layout | null>(null);
@@ -199,6 +201,21 @@ export function WorkbenchView({
       </span>
     );
     renderValues.buttons = [
+      <button
+        key={`${node.getId()}-collapse`}
+        type="button"
+        className="pane-tab-collapse"
+        title={`Collapse ${instance.title}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onCollapsePane(instance.instanceId);
+        }}
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
+      >
+        −
+      </button>,
       <button
         key={`${node.getId()}-close`}
         type="button"
