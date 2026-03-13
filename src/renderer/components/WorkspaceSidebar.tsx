@@ -75,9 +75,9 @@ export function WorkspaceSidebar({
           const instances = instancesByWorkspace.get(workspace.id) ?? [];
           const workspaceStatus = getWorkspaceStatus(instances, sessions);
           const isSelected = workspace.id === selectedWorkspaceId;
-          const hasManyInstances = instances.length > 1;
+          const hasInstances = instances.length > 0;
           const hasActivePane = instances.some((instance) => instance.paneId === activePaneId);
-          const isExpanded = hasManyInstances && (expandedGroups[workspace.id] ?? hasActivePane);
+          const isExpanded = hasInstances && (expandedGroups[workspace.id] ?? hasActivePane);
           const isMarkedForDelete = selectedDeleteIds.includes(workspace.id);
 
           return (
@@ -126,7 +126,7 @@ export function WorkspaceSidebar({
                   })()}
                   <span className="workspace-list-copy">
                     <strong>{workspace.name}</strong>
-                    <span>{describeWorkspaceLine(workspace, instances)}</span>
+                    <span>{describeWorkspaceLine(workspace)}</span>
                   </span>
                   <span className="workspace-list-status">
                     {isDeleteMode ? (
@@ -136,7 +136,7 @@ export function WorkspaceSidebar({
                     ) : (
                       <>
                         <span className={`status-dot ${statusClassName(workspaceStatus)}`} title={workspaceStatus} />
-                        {hasManyInstances ? (
+                        {hasInstances ? (
                           <span className="workspace-instance-count">{instances.length}</span>
                         ) : null}
                       </>
@@ -146,7 +146,7 @@ export function WorkspaceSidebar({
 
                 {!isDeleteMode ? (
                   <div className="workspace-list-actions">
-                    {hasManyInstances ? (
+                    {hasInstances ? (
                       <button
                         type="button"
                         className="workspace-list-action icon-button"
@@ -216,18 +216,12 @@ function groupInstances(instances: TerminalInstance[]): Map<string, TerminalInst
   return groups;
 }
 
-function describeWorkspaceLine(workspace: Workspace, instances: TerminalInstance[]): string {
+function describeWorkspaceLine(workspace: Workspace): string {
   const terminal = workspace.terminals[0];
   if (!terminal) {
     return "No terminal configured";
   }
-  if (instances.length === 0) {
-    return `${terminal.target} · ${describeTerminalLaunchShort(terminal)}`;
-  }
-  if (instances.length === 1) {
-    return `${instances[0]?.title ?? workspace.name} · ${terminal.target}`;
-  }
-  return `${instances.length} runtime panes · ${terminal.target}`;
+  return `${terminal.target} · ${describeTerminalLaunchShort(terminal)}`;
 }
 
 function getWorkspaceStatus(
