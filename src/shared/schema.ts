@@ -124,7 +124,7 @@ export function detectAgentKind(
 
 export type SkillEntry = {
   name: string;
-  source: "codex" | "claude";
+  source: "codex" | "claude-command" | "claude-skill";
   skillMdPath: string;
 };
 
