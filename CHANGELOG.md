@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-03-13
+
+> **Code Stats** | Total: 20555 lines | Delta: +168 (-12) = **+156 net** | Change: **+0.76%** vs v0.5.3
+
+### Added
+- Added an optional right-side Skills chat terminal that can launch a scoped Codex or Claude session in `~` without modifying the main workbench layout.
+- Added unit coverage for the scoped Skills chat session builder so Linux and Windows profile generation stays aligned with the expected agent presets.
+
+### Changed
+- Extended the Skills pane toolbar and layout so the chat surface can be opened, switched between Codex and Claude, and hidden while preserving the normal skill list and markdown preview workflow.
+
 ## [0.5.3] - 2026-03-13
 
 > **Code Stats** | Total: 20392 lines | Delta: +80 (-1) = **+79 net** | Change: **+0.39%** vs v0.5.2

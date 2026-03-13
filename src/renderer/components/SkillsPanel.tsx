@@ -1,28 +1,43 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
 import { SkillMarkdownDocument } from "@renderer/components/SkillMarkdownDocument";
-import type { AgentPathLocation, DiagnosticsInfo, SkillEntry } from "@shared/schema";
+import { TerminalTabView } from "@renderer/components/TerminalTabView";
+import { createSkillsChatInstance, type SkillsChatAgent } from "@renderer/components/skillsChatSession";
+import {
+  type AgentPathLocation,
+  type AppSettings,
+  type DiagnosticsInfo,
+  type SessionState,
+  type SkillEntry,
+  type TerminalInstance
+} from "@shared/schema";
 
 type SkillFamilyFilter = "all" | "codex" | "claude";
 type ClaudeSubtypeFilter = "all" | "commands" | "skills";
 
-export function SkillsPanel(): ReactElement {
+type Props = {
+  settings: AppSettings;
+  sessions: Record<string, SessionState>;
+  diagnostics: DiagnosticsInfo | null;
+};
+
+export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp }: Props): ReactElement {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<SkillEntry | null>(null);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
-  const [diagnostics, setDiagnostics] = useState<DiagnosticsInfo | null>(null);
   const [location, setLocation] = useState<AgentPathLocation>("host");
   const [familyFilter, setFamilyFilter] = useState<SkillFamilyFilter>("all");
   const [claudeSubtypeFilter, setClaudeSubtypeFilter] = useState<ClaudeSubtypeFilter>("all");
-  const isWindows = diagnostics?.platform === "win32";
-
-  useEffect(() => {
-    void window.watchboard.getDiagnostics().then(setDiagnostics);
-  }, []);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatAgent, setChatAgent] = useState<SkillsChatAgent>("codex");
+  const [chatInstance, setChatInstance] = useState<TerminalInstance | null>(null);
+  const [chatError, setChatError] = useState("");
+  const chatRequestRef = useRef(0);
+  const isWindows = diagnosticsProp?.platform === "win32";
 
   useEffect(() => {
     setLoading(true);
@@ -58,6 +73,52 @@ export function SkillsPanel(): ReactElement {
       setContent("");
     }
   }, [selectedSkill, visibleSkills]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const requestId = ++chatRequestRef.current;
+
+    if (!isChatOpen) {
+      const staleInstance = chatInstance;
+      setChatInstance(null);
+      setChatError("");
+      if (staleInstance) {
+        void window.watchboard.stopSession(staleInstance.sessionId).catch(() => undefined);
+      }
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const nextInstance = createSkillsChatInstance(chatAgent, diagnosticsProp?.platform);
+    setChatInstance(nextInstance);
+    setChatError("");
+
+    void window.watchboard.startSession(nextInstance).catch((error) => {
+      if (cancelled || chatRequestRef.current !== requestId) {
+        return;
+      }
+      setChatError(error instanceof Error ? error.message : String(error));
+    });
+
+    const previousInstance = chatInstance;
+    if (previousInstance && previousInstance.sessionId !== nextInstance.sessionId) {
+      void window.watchboard.stopSession(previousInstance.sessionId).catch(() => undefined);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatAgent, diagnosticsProp?.platform, isChatOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (!chatInstance) {
+        return;
+      }
+      void window.watchboard.stopSession(chatInstance.sessionId).catch(() => undefined);
+    };
+  }, [chatInstance]);
 
   if (loading) {
     return (
@@ -119,10 +180,26 @@ export function SkillsPanel(): ReactElement {
               onChange={setClaudeSubtypeFilter}
             />
           ) : null}
+          <CompactToggleButton
+            label="Chat"
+            value={isChatOpen ? "Open" : "Off"}
+            onClick={() => setIsChatOpen((current) => !current)}
+          />
+          {isChatOpen ? (
+            <CompactDropdown
+              label="Agent"
+              value={chatAgent}
+              options={[
+                { label: "Codex", value: "codex", icon: <CodexIcon /> },
+                { label: "Claude", value: "claude", icon: <ClaudeIcon /> }
+              ]}
+              onChange={setChatAgent}
+            />
+          ) : null}
         </div>
       </header>
 
-      <div className="skills-panel-body">
+      <div className={isChatOpen ? "skills-panel-body has-chat" : "skills-panel-body"}>
         <div className="skills-list" role="list">
           {visibleSkills.map((skill) => {
             const isSelected = selectedSkill?.skillMdPath === skill.skillMdPath;
@@ -180,6 +257,33 @@ export function SkillsPanel(): ReactElement {
             </div>
           )}
         </div>
+
+        {isChatOpen && chatInstance ? (
+          <div className="skills-chat-panel">
+            <div className="skills-chat-header">
+              <div className="skills-chat-title">
+                <span className="skills-list-icon">{chatAgent === "codex" ? <CodexIcon /> : <ClaudeIcon />}</span>
+                <strong>{chatAgent === "codex" ? "Codex Chat" : "Claude Chat"}</strong>
+              </div>
+              <button type="button" className="secondary-button skills-chat-close" onClick={() => setIsChatOpen(false)}>
+                Hide
+              </button>
+            </div>
+            <div className="entry-meta">
+              <span className="entry-meta-label">Scope</span>
+              <code>Scoped utility session in ~</code>
+              {chatError ? <span className="toolbar-error">{chatError}</span> : null}
+            </div>
+            <div className="skills-chat-terminal">
+              <TerminalTabView
+                instance={chatInstance}
+                session={sessions[chatInstance.sessionId] ?? null}
+                settings={settings}
+                isVisible
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

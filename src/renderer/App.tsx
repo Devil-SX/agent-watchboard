@@ -787,7 +787,7 @@ export function App(): ReactElement {
     ) : activeTab === "skills" ? (
       <section className="content-pane is-active">
         <div className="single-view-panel">
-          <SkillsPanel />
+          <SkillsPanel settings={settingsDraft} sessions={sessions} diagnostics={diagnostics} />
         </div>
       </section>
     ) : activeTab === "config" ? (

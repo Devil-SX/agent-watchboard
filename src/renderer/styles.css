@@ -2301,6 +2301,10 @@ textarea::placeholder {
   padding-top: 10px;
 }
 
+.skills-panel-body.has-chat {
+  grid-template-columns: 240px minmax(0, 1fr) minmax(300px, 0.9fr);
+}
+
 .skills-list {
   display: flex;
   flex-direction: column;
@@ -2359,6 +2363,46 @@ textarea::placeholder {
   border-radius: 16px;
   background: rgba(6, 12, 18, 0.82);
   overflow: hidden;
+}
+
+.skills-chat-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: rgba(5, 10, 15, 0.88);
+  overflow: hidden;
+}
+
+.skills-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.skills-chat-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.skills-chat-close {
+  padding: 0.32rem 0.55rem;
+}
+
+.skills-chat-terminal {
+  flex: 1;
+  min-height: 280px;
+  padding: 10px;
+}
+
+.skills-chat-terminal .terminal-tab-shell {
+  min-height: 100%;
 }
 
 .skills-content-header {
@@ -2714,6 +2758,14 @@ textarea::placeholder {
 }
 
 @media (max-width: 900px) {
+  .skills-panel-body.has-chat {
+    grid-template-columns: 1fr;
+  }
+
+  .skills-chat-panel {
+    min-height: 320px;
+  }
+
   .entry-context-strip,
   .entry-context-strip.is-compact {
     width: 100%;
