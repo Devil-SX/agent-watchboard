@@ -206,6 +206,7 @@ export function WorkspaceSidebar({
                   })()}
                   <span className="workspace-list-copy">
                     <span className="workspace-list-title-row">
+                      <span className="workspace-template-tag">Template</span>
                       <strong>{workspace.name}</strong>
                       <span className={environment === "wsl" ? "workspace-environment-tag is-wsl" : "workspace-environment-tag"}>
                         {environment === "wsl" ? "WSL" : "Host"}
@@ -260,6 +261,10 @@ export function WorkspaceSidebar({
 
               {isExpanded && !isDeleteMode ? (
                 <div className="workspace-instance-list">
+                  <div className="workspace-instance-list-header">
+                    <span className="workspace-instance-list-title">Runtime</span>
+                    <span className="workspace-instance-list-count">{instances.length}</span>
+                  </div>
                   {instances.map((instance) => {
                     const status = getInstanceStatus(instance, sessions);
                     const isPaneActive = !instance.collapsed && instance.paneId === activePaneId;
@@ -284,6 +289,7 @@ export function WorkspaceSidebar({
                         }}
                         title={instance.collapsed ? "Click to restore" : undefined}
                       >
+                        <span className={instance.collapsed ? "workspace-instance-rail is-collapsed" : `workspace-instance-rail ${statusClassName(status)}`} />
                         <span className="workspace-instance-copy">
                           <strong>{instance.title}</strong>
                           <span>{instance.terminalProfileSnapshot.cwd}</span>

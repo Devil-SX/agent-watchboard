@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-03-13
+
+> **Code Stats** | Total: 20305 lines | Delta: +94 (-12) = **+82 net** | Change: **+0.41%** vs v0.5.1
+
+### Changed
+- Strengthened workspace template vs runtime hierarchy by turning template rows into elevated cards with a dedicated `Template` tag and clearer active framing.
+- Moved live runtime instances into a muted nested `Runtime` surface with a compact header, count badge, and status rail so instances read as subordinate operational rows instead of peer templates.
+
 ## [0.5.1] - 2026-03-13
 
 > **Code Stats** | Total: 20167 lines | Delta: +163 (-12) = **+151 net** | Change: **+0.76%** vs v0.5.0
