@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-03-13
+
+> **Code Stats** | Total: 21033 lines | Delta: +38 (-30) = **+8 net** | Change: **+0.04%** vs v0.7.0
+
+### Changed
+- Removed the redundant workspace `Template` badge and moved Host/WSL identity into a fixed leading sidebar column beneath the agent icon so workspace rows stay aligned and preserve more title space.
+- Reserved a stable leading icon slot for workspaces without Codex/Claude identity so mixed-agent lists keep consistent horizontal alignment.
+
 ## [0.7.0] - 2026-03-13
 
 > **Code Stats** | Total: 20953 lines | Delta: +128 (-35) = **+93 net** | Change: **+0.45%** vs v0.6.2

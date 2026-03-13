@@ -198,21 +198,25 @@ export function WorkspaceSidebar({
                     event.dataTransfer.setData("text/plain", workspace.id);
                   }}
                 >
-                  {(() => {
-                    const terminal = workspace.terminals[0];
-                    if (!terminal) return null;
-                    const agentKind = detectAgentKind(terminal);
-                    if (agentKind === "claude") return <span className="workspace-agent-icon"><ClaudeIcon /></span>;
-                    if (agentKind === "codex") return <span className="workspace-agent-icon"><CodexIcon /></span>;
-                    return null;
-                  })()}
+                  <span className="workspace-identity-stack">
+                    {(() => {
+                      const terminal = workspace.terminals[0];
+                      const agentKind = terminal ? detectAgentKind(terminal) : "unknown";
+                      if (agentKind === "claude") {
+                        return <span className="workspace-agent-icon"><ClaudeIcon /></span>;
+                      }
+                      if (agentKind === "codex") {
+                        return <span className="workspace-agent-icon"><CodexIcon /></span>;
+                      }
+                      return <span className="workspace-agent-icon is-placeholder" aria-hidden="true" />;
+                    })()}
+                    <span className={environment === "wsl" ? "workspace-environment-tag is-wsl" : "workspace-environment-tag"}>
+                      {environment === "wsl" ? "WSL" : "Host"}
+                    </span>
+                  </span>
                   <span className="workspace-list-copy">
                     <span className="workspace-list-title-row">
-                      <span className="workspace-template-tag">Template</span>
                       <strong>{workspace.name}</strong>
-                      <span className={environment === "wsl" ? "workspace-environment-tag is-wsl" : "workspace-environment-tag"}>
-                        {environment === "wsl" ? "WSL" : "Host"}
-                      </span>
                     </span>
                     <span>{describeWorkspaceLine(workspace)}</span>
                   </span>
