@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.12] - 2026-03-14
+
+### Fixed
+- Fixed supervisor PTY activity handling so sessions immediately rebroadcast `session-state` when live output promotes an idle runtime back to `running-active`, keeping the workbench and workspace sidebar in sync with active terminal output.
+- Added regression coverage for the PTY-triggered `running-idle` to `running-active` transition so renderer-visible state relay does not silently regress.
+
 ## [0.7.11] - 2026-03-14
 
 > **Code Stats** | Total: 23300 lines | Delta: +49 (-4) = **+45 net** | Change: **+0.19%** vs v0.7.10

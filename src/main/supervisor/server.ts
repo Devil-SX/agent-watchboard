@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import chokidar, { type FSWatcher } from "chokidar";
 import pty from "node-pty";
@@ -39,6 +40,21 @@ type SessionRecord = {
 
 const ACTIVE_THRESHOLD_MS = 15_000;
 const IDLE_THRESHOLD_MS = 5 * 60_000;
+
+export function applyPtyActivityStatus(state: SessionState): boolean {
+  if (state.endedAt) {
+    return false;
+  }
+
+  if (state.status === "running-active") {
+    state.lastPtyActivityAt = nowIso();
+    return false;
+  }
+
+  state.lastPtyActivityAt = nowIso();
+  state.status = "running-active";
+  return true;
+}
 
 class SupervisorServer {
   private readonly sessions = new Map<string, SessionRecord>();
@@ -248,8 +264,7 @@ class SupervisorServer {
         if (!session) {
           return;
         }
-        session.state.lastPtyActivityAt = nowIso();
-        session.state.status = "running-active";
+        const didPromoteState = applyPtyActivityStatus(session.state);
         session.outputChunks += 1;
         session.outputBytes += Buffer.byteLength(data, "utf8");
         if (!session.firstOutputReported) {
@@ -261,6 +276,9 @@ class SupervisorServer {
           });
         }
         this.maybeFlushOutputPerf(sessionId, workspaceId);
+        if (didPromoteState) {
+          this.broadcastState(session.state);
+        }
         this.broadcast({ type: "session-data", sessionId, data });
       });
 
@@ -590,4 +608,6 @@ async function main(): Promise<void> {
   await server.start();
 }
 
-void main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void main();
+}
