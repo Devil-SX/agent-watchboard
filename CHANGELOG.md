@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-03-14
+
+> **Code Stats** | Total: 23165 lines | Delta: +33 (-0) = **+33 net** | Change: **+0.14%** vs v0.7.8
+
+### Changed
+- Strengthened Runtime Pane tab action styling so the non-destructive collapse button remains neutral while the destructive `×` close button now reads as a red danger action across normal, hover, focus, and active states.
+
 ## [0.7.8] - 2026-03-14
 
 > **Code Stats** | Total: 23132 lines | Delta: +38 (-2) = **+36 net** | Change: **+0.16%** vs v0.7.7
