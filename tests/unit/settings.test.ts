@@ -79,3 +79,44 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
   assert.equal(raw.wslBoardPath, "~/wsl-board.json");
   assert.equal(raw.activeMainTab, "skills");
 });
+
+test("writeAppSettings serializes concurrent writes to the same file", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "watchboard-settings-"));
+  const settingsPath = join(dir, "settings.json");
+
+  const base = {
+    version: 1 as const,
+    updatedAt: "2026-03-13T00:00:00.000Z",
+    boardLocationKind: "host" as const,
+    hostBoardPath: "~/host-board.json",
+    wslBoardPath: "~/wsl-board.json",
+    terminalFontFamily: "'JetBrains Mono', monospace",
+    terminalFontSize: 14,
+    workspaceSortMode: "last-launch" as const,
+    workspaceFilterMode: "all" as const,
+    workspaceEnvironmentFilterMode: "all" as const,
+    activeMainTab: "terminal" as const,
+    skillsPane: {
+      location: "host" as const,
+      familyFilter: "all" as const,
+      claudeSubtypeFilter: "all" as const,
+      selectedSkillMdPath: null,
+      isChatOpen: false,
+      chatAgent: "codex" as const
+    },
+    agentConfigPane: {
+      location: "host" as const,
+      familyFilter: "all" as const,
+      activeConfigId: "codex-config" as const
+    }
+  };
+
+  await Promise.all([
+    writeAppSettings({ ...base, activeMainTab: "skills" }, settingsPath),
+    writeAppSettings({ ...base, activeMainTab: "config" }, settingsPath),
+    writeAppSettings({ ...base, activeMainTab: "settings" }, settingsPath)
+  ]);
+
+  const raw = JSON.parse(await readFile(settingsPath, "utf8")) as Record<string, unknown>;
+  assert.ok(["skills", "config", "settings"].includes(String(raw.activeMainTab)));
+});

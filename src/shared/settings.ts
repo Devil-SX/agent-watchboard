@@ -15,6 +15,8 @@ import {
 } from "@shared/schema";
 import { expandHomePath } from "@shared/nodePath";
 
+const settingsWriteQueues = new Map<string, Promise<void>>();
+
 export async function readAppSettings(filePath = DEFAULT_SETTINGS_STORE_PATH): Promise<AppSettings> {
   const resolvedPath = expandHomePath(filePath);
   try {
@@ -41,7 +43,6 @@ export async function readAppSettings(filePath = DEFAULT_SETTINGS_STORE_PATH): P
 
 export async function writeAppSettings(settings: AppSettings, filePath = DEFAULT_SETTINGS_STORE_PATH): Promise<AppSettings> {
   const resolvedPath = expandHomePath(filePath);
-  await mkdir(dirname(resolvedPath), { recursive: true });
   const normalized = normalizeSettingsForPlatform(
     createDefaultAppSettings({
       ...settings,
@@ -50,8 +51,26 @@ export async function writeAppSettings(settings: AppSettings, filePath = DEFAULT
       updatedAt: nowIso()
     })
   );
-  await writeFile(resolvedPath, JSON.stringify(normalized, null, 2), "utf8");
+  await enqueueSettingsWrite(resolvedPath, async () => {
+    await mkdir(dirname(resolvedPath), { recursive: true });
+    await writeFile(resolvedPath, JSON.stringify(normalized, null, 2), "utf8");
+  });
   return normalized;
+}
+
+async function enqueueSettingsWrite(filePath: string, task: () => Promise<void>): Promise<void> {
+  const pending = settingsWriteQueues.get(filePath) ?? Promise.resolve();
+  const next = pending
+    .catch(() => undefined)
+    .then(task);
+  settingsWriteQueues.set(filePath, next);
+  try {
+    await next;
+  } finally {
+    if (settingsWriteQueues.get(filePath) === next) {
+      settingsWriteQueues.delete(filePath);
+    }
+  }
 }
 
 function normalizeSettingsForPlatform(settings: AppSettings): AppSettings {

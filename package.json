@@ -1,6 +1,6 @@
 {
   "name": "agent-watchboard",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "private": true,
   "type": "module",
   "description": "Desktop watchboard for orchestrating multiple code agents with PTY-backed terminals and JSON todo boards.",
@@ -24,7 +24,8 @@
     "lint:css": "stylelint 'src/**/*.css'",
     "test:unit": "node --import tsx --test tests/unit/**/*.test.ts tests/unit/**/*.test.tsx",
     "test": "playwright test",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:perf:terminal": "tsx tests/perf/render-terminal-profile.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

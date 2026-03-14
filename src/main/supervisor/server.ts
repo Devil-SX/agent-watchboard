@@ -222,7 +222,7 @@ class SupervisorServer {
         terminalId: profile.id,
         pid: ptyProcess.pid,
         status: "running-active",
-        logFilePath: sessionLogPath,
+        logFilePath: null,
         lastPtyActivityAt: nowIso(),
         lastLogHeartbeatAt: null,
         startedAt: nowIso(),
@@ -252,14 +252,13 @@ class SupervisorServer {
         session.state.status = "running-active";
         session.outputChunks += 1;
         session.outputBytes += Buffer.byteLength(data, "utf8");
-        session.sessionLogger.raw(data);
         if (!session.firstOutputReported) {
           session.firstOutputReported = true;
-        this.recordPerf("terminal", "first-output", performance.now() - session.startedPerfAt, {
-          sessionId,
-          instanceId,
-          workspaceId
-        });
+          this.recordPerf("terminal", "first-output", performance.now() - session.startedPerfAt, {
+            sessionId,
+            instanceId,
+            workspaceId
+          });
         }
         this.maybeFlushOutputPerf(sessionId, workspaceId);
         this.broadcast({ type: "session-data", sessionId, data });

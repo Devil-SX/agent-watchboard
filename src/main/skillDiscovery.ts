@@ -44,7 +44,7 @@ export function scanSkillEntries(
 
       if (entryName === "SKILL.md" && entryInfo.kind === "file") {
         const resolvedPath = entryInfo.resolvedPath;
-        const dedupeKey = `${location}:${source}:${resolvedPath}`;
+        const dedupeKey = `${location}:${source}:${entryPath}`;
         if (seen.has(dedupeKey)) {
           continue;
         }
@@ -57,7 +57,7 @@ export function scanSkillEntries(
           entryPath,
           resolvedPath,
           isSymlink: entryPath !== resolvedPath,
-          skillMdPath: resolvedPath
+          skillMdPath: entryPath
         });
         continue;
       }
@@ -85,17 +85,17 @@ export function scanClaudeCommandEntries(rootDir: string, location: AgentPathLoc
         continue;
       }
       skills.push({
-          name: entryName.replace(/\.md$/, ""),
-          source: "claude-command" as const,
-          location,
-          entryPath,
-          resolvedPath: entryInfo.resolvedPath,
-          isSymlink: entryPath !== entryInfo.resolvedPath,
-          skillMdPath: entryInfo.resolvedPath
+        name: entryName.replace(/\.md$/, ""),
+        source: "claude-command" as const,
+        location,
+        entryPath,
+        resolvedPath: entryInfo.resolvedPath,
+        isSymlink: entryPath !== entryInfo.resolvedPath,
+        skillMdPath: entryPath
       });
     }
     return skills.filter((entry) => {
-      const dedupeKey = `${entry.location}:${entry.source}:${entry.skillMdPath}`;
+      const dedupeKey = `${entry.location}:${entry.source}:${entry.entryPath}`;
       if (seen.has(dedupeKey)) {
         return false;
       }

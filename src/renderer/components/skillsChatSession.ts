@@ -2,18 +2,25 @@ import {
   createSingleTerminalLayout,
   createTerminalInstance,
   createTerminalProfile,
+  type AgentPathLocation,
   type TerminalInstance,
   type Workspace
 } from "@shared/schema";
 
 export type SkillsChatAgent = "codex" | "claude";
 
-export function createSkillsChatInstance(agent: SkillsChatAgent, platform: NodeJS.Platform | undefined): TerminalInstance {
+export function createSkillsChatInstance(
+  agent: SkillsChatAgent,
+  location: AgentPathLocation,
+  platform: NodeJS.Platform | undefined
+): TerminalInstance {
   const isWindows = platform === "win32";
+  const target = isWindows ? (location === "wsl" ? "wsl" : "windows") : "linux";
+  const shellOrProgram = target === "windows" ? "powershell.exe" : "/bin/bash";
   const profile = createTerminalProfile({
     title: agent === "codex" ? "Codex Chat" : "Claude Chat",
-    target: isWindows ? "windows" : "linux",
-    shellOrProgram: isWindows ? "powershell.exe" : "/bin/bash",
+    target,
+    shellOrProgram,
     cwd: "~",
     startupMode: "preset",
     startupPresetId: agent,

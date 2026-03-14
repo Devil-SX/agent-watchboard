@@ -78,8 +78,11 @@ async function readBoardFromWsl(
 ): Promise<BoardDocument> {
   const windowsPath = await resolveWslBoardWindowsPath(settings);
   try {
-    return await ensureBoardDocument(windowsPath, "global");
+    return await readBoardDocument(windowsPath);
   } catch (error) {
+    if (isMissingFileError(error)) {
+      return ensureBoardDocument(windowsPath, "global");
+    }
     log.error("readBoardFromWsl:error", {
       boardPath: getActiveBoardPath(settings),
       windowsPath,
@@ -111,4 +114,8 @@ async function resolveWslBoardWindowsPath(
     ? `${await resolveWslHome(distro)}/${linuxPath.slice(2)}`
     : linuxPath;
   return `\\\\wsl.localhost\\${distro}${resolvedLinuxPath.replaceAll("/", "\\")}`;
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }

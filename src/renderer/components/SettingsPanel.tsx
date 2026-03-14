@@ -1,7 +1,5 @@
 import type { ReactElement } from "react";
 
-import { CompactDropdown } from "@renderer/components/CompactControls";
-import { LocationBadge } from "@renderer/components/LocationBadge";
 import { TERMINAL_FONT_PRESETS, type AppSettings, type DiagnosticsInfo } from "@shared/schema";
 
 type Props = {
@@ -10,7 +8,7 @@ type Props = {
   isDirty: boolean;
   isSaving: boolean;
   onChange: (
-    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardLocationKind" | "boardWslDistro",
+    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro",
     value: string | number
   ) => void;
   onSave: () => void;
@@ -61,26 +59,12 @@ export function SettingsPanel({
               <input value={settings.wslBoardPath} onChange={(event) => onChange("wslBoardPath", event.target.value)} />
             </label>
             <label className="field">
-              <span>Board Target</span>
-              <CompactDropdown
-                label="Target"
-                value={settings.boardLocationKind}
-                options={[
-                  { label: "Host", value: "host", content: <LocationBadge location="host" /> },
-                  { label: "WSL", value: "wsl", content: <LocationBadge location="wsl" /> }
-                ]}
-                onChange={(value) => onChange("boardLocationKind", value)}
+              <span>Board WSL Distro</span>
+              <input
+                value={settings.boardWslDistro ?? ""}
+                onChange={(event) => onChange("boardWslDistro", event.target.value)}
               />
             </label>
-            {settings.boardLocationKind === "wsl" ? (
-              <label className="field">
-                <span>Board WSL Distro</span>
-                <input
-                  value={settings.boardWslDistro ?? ""}
-                  onChange={(event) => onChange("boardWslDistro", event.target.value)}
-                />
-              </label>
-            ) : null}
           </div>
         </section>
 

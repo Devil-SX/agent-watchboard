@@ -56,6 +56,8 @@ export function App(): ReactElement {
   const bootReadyReportedRef = useRef(false);
   const boardVisibleReportedRef = useRef(false);
   const autoStartedRef = useRef<Set<string>>(new Set());
+  const initialAutoStartCompletedRef = useRef(false);
+  const sessionRequestStartedAtRef = useRef<Map<string, number>>(new Map());
   const persistedSettingsRef = useRef<AppSettings | null>(null);
   const workbenchSaveSequenceRef = useRef(0);
   const tabSwitchStartedAtRef = useRef<number | null>(null);
@@ -125,6 +127,20 @@ export function App(): ReactElement {
       );
     });
     unsubscribeState = window.watchboard.onSessionState((session) => {
+      const requestStartedAt = sessionRequestStartedAtRef.current.get(session.sessionId);
+      if (requestStartedAt !== undefined) {
+        reportRendererPerf({
+          category: "session",
+          name: "state-received",
+          durationMs: performance.now() - requestStartedAt,
+          sessionId: session.sessionId,
+          workspaceId: session.workspaceId,
+          extra: {
+            status: session.status
+          }
+        });
+        sessionRequestStartedAtRef.current.delete(session.sessionId);
+      }
       setSessions((current) => {
         const previous = current[session.sessionId];
         if (previous && shallowSessionEquals(previous, session)) {
@@ -236,12 +252,21 @@ export function App(): ReactElement {
     if (!workbench) {
       return;
     }
+    if (workbench.instances.length === 0) {
+      autoStartedRef.current.clear();
+      initialAutoStartCompletedRef.current = false;
+      return;
+    }
     const liveSessionIds = new Set(workbench.instances.map((instance) => instance.sessionId));
     for (const sessionId of autoStartedRef.current) {
       if (!liveSessionIds.has(sessionId)) {
         autoStartedRef.current.delete(sessionId);
       }
     }
+    if (initialAutoStartCompletedRef.current) {
+      return;
+    }
+    initialAutoStartCompletedRef.current = true;
 
     for (const instance of workbench.instances) {
       if (!instance.autoStart) {
@@ -449,8 +474,24 @@ export function App(): ReactElement {
   }
 
   async function startWorkspaceSession(instance: TerminalInstance): Promise<void> {
-    const session = await window.watchboard.startSession(instance);
-    markWorkspaceLaunched(instance.workspaceId, session.startedAt);
+    sessionRequestStartedAtRef.current.set(instance.sessionId, performance.now());
+    reportRendererPerf({
+      category: "session",
+      name: "start-request",
+      durationMs: 0,
+      sessionId: instance.sessionId,
+      workspaceId: instance.workspaceId,
+      extra: {
+        target: instance.terminalProfileSnapshot.target
+      }
+    });
+    try {
+      const session = await window.watchboard.startSession(instance);
+      markWorkspaceLaunched(instance.workspaceId, session.startedAt);
+    } catch (error) {
+      sessionRequestStartedAtRef.current.delete(instance.sessionId);
+      throw error;
+    }
   }
 
   async function handleCreateWorkspace(): Promise<void> {
@@ -588,7 +629,7 @@ export function App(): ReactElement {
   }
 
   function handleSettingsFieldChange(
-    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardLocationKind" | "boardWslDistro",
+    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro",
     value: string | number
   ): void {
     if (!settingsDraft) {
@@ -647,6 +688,17 @@ export function App(): ReactElement {
       return null;
     }
     const instance = createTerminalInstance(workspace, currentWorkbench.instances);
+    reportRendererPerf({
+      category: "interaction",
+      name: "workspace-drag-open-request",
+      durationMs: 0,
+      sessionId: instance.sessionId,
+      workspaceId,
+      extra: {
+        target: instance.terminalProfileSnapshot.target,
+        openMode: options?.openMode ?? "tab"
+      }
+    });
     const nextWorkbench = addInstanceToWorkbench(
       currentWorkbench,
       instance,

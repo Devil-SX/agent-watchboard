@@ -45,7 +45,6 @@ export type WatchboardApi = {
   stopSession: (sessionId: string) => Promise<void>;
   writeToSession: (sessionId: string, data: string, sentAtUnixMs?: number) => void;
   resizeSession: (sessionId: string, cols: number, rows: number) => void;
-  readSessionBacklog: (sessionId: string) => Promise<string>;
   debugLog: (message: string, details?: unknown) => Promise<void>;
   reportPerfEvent: (event: PerfEvent) => Promise<void>;
   listSessions: () => Promise<SessionState[]>;

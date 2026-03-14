@@ -17,7 +17,6 @@ const api: WatchboardApi = {
   resizeSession: (sessionId, cols, rows) => {
     ipcRenderer.send("watchboard:resize-session", sessionId, cols, rows);
   },
-  readSessionBacklog: (sessionId) => ipcRenderer.invoke("watchboard:read-session-backlog", sessionId),
   debugLog: (message, details) => ipcRenderer.invoke("watchboard:debug-log", message, details),
   reportPerfEvent: (event) => ipcRenderer.invoke("watchboard:perf-event", event),
   listSessions: () => ipcRenderer.invoke("watchboard:list-sessions"),

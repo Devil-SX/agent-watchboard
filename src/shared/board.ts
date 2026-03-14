@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 import {
   BoardDocument,
@@ -14,6 +14,9 @@ import {
   nowIso
 } from "@shared/schema";
 import { expandHomePath } from "@shared/nodePath";
+
+const BOARD_BACKUP_SUFFIX = ".bak";
+const MAX_BOARD_BACKUPS = 10;
 
 function emptyBoardDocument(workspaceId = "default", title = "Agent Board"): BoardDocument {
   const now = nowIso();
@@ -29,7 +32,10 @@ function emptyBoardDocument(workspaceId = "default", title = "Agent Board"): Boa
 export async function ensureBoardDocument(boardPath = DEFAULT_BOARD_PATH, workspaceId = "default"): Promise<BoardDocument> {
   try {
     return await readBoardDocument(boardPath);
-  } catch {
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
     const initial = emptyBoardDocument(workspaceId);
     await writeBoardDocument(boardPath, initial);
     return initial;
@@ -44,11 +50,50 @@ export async function readBoardDocument(boardPath: string): Promise<BoardDocumen
 export async function writeBoardDocument(boardPath: string, document: BoardDocument): Promise<void> {
   const resolvedPath = expandHomePath(boardPath);
   await mkdir(dirname(resolvedPath), { recursive: true });
+  await backupExistingBoard(resolvedPath);
   const normalized = normalizeBoardDocument({
     ...document,
     updatedAt: nowIso()
   });
   await writeFile(resolvedPath, JSON.stringify(normalized, null, 2), "utf8");
+}
+
+async function backupExistingBoard(boardPath: string): Promise<void> {
+  try {
+    await readFile(boardPath, "utf8");
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return;
+    }
+    throw error;
+  }
+
+  const backupPath = `${boardPath}.${makeBackupTimestamp()}.${BOARD_BACKUP_SUFFIX}`;
+  await copyFile(boardPath, backupPath);
+  await trimBoardBackups(boardPath);
+}
+
+async function trimBoardBackups(boardPath: string): Promise<void> {
+  const boardDir = dirname(boardPath);
+  const boardBase = basename(boardPath);
+  const backupSuffix = `${BOARD_BACKUP_SUFFIX}`;
+  const backupPrefix = `${boardBase}.`;
+  const entries = await readdir(boardDir, { withFileTypes: true });
+  const backupNames = entries
+    .filter((entry) => entry.isFile() && entry.name.startsWith(backupPrefix) && entry.name.endsWith(backupSuffix))
+    .map((entry) => entry.name)
+    .sort();
+
+  const stale = backupNames.slice(0, Math.max(0, backupNames.length - MAX_BOARD_BACKUPS));
+  await Promise.all(stale.map((name) => rm(join(boardDir, name), { force: true })));
+}
+
+function makeBackupTimestamp(): string {
+  return nowIso().replaceAll(":", "-").replaceAll(".", "-");
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
 export function createSection(name: string, description = ""): BoardSection {

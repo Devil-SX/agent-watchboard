@@ -523,10 +523,11 @@ benchmark
     const summary = await loadPerfSummary();
     const filtered = summary.filter((entry) =>
       [
-        "terminal:backlog-read",
-        "terminal:backlog-write",
+        "session:dispatch",
+        "session:state-received",
         "terminal:session-data-latency",
         "terminal:first-output",
+        "terminal:first-live-write",
         "terminal:output-rate"
       ].includes(`${entry.category}:${entry.name}`)
     );

@@ -4,6 +4,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 
 import { reportRendererPerf } from "@renderer/perf";
+import {
+  getTerminalFallbackText,
+  shouldShowTerminalFallback,
+  type TerminalFallbackPhase
+} from "@renderer/components/terminalFallback";
 import { type AppSettings, type SessionState, type TerminalInstance } from "@shared/schema";
 
 type Props = {
@@ -27,11 +32,7 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
   const fitReasonsRef = useRef<string[]>([]);
   const dataFrameRef = useRef<number | null>(null);
   const dataBufferRef = useRef("");
-  const backlogKeyRef = useRef<string>("");
-  const hydratingRef = useRef(false);
-  const pendingDataRef = useRef<string[]>([]);
   const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
-  const plainPreviewRef = useRef("");
   const hasVisibleContentRef = useRef(false);
   const sessionStartMeasureRef = useRef<number | null>(null);
   const latencySampleRef = useRef<{ count: number; total: number; max: number }>({
@@ -40,7 +41,7 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
     max: 0
   });
   const [localError, setLocalError] = useState<string>("");
-  const [fallbackText, setFallbackText] = useState<string>("");
+  const [fallbackPhase, setFallbackPhase] = useState<TerminalFallbackPhase>("waiting");
   const [hasVisibleContent, setHasVisibleContent] = useState(false);
 
   const focusTerminal = (): void => {
@@ -88,7 +89,7 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
     const fitAddon = new FitAddon();
     xterm.loadAddon(fitAddon);
     xterm.open(host);
-    setFallbackText("[watchboard] terminal ready, waiting for session output...");
+    setFallbackPhase("waiting");
 
     const updateVisibleContent = (nextValue: boolean): void => {
       if (hasVisibleContentRef.current === nextValue) {
@@ -96,6 +97,13 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
       }
       hasVisibleContentRef.current = nextValue;
       setHasVisibleContent(nextValue);
+      if (nextValue) {
+        setFallbackPhase("idle");
+        void window.watchboard.debugLog("terminal-fallback-hidden", {
+          sessionId,
+          reason: "visible-content"
+        });
+      }
       if (nextValue && sessionStartMeasureRef.current !== null) {
         reportRendererPerf({
           category: "interaction",
@@ -153,11 +161,17 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
         return;
       }
       dataBufferRef.current = "";
-      const hasPrintableContent = containsPrintableContent(chunk);
       xterm.write(chunk, () => {
-        if (hasPrintableContent) {
-          updateVisibleContent(true);
-        }
+        updateVisibleContent(true);
+        reportRendererPerf({
+          category: "terminal",
+          name: "first-live-write",
+          durationMs: 0,
+          sessionId,
+          extra: {
+            chars: chunk.length
+          }
+        });
       });
     };
     const scheduleOutputFlush = (): void => {
@@ -211,13 +225,6 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
       if (!normalized) {
         return;
       }
-      if (!hasVisibleContentRef.current) {
-        updatePlainPreview(normalized, plainPreviewRef, setFallbackText);
-      }
-      if (hydratingRef.current) {
-        pendingDataRef.current.push(normalized);
-        return;
-      }
       dataBufferRef.current += normalized;
       scheduleOutputFlush();
     };
@@ -248,16 +255,13 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
         cancelAnimationFrame(dataFrameRef.current);
       }
       dataBufferRef.current = "";
-      hydratingRef.current = false;
-      pendingDataRef.current = [];
       lastResizeRef.current = null;
       updateVisibleContentRef.current = null;
       performFitRef.current = null;
       scheduleFitRef.current = null;
-      plainPreviewRef.current = "";
       hasVisibleContentRef.current = false;
       sessionStartMeasureRef.current = null;
-      setFallbackText("");
+      setFallbackPhase("waiting");
       setHasVisibleContent(false);
       observer.disconnect();
       window.removeEventListener("watchboard:terminal-data", handleTerminalData);
@@ -307,96 +311,22 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
     const xterm = terminalRef.current;
     const fitAddon = fitAddonRef.current;
     if (!xterm || !fitAddon || !session || session.status === "stopped") {
-      hydratingRef.current = false;
       return;
     }
-    const backlogKey = `${sessionId}:${session.startedAt}`;
-    if (backlogKeyRef.current === backlogKey) {
+    if (sessionStartMeasureRef.current !== null) {
       return;
     }
-    backlogKeyRef.current = backlogKey;
-    hydratingRef.current = true;
-    pendingDataRef.current = [];
-    plainPreviewRef.current = "";
     hasVisibleContentRef.current = false;
     setHasVisibleContent(false);
-    setFallbackText("[watchboard] hydrating terminal backlog...");
-    let cancelled = false;
-    const backlogReadStartedAt = performance.now();
-    void window.watchboard.debugLog("terminal-hydrate-start", {
-      sessionId,
-      backlogKey
-    });
-    void window.watchboard
-      .readSessionBacklog(sessionId)
-      .then(async (backlog) => {
-        await waitForHostReady(hostRef.current);
-        await waitForNextPaint();
-        if (cancelled || terminalRef.current !== xterm) {
-          return;
-        }
-        const normalizedBacklog = normalizeTerminalOutput(backlog);
-        updatePlainPreview(normalizedBacklog, plainPreviewRef, setFallbackText);
-        void window.watchboard.debugLog("terminal-hydrate-backlog", {
-          sessionId,
-          chars: backlog.length,
-          normalizedChars: normalizedBacklog.length
-        });
-        reportRendererPerf({
-          category: "terminal",
-          name: "backlog-read",
-          durationMs: performance.now() - backlogReadStartedAt,
-          sessionId,
-          extra: {
-            chars: backlog.length
-          }
-        });
-        xterm.reset();
-        lastResizeRef.current = null;
-        const backlogWriteStartedAt = performance.now();
-        if (normalizedBacklog) {
-          await writeBuffered(xterm, normalizedBacklog);
-        }
-        const pending = pendingDataRef.current.join("");
-        pendingDataRef.current = [];
-        if (pending) {
-          updatePlainPreview(pending, plainPreviewRef, setFallbackText);
-          await writeBuffered(xterm, pending);
-        }
-        reportRendererPerf({
-          category: "terminal",
-          name: "backlog-write",
-          durationMs: performance.now() - backlogWriteStartedAt,
-          sessionId,
-          extra: {
-            chars: normalizedBacklog.length + pending.length
-          }
-        });
-        hydratingRef.current = false;
-        performFitRef.current?.("hydrate-done", true);
-        updateVisibleContentRef.current?.(containsPrintableContent(normalizedBacklog) || containsPrintableContent(pending));
-        void window.watchboard.debugLog("terminal-hydrate-done", {
-          sessionId,
-          pendingChars: pending.length,
-          cols: xterm.cols,
-          rows: xterm.rows
-        });
-      })
-      .catch((error) => {
-        hydratingRef.current = false;
-        void window.watchboard.debugLog("terminal-hydrate-error", {
-          sessionId,
-          message: error instanceof Error ? error.message : String(error)
-        });
-        setLocalError(error instanceof Error ? error.message : String(error));
-      });
-    return () => {
-      cancelled = true;
-      hydratingRef.current = false;
-      pendingDataRef.current = [];
-    };
+    setFallbackPhase("waiting");
+    setLocalError("");
+    xterm.reset();
+    lastResizeRef.current = null;
+    performFitRef.current?.("session-start", true);
+    sessionStartMeasureRef.current = performance.now();
   }, [session?.startedAt, session?.status, sessionId]);
-  const showFallback = Boolean(fallbackText && !hasVisibleContent);
+  const showFallback = shouldShowTerminalFallback(fallbackPhase, hasVisibleContent, localError);
+  const fallbackText = getTerminalFallbackText(fallbackPhase);
 
   return (
     <div className="terminal-pane">
@@ -438,16 +368,6 @@ async function waitForHostReady(host: HTMLDivElement | null): Promise<void> {
   }
 }
 
-async function writeBuffered(xterm: Terminal, data: string): Promise<void> {
-  const chunkSize = 16_384;
-  for (let index = 0; index < data.length; index += chunkSize) {
-    const chunk = data.slice(index, index + chunkSize);
-    await new Promise<void>((resolve) => {
-      xterm.write(chunk, () => resolve());
-    });
-  }
-}
-
 function normalizeTerminalOutput(data: string): string {
   return data
     .replace(/\u001b\[\?2026[hl]/g, "")
@@ -456,33 +376,4 @@ function normalizeTerminalOutput(data: string): string {
     .replace(/\u001b\[\?1004[hl]/g, "")
     .replace(/\u001b\[\?2004[hl]/g, "")
     .replace(/\u001b\]0;[^\u0007]*(?:\u0007|\u001b\\)/g, "");
-}
-
-function updatePlainPreview(
-  data: string,
-  previewRef: { current: string },
-  setFallback: (value: string) => void
-): void {
-  const plain = toPlainTerminalPreview(data);
-  if (!plain) {
-    return;
-  }
-  previewRef.current = `${previewRef.current}${plain}`.slice(-12_000);
-  setFallback(previewRef.current);
-}
-
-function toPlainTerminalPreview(data: string): string {
-  return data
-    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "")
-    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
-    .replace(/\u001b[\(\)][A-Za-z0-9]/g, "")
-    .replace(/[\u0000-\u0008\u000b-\u001a\u001c-\u001f\u007f]/g, "")
-    .replace(/\r/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{4,}/g, "\n\n\n")
-    .trimStart();
-}
-
-function containsPrintableContent(data: string): boolean {
-  return toPlainTerminalPreview(data).trim().length > 0;
 }

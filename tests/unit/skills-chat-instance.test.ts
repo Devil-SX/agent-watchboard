@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createSkillsChatInstance } from "../../src/renderer/components/skillsChatSession";
 
 test("createSkillsChatInstance builds a scoped Codex Linux session", () => {
-  const instance = createSkillsChatInstance("codex", "linux");
+  const instance = createSkillsChatInstance("codex", "host", "linux");
 
   assert.equal(instance.workspaceId, "skills-chat-codex");
   assert.equal(instance.title, "Codex Chat");
@@ -15,8 +15,8 @@ test("createSkillsChatInstance builds a scoped Codex Linux session", () => {
   assert.equal(instance.terminalProfileSnapshot.startupCommand, "codex");
 });
 
-test("createSkillsChatInstance builds a scoped Claude Windows session", () => {
-  const instance = createSkillsChatInstance("claude", "win32");
+test("createSkillsChatInstance builds a scoped Claude Windows host session", () => {
+  const instance = createSkillsChatInstance("claude", "host", "win32");
 
   assert.equal(instance.workspaceId, "skills-chat-claude");
   assert.equal(instance.title, "Claude Chat");
@@ -25,4 +25,16 @@ test("createSkillsChatInstance builds a scoped Claude Windows session", () => {
   assert.equal(instance.terminalProfileSnapshot.cwd, "~");
   assert.equal(instance.terminalProfileSnapshot.startupPresetId, "claude");
   assert.equal(instance.terminalProfileSnapshot.startupCommand, "claude");
+});
+
+test("createSkillsChatInstance builds a scoped Codex WSL session on Windows", () => {
+  const instance = createSkillsChatInstance("codex", "wsl", "win32");
+
+  assert.equal(instance.workspaceId, "skills-chat-codex");
+  assert.equal(instance.title, "Codex Chat");
+  assert.equal(instance.terminalProfileSnapshot.target, "wsl");
+  assert.equal(instance.terminalProfileSnapshot.shellOrProgram, "/bin/bash");
+  assert.equal(instance.terminalProfileSnapshot.cwd, "~");
+  assert.equal(instance.terminalProfileSnapshot.startupPresetId, "codex");
+  assert.equal(instance.terminalProfileSnapshot.startupCommand, "codex");
 });

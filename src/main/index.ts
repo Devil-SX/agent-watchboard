@@ -12,6 +12,7 @@ import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
 import { runDoctorCheck } from "@main/doctor";
 import { completeTerminalPath } from "@main/pathCompletion";
 import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery";
+import { listWslSkillEntries, readWslSkillContent } from "@main/wslSkills";
 import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
 import { readDoctorDiagnostics, upsertDoctorCheckResult } from "@shared/doctorDiagnostics";
 import { readAppSettings, writeAppSettings } from "@shared/settings";
@@ -151,37 +152,6 @@ function logRendererSnapshot(label: string): void {
 
 function emit(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload);
-}
-
-async function readSessionBacklog(sessionId: string): Promise<string> {
-  const startedAt = performance.now();
-  const session = sessionStates.get(sessionId);
-  const logFilePath = session?.logFilePath;
-  if (!logFilePath) {
-    return "";
-  }
-  try {
-    const content = await readFile(logFilePath, "utf8");
-    const maxChars = 256_000;
-    const trimmed = content.length > maxChars ? content.slice(-maxChars) : content;
-    recordMainPerf({
-      category: "terminal",
-      name: "backlog.read",
-      durationMs: performance.now() - startedAt,
-      sessionId,
-      extra: {
-        chars: trimmed.length
-      }
-    });
-    return trimmed.replace(/^\[[^\n]+\] \[session:[^\n]+\] \[(?:INFO|WARN|ERROR)\] .*$/gm, "");
-  } catch (error) {
-    log.warn("readSessionBacklog failed", {
-      sessionId,
-      logFilePath,
-      message: error instanceof Error ? error.message : String(error)
-    });
-    return "";
-  }
 }
 
 async function ensureSupervisorReady(): Promise<void> {
@@ -448,6 +418,7 @@ function setupIpc(): void {
 
   ipcMain.handle("watchboard:start-session", async (_event, instance: TerminalInstance) => {
     const sessionId = instance.sessionId;
+    const requestStartedAt = performance.now();
     const existing = sessionStates.get(sessionId);
     if (existing && existing.status !== "stopped") {
       return existing;
@@ -460,8 +431,17 @@ function setupIpc(): void {
       workspaceId: instance.workspaceId,
       profile: instance.terminalProfileSnapshot
     });
-    try {
-      await updateWorkspace(
+    recordMainPerf({
+      category: "session",
+      name: "dispatch",
+      durationMs: performance.now() - requestStartedAt,
+      sessionId,
+      extra: {
+        workspaceId: instance.workspaceId,
+        target: instance.terminalProfileSnapshot.target
+      }
+    });
+    void updateWorkspace(
         instance.workspaceId,
         (workspace) => ({
           ...workspace,
@@ -469,14 +449,25 @@ function setupIpc(): void {
         }),
         runtimePaths.workspaceStorePath,
         defaultWorkspaceSeed()
-      );
-    } catch (error) {
-      log.error("workspace-launch-stamp-failed", {
-        workspaceId: instance.workspaceId,
-        launchedAt,
-        message: error instanceof Error ? error.message : String(error)
+      )
+      .then(() => {
+        recordMainPerf({
+          category: "session",
+          name: "launch-stamp",
+          durationMs: performance.now() - requestStartedAt,
+          sessionId,
+          extra: {
+            workspaceId: instance.workspaceId
+          }
+        });
+      })
+      .catch((error) => {
+        log.error("workspace-launch-stamp-failed", {
+          workspaceId: instance.workspaceId,
+          launchedAt,
+          message: error instanceof Error ? error.message : String(error)
+        });
       });
-    }
     return (
       sessionStates.get(sessionId) ?? {
         sessionId,
@@ -486,9 +477,10 @@ function setupIpc(): void {
         pid: null,
         status: "running-active",
         lastPtyActivityAt: new Date().toISOString(),
-        lastLogHeartbeatAt: null,
+        lastLogHeartbeatAt: existing?.lastLogHeartbeatAt ?? null,
         startedAt: launchedAt,
-        endedAt: null
+        endedAt: null,
+        logFilePath: null
       }
     );
   });
@@ -516,7 +508,6 @@ function setupIpc(): void {
     supervisorClient.send({ type: "resize-session", sessionId, cols, rows });
   });
 
-  ipcMain.handle("watchboard:read-session-backlog", async (_event, sessionId: string) => readSessionBacklog(sessionId));
   ipcMain.handle("watchboard:debug-log", async (_event, message: string, details?: unknown) => {
     log.info("renderer-debug", {
       message,
@@ -534,6 +525,18 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:list-skills", async (_event, location: AgentPathLocation): Promise<SkillEntry[]> => {
+    if (location === "wsl") {
+      if (process.platform !== "win32") {
+        return [];
+      }
+      try {
+        const distro = await resolveWslDistro();
+        return await listWslSkillEntries(distro);
+      } catch {
+        return [];
+      }
+    }
+
     const home = await resolveAgentHome(location);
     if (!home) {
       return [];
@@ -561,6 +564,10 @@ function setupIpc(): void {
 
   ipcMain.handle("watchboard:read-skill-content", async (_event, skillPath: string): Promise<string> => {
     try {
+      if (process.platform === "win32" && skillPath.startsWith("/")) {
+        const distro = await resolveWslDistro();
+        return await readWslSkillContent(distro, skillPath);
+      }
       return await readFile(skillPath, "utf8");
     } catch {
       return "";

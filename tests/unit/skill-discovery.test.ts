@@ -20,7 +20,8 @@ test("scanSkillEntries discovers nested skills through symlinked directories", (
 
   assert.ok(nested, "expected nested skill under symlinked parent directory to be discovered");
   assert.equal(nested.isSymlink, true);
-  assert.match(nested.skillMdPath, /external-skills[\\/]+nested-tool[\\/]SKILL\.md$/);
+  assert.match(nested.skillMdPath, /\.codex[\\/]skills[\\/]\.system[\\/]nested-tool[\\/]SKILL\.md$/);
+  assert.match(nested.resolvedPath, /external-skills[\\/]+nested-tool[\\/]SKILL\.md$/);
 });
 
 test("scanClaudeCommandEntries keeps symlinked markdown command files", () => {
@@ -37,5 +38,6 @@ test("scanClaudeCommandEntries keeps symlinked markdown command files", () => {
 
   assert.ok(review, "expected symlinked claude command markdown file to be discovered");
   assert.equal(review.isSymlink, true);
-  assert.match(review.skillMdPath, /shared-commands[\\/]review\.md$/);
+  assert.match(review.skillMdPath, /\.claude[\\/]commands[\\/]review\.md$/);
+  assert.match(review.resolvedPath, /shared-commands[\\/]review\.md$/);
 });

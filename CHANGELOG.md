@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-03-14
+
+> **Code Stats** | Total: 22066 lines | Delta: +358 (-260) = **+98 net** | Change: **+0.46%** vs v0.7.3
+
+### Added
+- Added board snapshot backups so every Todo Board write keeps a recoverable local `.bak` history, with unit coverage for retention behavior.
+- Added a terminal profiling report generator that summarizes startup timing stages from the renderer, main process, and supervisor logs.
+- Added dedicated WSL skill discovery and parsing coverage so symlinked Codex and Claude skills stay visible on Windows without resolved-path leakage.
+
+### Changed
+- Moved Todo Board environment switching fully into the Todo Board toolbar and clarified the empty-state copy so host and WSL boards report their own loaded-but-empty state.
+- Updated the Skills chat helper to launch Codex or Claude in the selected host or WSL environment instead of always following the local platform default.
+- Tightened session startup instrumentation and fallback rendering so terminal startup timing is measurable without replaying stale backlog content into new tabs.
+
+### Fixed
+- Prevented Windows WSL board reads from overwriting existing Todo Board data with an empty document when the UNC path is temporarily unreadable or malformed.
+- Serialized settings writes to avoid Windows `EMFILE` failures during rapid UI preference persistence.
+
 ## [0.7.3] - 2026-03-13
 
 > **Code Stats** | Total: 21316 lines | Delta: +195 (-39) = **+156 net** | Change: **+0.74%** vs v0.7.2

@@ -99,7 +99,7 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp, 
       };
     }
 
-    const nextInstance = createSkillsChatInstance(chatAgent, diagnosticsProp?.platform);
+    const nextInstance = createSkillsChatInstance(chatAgent, location, diagnosticsProp?.platform);
     setChatInstance(nextInstance);
     setChatError("");
 
@@ -118,7 +118,7 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp, 
     return () => {
       cancelled = true;
     };
-  }, [chatAgent, diagnosticsProp?.platform, isChatOpen]);
+  }, [chatAgent, diagnosticsProp?.platform, isChatOpen, location]);
 
   useEffect(() => {
     return () => {

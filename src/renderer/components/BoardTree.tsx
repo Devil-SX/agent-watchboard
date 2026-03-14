@@ -77,22 +77,13 @@ export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBo
     setSelectedDateKey(todayDateKey());
   }, [selectedDay]);
 
-  if (!document || document.sections.length === 0) {
-    return (
-      <div className="panel-empty">
-        <p>No board data loaded.</p>
-        <span>Use the repo-local `todo_preview` command to populate the JSON board.</span>
-      </div>
-    );
-  }
-
   return (
     <div className="board-tree-shell">
       <div className="board-toolbar">
         <div className="board-toolbar-group">
           {canSwitchLocation ? (
             <CompactToggleButton
-              label="Path"
+              label="Env"
               value={<LocationBadge location={boardLocationKind} />}
               onClick={() => onBoardLocationChange(boardLocationKind === "host" ? "wsl" : "host")}
             />
@@ -111,7 +102,17 @@ export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBo
       </div>
 
       <div className="board-tree">
-        {viewMode === "list" ? (
+        {!document ? (
+          <div className="panel-empty">
+            <p>No board data loaded.</p>
+            <span>Retry after the selected board env path becomes available.</span>
+          </div>
+        ) : document.sections.length === 0 ? (
+          <div className="panel-empty">
+            <p>This {boardLocationKind === "wsl" ? "WSL" : "host"} board is loaded but empty.</p>
+            <span>Use the repo-local `todo_preview` command to add sections or tasks to this env.</span>
+          </div>
+        ) : viewMode === "list" ? (
           filteredSections.length > 0 ? (
             filteredSections.map((section) => {
               const collapsed = collapsedSections[section.id] ?? false;

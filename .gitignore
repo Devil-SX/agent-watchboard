@@ -16,3 +16,8 @@ debug-bundle/
 **/board.json
 test-results/
 playwright-report/
+tests/artifacts/
+
+# Project-level agent configs (may contain local paths)
+.claude/
+.codex/
