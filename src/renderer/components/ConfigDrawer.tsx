@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown } from "@renderer/components/CompactControls";
+import { movePathSuggestionIndex } from "@renderer/components/pathSuggestionNavigation";
 import type { PathCompletionResult } from "@shared/ipc";
 import {
   buildPresetCommand,
@@ -51,6 +52,7 @@ export function ConfigDrawer({
   const [cwdCompletion, setCwdCompletion] = useState<PathCompletionResult | null>(null);
   const [isCompletingCwd, setIsCompletingCwd] = useState(false);
   const [isCwdFocused, setIsCwdFocused] = useState(false);
+  const [cwdSuggestionIndex, setCwdSuggestionIndex] = useState(-1);
   const blurTimerRef = useRef<number | null>(null);
   const completionRequestRef = useRef(0);
   const resolvedStartupCommand = terminal ? describeTerminalLaunch(terminal) : "";
@@ -60,6 +62,7 @@ export function ConfigDrawer({
     if (!isOpen || !terminal) {
       setCwdCompletion(null);
       setIsCompletingCwd(false);
+      setCwdSuggestionIndex(-1);
       return;
     }
     const requestId = completionRequestRef.current + 1;
@@ -78,12 +81,19 @@ export function ConfigDrawer({
             return;
           }
           setCwdCompletion(result);
+          setCwdSuggestionIndex((current) => {
+            if (result.suggestions.length === 0) {
+              return -1;
+            }
+            return current >= 0 && current < result.suggestions.length ? current : -1;
+          });
         })
         .catch(() => {
           if (cancelled || completionRequestRef.current !== requestId) {
             return;
           }
           setCwdCompletion(null);
+          setCwdSuggestionIndex(-1);
         })
         .finally(() => {
           if (cancelled || completionRequestRef.current !== requestId) {
@@ -108,6 +118,14 @@ export function ConfigDrawer({
 
   if (!isOpen || !activeWorkspace || !terminal) {
     return null;
+  }
+
+  const suggestions = cwdCompletion?.suggestions ?? [];
+
+  function applyCwdSuggestion(suggestion: string): void {
+    onTerminalChange({ cwd: suggestion });
+    setCwdSuggestionIndex(-1);
+    setIsCwdFocused(false);
   }
 
   return (
@@ -174,9 +192,32 @@ export function ConfigDrawer({
                       }
                       setIsCwdFocused(true);
                     }}
+                    onKeyDown={(event) => {
+                      if (!cwdCompletion || suggestions.length === 0) {
+                        return;
+                      }
+                      if (event.key === "ArrowDown") {
+                        event.preventDefault();
+                        setCwdSuggestionIndex((current) => movePathSuggestionIndex(current, suggestions.length, "down"));
+                        return;
+                      }
+                      if (event.key === "ArrowUp") {
+                        event.preventDefault();
+                        setCwdSuggestionIndex((current) => movePathSuggestionIndex(current, suggestions.length, "up"));
+                        return;
+                      }
+                      if (event.key === "Enter" && cwdSuggestionIndex >= 0 && cwdSuggestionIndex < suggestions.length) {
+                        event.preventDefault();
+                        const selectedSuggestion = suggestions[cwdSuggestionIndex];
+                        if (selectedSuggestion) {
+                          applyCwdSuggestion(selectedSuggestion);
+                        }
+                      }
+                    }}
                     onBlur={() => {
                       blurTimerRef.current = window.setTimeout(() => {
                         setIsCwdFocused(false);
+                        setCwdSuggestionIndex(-1);
                       }, 120);
                     }}
                   />
@@ -193,15 +234,14 @@ export function ConfigDrawer({
                   </div>
                   {isCwdFocused && cwdCompletion && cwdCompletion.suggestions.length > 0 ? (
                     <div className="path-suggestion-list">
-                      {cwdCompletion.suggestions.map((suggestion) => (
+                      {suggestions.map((suggestion, index) => (
                         <button
                           key={suggestion}
                           type="button"
-                          className="path-suggestion-item"
+                          className={index === cwdSuggestionIndex ? "path-suggestion-item is-active" : "path-suggestion-item"}
                           onMouseDown={(event) => {
                             event.preventDefault();
-                            onTerminalChange({ cwd: suggestion });
-                            setIsCwdFocused(false);
+                            applyCwdSuggestion(suggestion);
                           }}
                         >
                           {suggestion}

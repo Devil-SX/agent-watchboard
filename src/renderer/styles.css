@@ -2328,6 +2328,11 @@ textarea::placeholder {
   background: rgba(142, 199, 255, 0.1);
 }
 
+.path-suggestion-item.is-active {
+  background: rgba(142, 199, 255, 0.16);
+  color: #eef5f9;
+}
+
 .field input,
 .field select,
 .field textarea {

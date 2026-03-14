@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.11] - 2026-03-14
+
+> **Code Stats** | Total: 23300 lines | Delta: +49 (-4) = **+45 net** | Change: **+0.19%** vs v0.7.10
+
+### Added
+- Added keyboard navigation helpers for `Working Dir` path suggestions so the config drawer can reuse the existing completion backend without forcing mouse-only selection.
+
+### Changed
+- Extended workspace template `Working Dir` completion in the config drawer with Up/Down suggestion navigation, Enter-to-apply behavior, and visible active-row styling while preserving the existing mouse interaction.
+
 ## [0.7.10] - 2026-03-14
 
 > **Code Stats** | Total: 23255 lines | Delta: +171 (-81) = **+90 net** | Change: **+0.39%** vs v0.7.9
