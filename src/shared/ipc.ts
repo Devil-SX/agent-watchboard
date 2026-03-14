@@ -50,6 +50,7 @@ export type WatchboardApi = {
   listSessions: () => Promise<SessionState[]>;
   selectBoard: () => Promise<BoardDocument>;
   getDiagnostics: () => Promise<DiagnosticsInfo>;
+  openDebugPath: (debugPath: string) => Promise<void>;
   completePath: (request: PathCompletionRequest) => Promise<PathCompletionResult>;
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
   onSessionState: (listener: (session: SessionState) => void) => () => void;

@@ -66,7 +66,7 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
         activeConfigId: "claude-settings"
       },
       settingsPane: {
-        activeCategory: "storage"
+        activeCategory: "debug"
       }
     },
     settingsPath
@@ -79,11 +79,11 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
   assert.equal(saved.activeMainTab, "skills");
   assert.equal(saved.skillsPane.familyFilter, "claude");
   assert.equal(saved.agentConfigPane.activeConfigId, "claude-settings");
-  assert.equal(saved.settingsPane.activeCategory, "storage");
+  assert.equal(saved.settingsPane.activeCategory, "debug");
   assert.equal(raw.hostBoardPath, "~/host-board.json");
   assert.equal(raw.wslBoardPath, "~/wsl-board.json");
   assert.equal(raw.activeMainTab, "skills");
-  assert.deepEqual(raw.settingsPane, { activeCategory: "storage" });
+  assert.deepEqual(raw.settingsPane, { activeCategory: "debug" });
 });
 
 test("writeAppSettings serializes concurrent writes to the same file", async () => {

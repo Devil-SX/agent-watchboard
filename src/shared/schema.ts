@@ -93,7 +93,7 @@ export const AgentConfigPaneStateSchema = z.object({
   activeConfigId: z.enum(["codex-config", "codex-auth", "claude-settings"]).default("codex-config")
 });
 export type AgentConfigPaneState = z.infer<typeof AgentConfigPaneStateSchema>;
-export const SettingsCategorySchema = z.enum(["board", "terminal", "storage"]);
+export const SettingsCategorySchema = z.enum(["board", "terminal", "storage", "debug"]);
 export type SettingsCategory = z.infer<typeof SettingsCategorySchema>;
 export const SettingsPaneStateSchema = z.object({
   activeCategory: SettingsCategorySchema.default("board")

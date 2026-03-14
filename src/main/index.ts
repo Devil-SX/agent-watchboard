@@ -5,11 +5,12 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Menu, app, BrowserWindow, ipcMain } from "electron";
+import { Menu, app, BrowserWindow, ipcMain, shell } from "electron";
 import log from "electron-log/main.js";
 
 import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
 import { runDoctorCheck } from "@main/doctor";
+import { openDebugPath } from "@main/openDebugPath";
 import { completeTerminalPath } from "@main/pathCompletion";
 import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery";
 import { listWslSkillEntries, readWslSkillContent } from "@main/wslSkills";
@@ -413,6 +414,10 @@ function setupIpc(): void {
     defaultHostBoardPath: runtimePaths.defaultHostBoardPath,
     defaultWslBoardPath: runtimePaths.defaultWslBoardPath
   }));
+
+  ipcMain.handle("watchboard:open-debug-path", async (_event, debugPath: string) => {
+    await openDebugPath(debugPath, (targetPath) => shell.openPath(targetPath));
+  });
 
   ipcMain.handle("watchboard:complete-path", async (_event, request) => completeTerminalPath(request));
 

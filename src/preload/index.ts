@@ -22,6 +22,7 @@ const api: WatchboardApi = {
   listSessions: () => ipcRenderer.invoke("watchboard:list-sessions"),
   selectBoard: () => ipcRenderer.invoke("watchboard:select-board"),
   getDiagnostics: () => ipcRenderer.invoke("watchboard:get-diagnostics"),
+  openDebugPath: (debugPath) => ipcRenderer.invoke("watchboard:open-debug-path", debugPath),
   completePath: (request) => ipcRenderer.invoke("watchboard:complete-path", request),
   onSessionData: (listener) => {
     const wrapped = (_event: unknown, payload: { sessionId: string; data: string; emittedAt: number }) => listener(payload);

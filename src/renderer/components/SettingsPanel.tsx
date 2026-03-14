@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 
 import { TERMINAL_FONT_PRESETS, type AppSettings, type DiagnosticsInfo, type SettingsCategory, type SettingsPaneState } from "@shared/schema";
 
@@ -13,8 +13,22 @@ type Props = {
     value: string | number
   ) => void;
   onViewStateChange: (state: SettingsPaneState) => void;
+  onOpenDebugPath: (debugPath: string) => Promise<void>;
   onSave: () => void;
   onReset: () => void;
+};
+
+type SettingsCategoryMeta = {
+  id: SettingsCategory;
+  label: string;
+  title: string;
+  copy: string;
+};
+
+type DebugPathEntry = {
+  label: string;
+  path: string;
+  helperText: string;
 };
 
 export function SettingsPanel({
@@ -25,6 +39,7 @@ export function SettingsPanel({
   isSaving,
   onChange,
   onViewStateChange,
+  onOpenDebugPath,
   onSave,
   onReset
 }: Props): ReactElement {
@@ -32,14 +47,26 @@ export function SettingsPanel({
     ? settings.terminalFontFamily
     : "__custom__";
   const activeCategory = viewState.activeCategory;
+  const categoryMeta = SETTINGS_CATEGORIES.find((category) => category.id === activeCategory) ?? SETTINGS_CATEGORIES[0]!;
+  const [openingPath, setOpeningPath] = useState<string | null>(null);
+  const debugEntries = diagnostics ? createDebugPathEntries(diagnostics) : [];
+
+  async function handleOpenDebugPath(debugPath: string): Promise<void> {
+    setOpeningPath(debugPath);
+    try {
+      await onOpenDebugPath(debugPath);
+    } finally {
+      setOpeningPath((current) => (current === debugPath ? null : current));
+    }
+  }
 
   return (
     <div className="settings-panel">
       <header className="settings-panel-header">
         <div>
           <p className="panel-eyebrow">Global Settings</p>
-          <h2>Terminal Rendering</h2>
-          <p className="settings-panel-copy">Font settings apply to every workspace terminal in the app.</p>
+          <h2>{categoryMeta.title}</h2>
+          <p className="settings-panel-copy">{categoryMeta.copy}</p>
         </div>
         <div className="toolbar-actions">
           <button type="button" className="primary-button" disabled={!isDirty || isSaving} onClick={onSave}>
@@ -164,16 +191,57 @@ export function SettingsPanel({
               <code>{diagnostics.settingsStorePath}</code>
             </div>
             <div className="diagnostic-line">
-              <span>Perf Renderer Log</span>
-              <code>{diagnostics.perfRendererLogPath}</code>
+              <span>Workspace Store</span>
+              <code>{diagnostics.workspaceStorePath}</code>
             </div>
             <div className="diagnostic-line">
-              <span>Perf Main Log</span>
-              <code>{diagnostics.perfMainLogPath}</code>
+              <span>Workbench Store</span>
+              <code>{diagnostics.workbenchStorePath}</code>
             </div>
             <div className="diagnostic-line">
-              <span>Perf Supervisor Log</span>
-              <code>{diagnostics.perfSupervisorLogPath}</code>
+              <span>Supervisor State</span>
+              <code>{diagnostics.supervisorStatePath}</code>
+            </div>
+          </section>
+        ) : null}
+
+        {activeCategory === "debug" && diagnostics ? (
+          <section className="settings-section">
+            <div className="settings-debug-hero">
+              <div>
+                <p className="panel-eyebrow">Debug Actions</p>
+                <p className="settings-debug-copy">
+                  Open the runtime log output folders directly from Settings. File entries open their containing folder.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={openingPath === diagnostics.logsDir}
+                onClick={() => void handleOpenDebugPath(diagnostics.logsDir)}
+              >
+                {openingPath === diagnostics.logsDir ? "Opening..." : "Open Logs Folder"}
+              </button>
+            </div>
+
+            <div className="settings-debug-list">
+              {debugEntries.map((entry) => (
+                <div key={entry.label} className="settings-debug-row">
+                  <div className="settings-debug-details">
+                    <span className="settings-debug-label">{entry.label}</span>
+                    <code>{entry.path}</code>
+                    <span className="settings-debug-helper">{entry.helperText}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={openingPath === entry.path}
+                    onClick={() => void handleOpenDebugPath(entry.path)}
+                  >
+                    {openingPath === entry.path ? "Opening..." : "Open Folder"}
+                  </button>
+                </div>
+              ))}
             </div>
           </section>
         ) : null}
@@ -182,8 +250,64 @@ export function SettingsPanel({
   );
 }
 
-const SETTINGS_CATEGORIES: Array<{ id: SettingsCategory; label: string }> = [
-  { id: "board", label: "Board" },
-  { id: "terminal", label: "Terminal" },
-  { id: "storage", label: "Storage" }
+function createDebugPathEntries(diagnostics: DiagnosticsInfo): DebugPathEntry[] {
+  return [
+    {
+      label: "Main Log",
+      path: diagnostics.mainLogPath,
+      helperText: "Electron main-process log file."
+    },
+    {
+      label: "Supervisor Log",
+      path: diagnostics.supervisorLogPath,
+      helperText: "Supervisor runtime log file."
+    },
+    {
+      label: "Session Logs",
+      path: diagnostics.sessionLogsDir,
+      helperText: "Per-workspace terminal session log directory."
+    },
+    {
+      label: "Perf Main Log",
+      path: diagnostics.perfMainLogPath,
+      helperText: "Main-process performance JSONL log."
+    },
+    {
+      label: "Perf Renderer Log",
+      path: diagnostics.perfRendererLogPath,
+      helperText: "Renderer performance JSONL log."
+    },
+    {
+      label: "Perf Supervisor Log",
+      path: diagnostics.perfSupervisorLogPath,
+      helperText: "Supervisor performance JSONL log."
+    }
+  ];
+}
+
+const SETTINGS_CATEGORIES: SettingsCategoryMeta[] = [
+  {
+    id: "board",
+    label: "Board",
+    title: "Shared Board",
+    copy: "Board paths and location preferences for the shared watchboard document."
+  },
+  {
+    id: "terminal",
+    label: "Terminal",
+    title: "Terminal Rendering",
+    copy: "Font settings apply to every workspace terminal in the app."
+  },
+  {
+    id: "storage",
+    label: "Storage",
+    title: "Runtime Storage",
+    copy: "Inspect the persisted files that back the workspace, workbench, and settings state."
+  },
+  {
+    id: "debug",
+    label: "Debug",
+    title: "Debug Paths",
+    copy: "Open the watchboard log output folders and inspect the runtime paths used for diagnostics."
+  }
 ];

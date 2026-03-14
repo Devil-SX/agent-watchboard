@@ -1409,6 +1409,57 @@ textarea::placeholder {
   white-space: pre-wrap;
 }
 
+.settings-debug-hero,
+.settings-debug-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-debug-hero {
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  background: rgba(9, 16, 22, 0.78);
+}
+
+.settings-debug-copy,
+.settings-debug-helper {
+  color: var(--text-soft);
+}
+
+.settings-debug-copy {
+  margin: 6px 0 0;
+}
+
+.settings-debug-list {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-debug-row {
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-debug-details {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-debug-label {
+  font-weight: 600;
+  color: #eef5f9;
+}
+
+.settings-debug-details code {
+  overflow-wrap: anywhere;
+}
+
 .board-panel {
   position: relative;
   display: flex;

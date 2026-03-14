@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Added a `Debug` Settings category with one-click actions for opening the watchboard logs directory and the containing folders for main, supervisor, session, and perf runtime logs.
+- Added main-process debug-path opening helpers and regression coverage so log-opening failures surface cleanly and the new Settings actions remain testable across platforms.
+
+### Changed
+- Reworked the existing `Storage` Settings view to focus on persisted store/state files while moving actionable runtime log inspection into the new debug-focused Settings flow.
+
 ## [0.7.13] - 2026-03-14
 
 ### Fixed

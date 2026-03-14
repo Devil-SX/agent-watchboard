@@ -733,6 +733,15 @@ export function App(): ReactElement {
     setError("");
   }
 
+  async function handleOpenDebugPath(debugPath: string): Promise<void> {
+    try {
+      await window.watchboard.openDebugPath(debugPath);
+      setError("");
+    } catch (openError) {
+      setError(messageOf(openError));
+    }
+  }
+
   async function handleBoardLocationChange(location: "host" | "wsl"): Promise<void> {
     if (!settingsDraft) {
       return;
@@ -1025,6 +1034,7 @@ export function App(): ReactElement {
               isSaving={isSavingSettings}
               onChange={handleSettingsFieldChange}
               onViewStateChange={(state) => void handleSettingsPaneStateChange(state)}
+              onOpenDebugPath={handleOpenDebugPath}
               onSave={() => void handleSettingsSave()}
               onReset={handleResetSettings}
             />
