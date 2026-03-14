@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown } from "@renderer/components/CompactControls";
 import { movePathSuggestionIndex } from "@renderer/components/pathSuggestionNavigation";
+import { scrollActivePathSuggestionIntoView } from "@renderer/components/pathSuggestionScroll";
 import type { PathCompletionResult } from "@shared/ipc";
 import {
   buildPresetCommand,
@@ -55,8 +56,10 @@ export function ConfigDrawer({
   const [cwdSuggestionIndex, setCwdSuggestionIndex] = useState(-1);
   const blurTimerRef = useRef<number | null>(null);
   const completionRequestRef = useRef(0);
+  const cwdSuggestionListRef = useRef<HTMLDivElement | null>(null);
   const resolvedStartupCommand = terminal ? describeTerminalLaunch(terminal) : "";
   const presetState = decomposePresetId(terminal?.startupPresetId);
+  const suggestions = cwdCompletion?.suggestions ?? [];
 
   useEffect(() => {
     if (!isOpen || !terminal) {
@@ -116,11 +119,13 @@ export function ConfigDrawer({
     };
   }, []);
 
+  useEffect(() => {
+    scrollActivePathSuggestionIntoView(cwdSuggestionListRef.current, cwdSuggestionIndex);
+  }, [cwdSuggestionIndex, suggestions.length]);
+
   if (!isOpen || !activeWorkspace || !terminal) {
     return null;
   }
-
-  const suggestions = cwdCompletion?.suggestions ?? [];
 
   function applyCwdSuggestion(suggestion: string): void {
     onTerminalChange({ cwd: suggestion });
@@ -233,7 +238,7 @@ export function ConfigDrawer({
                     {isCompletingCwd ? "Checking..." : (cwdCompletion?.message ?? "Path status unavailable")}
                   </div>
                   {isCwdFocused && cwdCompletion && cwdCompletion.suggestions.length > 0 ? (
-                    <div className="path-suggestion-list">
+                    <div ref={cwdSuggestionListRef} className="path-suggestion-list">
                       {suggestions.map((suggestion, index) => (
                         <button
                           key={suggestion}
