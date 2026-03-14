@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.13] - 2026-03-14
+
+### Fixed
+- Fixed `WorkspaceSidebar` filtering so agent and environment filters no longer hide existing runtime instances together with their parent workspace row.
+- Kept template filtering behavior for workspaces without instances while adding regression coverage for agent-filter, environment-filter, and no-instance exclusion cases.
+
 ## [0.7.12] - 2026-03-14
 
 ### Fixed

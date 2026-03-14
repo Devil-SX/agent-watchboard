@@ -80,8 +80,8 @@ export function WorkspaceSidebar({
   } | null>(null);
   const instancesByWorkspace = useMemo(() => groupInstances(workbench.instances), [workbench.instances]);
   const visibleWorkspaces = useMemo(
-    () => sortAndFilterWorkspaces(workspaces, filterMode, environmentFilterMode, sortMode),
-    [environmentFilterMode, filterMode, sortMode, workspaces]
+    () => deriveVisibleWorkspaces(workspaces, instancesByWorkspace, filterMode, environmentFilterMode, sortMode),
+    [environmentFilterMode, filterMode, instancesByWorkspace, sortMode, workspaces]
   );
 
   useEffect(() => {
@@ -406,6 +406,23 @@ export function sortAndFilterWorkspaces(
 ): Workspace[] {
   return [...workspaces]
     .filter((workspace) => matchesWorkspaceFilter(workspace, filterMode, environmentFilterMode))
+    .sort((left, right) => compareWorkspaces(left, right, sortMode));
+}
+
+export function deriveVisibleWorkspaces(
+  workspaces: Workspace[],
+  instancesByWorkspace: ReadonlyMap<string, TerminalInstance[]>,
+  filterMode: WorkspaceFilterMode,
+  environmentFilterMode: WorkspaceEnvironmentFilterMode,
+  sortMode: WorkspaceSortMode
+): Workspace[] {
+  return [...workspaces]
+    .filter((workspace) => {
+      if (matchesWorkspaceFilter(workspace, filterMode, environmentFilterMode)) {
+        return true;
+      }
+      return (instancesByWorkspace.get(workspace.id)?.length ?? 0) > 0;
+    })
     .sort((left, right) => compareWorkspaces(left, right, sortMode));
 }
 
