@@ -45,7 +45,9 @@ Use the repo-local CLI:
 ```bash
 pnpm todo_preview list
 pnpm todo_preview add "implement PTY reconnect" --topic "Supervisor"
+pnpm todo_preview doing "implement PTY reconnect"
 pnpm todo_preview done "implement PTY reconnect"
+pnpm todo_preview todo "implement PTY reconnect"
 pnpm todo_preview move "implement PTY reconnect" "UI"
 pnpm todo_preview rename-topic "UI" "Renderer"
 pnpm todo_preview remove "obsolete task"

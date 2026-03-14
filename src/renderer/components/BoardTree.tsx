@@ -17,7 +17,7 @@ type SelectedBoardItem = {
 };
 
 type BoardViewMode = "list" | "calendar";
-type StatusFilter = "all" | "todo" | "done";
+type StatusFilter = "all" | "todo" | "doing" | "done";
 type DeadlineFilter = "all" | "has-ddl" | "no-ddl" | "overdue" | "7d" | "30d";
 type CalendarEventKind = "created" | "completed" | "deadline";
 
@@ -151,20 +151,16 @@ export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBo
                             className={item.id === selectedItemId ? "board-item is-active" : "board-item"}
                             onClick={() => setSelectedItemId(item.id)}
                           >
-                            <span className={`board-node-status ${item.status === "done" ? "is-done" : "is-todo"}`} />
+                            <BoardStatusIcon status={item.status} />
                             <span className="board-item-copy">
                               <span className="board-item-title-row">
                                 <strong>{item.name}</strong>
-                                <span className={item.status === "done" ? "board-item-badge is-done" : "board-item-badge is-todo"}>
-                                  {item.status}
-                                </span>
                                 {item.deadlineAt ? (
                                   <span className={isOverdue(item) ? "board-item-deadline is-overdue" : "board-item-deadline"}>
-                                    DDL {item.deadlineAt}
+                                    {formatDeadlineTag(item.deadlineAt)}
                                   </span>
                                 ) : null}
                               </span>
-                              {item.description ? <span className="board-item-description">{item.description}</span> : null}
                               <span className="board-item-meta">{formatItemMeta(item)}</span>
                             </span>
                           </button>
@@ -265,13 +261,10 @@ export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBo
 
             <div className="board-detail-body">
               <div className="board-detail-status-row">
-                <span className={`board-node-status ${selected.item.status === "done" ? "is-done" : "is-todo"}`} />
-                <span className={selected.item.status === "done" ? "board-item-badge is-done" : "board-item-badge is-todo"}>
-                  {selected.item.status}
-                </span>
+                <BoardStatusIcon status={selected.item.status} />
                 {selected.item.deadlineAt ? (
                   <span className={isOverdue(selected.item) ? "board-item-deadline is-overdue" : "board-item-deadline"}>
-                    DDL {selected.item.deadlineAt}
+                    {formatDeadlineTag(selected.item.deadlineAt)}
                   </span>
                 ) : null}
               </div>
@@ -283,7 +276,10 @@ export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBo
 
               <div className="board-detail-grid">
                 <BoardDetailLine label="Section" value={selected.section.name} />
-                <BoardDetailLine label="DDL" value={selected.item.deadlineAt ?? "No deadline"} />
+                <BoardDetailLine
+                  label="DDL"
+                  value={selected.item.deadlineAt ? `${selected.item.deadlineAt} · ${formatDeadlineDelta(selected.item.deadlineAt)}` : "No deadline"}
+                />
                 <BoardDetailLine label="Created At" value={formatTimestamp(selected.item.createdAt)} />
                 <BoardDetailLine label="Completed At" value={selected.item.completedAt ? formatTimestamp(selected.item.completedAt) : "Not completed"} />
                 <BoardDetailLine label="Item ID" value={selected.item.id} />
@@ -296,19 +292,20 @@ export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBo
   );
 }
 
-const STATUS_FILTER_OPTIONS: Array<{ label: string; value: StatusFilter }> = [
-  { label: "All", value: "all" },
-  { label: "Todo", value: "todo" },
-  { label: "Done", value: "done" }
+const STATUS_FILTER_OPTIONS: Array<{ label: string; value: StatusFilter; content: ReactElement }> = [
+  { label: "All", value: "all", content: <StatusFilterOption status="all" label="All" /> },
+  { label: "Todo", value: "todo", content: <StatusFilterOption status="todo" label="Todo" /> },
+  { label: "Doing", value: "doing", content: <StatusFilterOption status="doing" label="Doing" /> },
+  { label: "Done", value: "done", content: <StatusFilterOption status="done" label="Done" /> }
 ];
 
-const DEADLINE_FILTER_OPTIONS: Array<{ label: string; value: DeadlineFilter }> = [
-  { label: "All", value: "all" },
-  { label: "Has DDL", value: "has-ddl" },
-  { label: "No DDL", value: "no-ddl" },
-  { label: "Overdue", value: "overdue" },
-  { label: "Next 7 Days", value: "7d" },
-  { label: "Next 30 Days", value: "30d" }
+const DEADLINE_FILTER_OPTIONS: Array<{ label: string; value: DeadlineFilter; content: ReactElement }> = [
+  { label: "All", value: "all", content: <DeadlineFilterOption filter="all" label="All" /> },
+  { label: "Has DDL", value: "has-ddl", content: <DeadlineFilterOption filter="has-ddl" label="Has DDL" /> },
+  { label: "No DDL", value: "no-ddl", content: <DeadlineFilterOption filter="no-ddl" label="No DDL" /> },
+  { label: "Overdue", value: "overdue", content: <DeadlineFilterOption filter="overdue" label="Overdue" /> },
+  { label: "Next 7 Days", value: "7d", content: <DeadlineFilterOption filter="7d" label="Next 7 Days" /> },
+  { label: "Next 30 Days", value: "30d", content: <DeadlineFilterOption filter="30d" label="Next 30 Days" /> }
 ];
 
 function CalendarDayEvents({
@@ -370,7 +367,7 @@ function CalendarDayEvents({
                 </span>
                 {event.item.deadlineAt ? (
                   <span className={isOverdue(event.item) ? "board-item-deadline is-overdue" : "board-item-deadline"}>
-                    DDL {event.item.deadlineAt}
+                    {formatDeadlineTag(event.item.deadlineAt)}
                   </span>
                 ) : null}
               </button>
@@ -389,6 +386,121 @@ function BoardDetailLine({ label, value }: { label: string; value: string }): Re
       <code>{value}</code>
     </div>
   );
+}
+
+function BoardStatusIcon({ status }: { status: BoardItem["status"] }): ReactElement {
+  const className = `board-status-icon is-${status}`;
+  if (status === "done") {
+    return (
+      <span className={className} aria-hidden="true">
+        <svg viewBox="0 0 28 28" role="presentation">
+          <path d="M14 22.5v-5.8" />
+          <path d="M10.8 24.2h6.4" />
+          <path d="M14 15.6c-1.7 0-3.2-.8-4.3-2.1-1.7.2-3.4-.4-4.6-1.7.7-2 2.3-3.5 4.3-4 .4-2.7 2.3-5 4.6-6.2 2.3 1.2 4.2 3.5 4.6 6.2 2 .5 3.6 2 4.3 4-1.2 1.3-2.9 1.9-4.6 1.7-1.1 1.3-2.6 2.1-4.3 2.1Z" />
+          <path d="M7.6 12.1c1.9.2 3.3-.4 4.5-1.7" />
+          <path d="M20.4 12.1c-1.9.2-3.3-.4-4.5-1.7" />
+        </svg>
+      </span>
+    );
+  }
+  if (status === "doing") {
+    return (
+      <span className={className} aria-hidden="true">
+        <svg viewBox="0 0 28 28" role="presentation">
+          <path d="M14 23.4v-8.2" />
+          <path d="M10.4 24.2h7.2" />
+          <path d="M14.1 15.1c.2-4 2.5-7 6.2-8.1.1 3.8-1.4 6.9-4.8 8.7" />
+          <path d="M13.9 15.7c-3.1-.2-5.8-2.1-7-5.3 3.4-.2 6 1.1 7.8 4" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span className={className} aria-hidden="true">
+      <svg viewBox="0 0 28 28" role="presentation">
+        <path d="M14 21.6v-4.2" />
+        <path d="M10.4 23.2h7.2" />
+        <path d="M13.8 17.1c0-3.4 2.2-5.8 5.7-6.9.2 4.3-1.9 7-5.7 8.6-3.8-1.6-5.9-4.3-5.7-8.6 3.5 1.1 5.7 3.5 5.7 6.9Z" />
+        <path d="M11.2 20.1c1 .7 1.9 1.1 2.8 1.3" />
+        <path d="M16.8 20.1c-1 .7-1.9 1.1-2.8 1.3" />
+      </svg>
+    </span>
+  );
+}
+
+function StatusFilterOption({ status, label }: { status: StatusFilter; label: string }): ReactElement {
+  return (
+    <>
+      <StatusFilterIcon status={status} />
+      <span>{label}</span>
+    </>
+  );
+}
+
+function StatusFilterIcon({ status }: { status: StatusFilter }): ReactElement {
+  if (status === "all") {
+    return (
+      <span className="board-status-filter-icon is-all" aria-hidden="true">
+        <svg viewBox="0 0 24 24" role="presentation">
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="M12 7.5v9" />
+          <path d="M7.5 12h9" />
+        </svg>
+      </span>
+    );
+  }
+  return <BoardStatusIcon status={status} />;
+}
+
+function DeadlineFilterOption({ filter, label }: { filter: DeadlineFilter; label: string }): ReactElement {
+  return (
+    <>
+      <DeadlineMoodIcon filter={filter} />
+      <span>{label}</span>
+    </>
+  );
+}
+
+function DeadlineMoodIcon({ filter }: { filter: DeadlineFilter }): ReactElement {
+  return (
+    <span className={`board-deadline-filter-icon is-${filter}`} aria-hidden="true">
+      <svg viewBox="0 0 24 24" role="presentation">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d={deadlineMoodEyesPath(filter)} />
+        <path d={deadlineMoodMouthPath(filter)} />
+        {filter === "overdue" ? <path d="M7.2 6.9 9.4 8.6" /> : null}
+        {filter === "7d" ? <path d="M16.8 6.9 14.6 8.6" /> : null}
+      </svg>
+    </span>
+  );
+}
+
+function deadlineMoodEyesPath(filter: DeadlineFilter): string {
+  switch (filter) {
+    case "overdue":
+      return "M8.1 10.3 10.1 11.7 M10.1 10.3 8.1 11.7 M13.9 10.3 15.9 11.7 M15.9 10.3 13.9 11.7";
+    case "7d":
+      return "M8.2 10.1c.5-.8 1.2-1.2 2-1.2s1.5.4 2 1.2 M13.8 10.5c.4-.9 1.1-1.4 2-1.4.8 0 1.5.5 2 1.4";
+    default:
+      return "M9.1 10.2h.01 M14.9 10.2h.01";
+  }
+}
+
+function deadlineMoodMouthPath(filter: DeadlineFilter): string {
+  switch (filter) {
+    case "no-ddl":
+      return "M8.2 14.2c1 1.4 2.4 2.1 3.8 2.1 1.4 0 2.8-.7 3.8-2.1";
+    case "30d":
+      return "M8.3 15c1-.9 2.3-1.4 3.7-1.4 1.4 0 2.7.5 3.7 1.4";
+    case "has-ddl":
+      return "M8.4 15.1c1-.4 2.2-.7 3.6-.7 1.4 0 2.6.3 3.6.7";
+    case "7d":
+      return "M8.4 15.6c.9-.9 2.1-1.3 3.6-1.3s2.7.4 3.6 1.3";
+    case "overdue":
+      return "M8.4 16.6c.9-1.4 2.1-2.1 3.6-2.1s2.7.7 3.6 2.1";
+    default:
+      return "M8.7 15.3h6.6";
+  }
 }
 
 function filterSections(
@@ -506,7 +618,7 @@ function emptyDaySummary(dateKey: string): CalendarDaySummary {
 function formatItemMeta(item: BoardItem): string {
   const parts = [];
   if (item.deadlineAt) {
-    parts.push(`DDL ${item.deadlineAt}`);
+    parts.push(`DDL ${formatDeadlineDelta(item.deadlineAt)}`);
   }
   parts.push(`Created ${formatTimestamp(item.createdAt)}`);
   if (item.completedAt) {
@@ -514,6 +626,9 @@ function formatItemMeta(item: BoardItem): string {
   }
   return parts.join(" · ");
 }
+
+// Board list cards stay intentionally compact: title/deadline on row 1, meta on row 2.
+// Long-form description remains available in the detail drawer instead of the list.
 
 function formatTimestamp(value: string): string {
   const date = new Date(value);
@@ -547,6 +662,32 @@ function formatMonthLabel(date: Date): string {
     year: "numeric",
     month: "long"
   }).format(date);
+}
+
+function formatDeadlineTag(deadlineAt: string): string {
+  return formatDeadlineDelta(deadlineAt);
+}
+
+function formatDeadlineDelta(deadlineAt: string): string {
+  const deadline = new Date(`${deadlineAt}T23:59:00`);
+  if (Number.isNaN(deadline.getTime())) {
+    return deadlineAt;
+  }
+
+  const diffMs = deadline.getTime() - Date.now();
+  const absMs = Math.abs(diffMs);
+  const totalMinutes = Math.max(1, Math.floor(absMs / 60_000));
+  const totalHours = Math.max(1, Math.floor(absMs / 3_600_000));
+  const totalDays = Math.max(1, Math.floor(absMs / 86_400_000));
+
+  const compact =
+    totalMinutes < 60
+      ? `${totalMinutes}m`
+      : totalHours < 24
+        ? `${totalHours}h`
+        : `${totalDays}d`;
+
+  return diffMs >= 0 ? `in ${compact}` : `overdue ${compact}`;
 }
 
 function isOverdue(item: BoardItem): boolean {

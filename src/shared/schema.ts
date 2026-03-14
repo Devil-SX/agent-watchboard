@@ -13,7 +13,7 @@ export const LEGACY_TERMINAL_FONT_SIZE = 13;
 export const DEFAULT_TERMINAL_FONT_FAMILY = "'JetBrains Mono', 'Cascadia Code', monospace";
 export const DEFAULT_TERMINAL_FONT_SIZE = 14;
 
-export const StatusSchema = z.enum(["todo", "done"]);
+export const StatusSchema = z.enum(["todo", "doing", "done"]);
 export type Status = z.infer<typeof StatusSchema>;
 
 export const BoardItemSchema = z.object({

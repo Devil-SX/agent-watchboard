@@ -61,8 +61,8 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp, 
   }, [selectedSkillPath, skills]);
 
   const codexCount = skills.filter((s) => s.source === "codex").length;
-  const claudeCmdCount = skills.filter((s) => s.source === "claude-command").length;
-  const claudeSkillCount = skills.filter((s) => s.source === "claude-skill").length;
+  const claudeCount = skills.filter((s) => s.source === "claude-command" || s.source === "claude-skill").length;
+  const otherCount = skills.filter((s) => s.source !== "codex" && s.source !== "claude-command" && s.source !== "claude-skill").length;
   const visibleSkills = useMemo(
     () => skills.filter((skill) => matchesSkillFilter(skill, familyFilter, claudeSubtypeFilter)),
     [claudeSubtypeFilter, familyFilter, skills]
@@ -175,11 +175,13 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp, 
   return (
     <div className="skills-panel">
       <header className="skills-panel-header">
-        <div>
+        <div className="skills-panel-header-copy">
           <p className="panel-eyebrow">Skills</p>
-          <h2>
-            codex: {codexCount} &middot; claude-cmd: {claudeCmdCount} &middot; claude-skill: {claudeSkillCount}
-          </h2>
+          <div className="skills-panel-stats" aria-label="Skill source statistics">
+            {codexCount > 0 ? <SkillStatPill family="codex" label="Codex" count={codexCount} /> : null}
+            {claudeCount > 0 ? <SkillStatPill family="claude" label="Claude" count={claudeCount} /> : null}
+            {otherCount > 0 ? <SkillStatPill family="other" label="Other" count={otherCount} /> : null}
+          </div>
         </div>
         <div className="skills-panel-toolbar">
           {isWindows ? (
@@ -318,6 +320,44 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp, 
         ) : null}
       </div>
     </div>
+  );
+}
+
+function SkillStatPill({
+  family,
+  label,
+  count
+}: {
+  family: "codex" | "claude" | "other";
+  label: string;
+  count: number;
+}): ReactElement {
+  return (
+    <span className={`skill-stat-pill is-${family}`}>
+      <span className="skill-stat-pill-icon" aria-hidden="true">
+        {family === "codex" ? <CodexIcon /> : family === "claude" ? <ClaudeIcon /> : <SkillClusterIcon />}
+      </span>
+      <span className="skill-stat-pill-label">{label}</span>
+      <strong className="skill-stat-pill-count">{count}</strong>
+    </span>
+  );
+}
+
+function SkillClusterIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" role="presentation">
+      <path
+        d="M7.5 6.5a2 2 0 1 0 0 .01ZM16.5 6.5a2 2 0 1 0 0 .01ZM12 15a2 2 0 1 0 0 .01Z"
+        fill="currentColor"
+      />
+      <path
+        d="M8.9 7.7 10.8 13M15.1 7.7 13.2 13M9.7 6.5h4.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 

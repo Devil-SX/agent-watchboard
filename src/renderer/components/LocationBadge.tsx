@@ -7,17 +7,30 @@ type LocationBadgeProps = {
   location: AgentPathLocation;
   tone?: "default" | "strong";
   showLabel?: boolean;
+  orientation?: "horizontal" | "vertical-compact";
 };
 
-export function LocationBadge({ location, tone = "default", showLabel = true }: LocationBadgeProps): ReactElement {
-  const className = ["location-badge", `is-${location}`, tone === "strong" ? "is-strong" : ""].filter(Boolean).join(" ");
+export function LocationBadge({
+  location,
+  tone = "default",
+  showLabel = true,
+  orientation = "horizontal"
+}: LocationBadgeProps): ReactElement {
+  const className = [
+    "location-badge",
+    `is-${location}`,
+    tone === "strong" ? "is-strong" : "",
+    orientation === "vertical-compact" ? "is-vertical-compact" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <span className={className}>
       <span className="location-badge-icon" aria-hidden="true">
         {location === "host" ? <HostIcon /> : <WslIcon />}
       </span>
-      {showLabel ? <span>{location === "host" ? "Host" : "WSL"}</span> : null}
+      {showLabel ? <span className="location-badge-label">{location === "host" ? "Host" : "WSL"}</span> : null}
     </span>
   );
 }

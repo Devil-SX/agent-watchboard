@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-03-14
+
+> **Code Stats** | Total: 22687 lines | Delta: +1776 (-434) = **+1342 net** | Change: **+6.29%** vs v0.7.3
+
+### Added
+- Added three-state Todo Board task status support across the shared schema, CLI commands, serialization format, and renderer tests so tasks can move between `todo`, `doing`, and `done`.
+- Added dedicated renderer coverage for session visual-state mapping and incremental workspace autostart selection to protect the updated workspace/runtime behavior.
+- Added compact skill-source stat pills so Codex, Claude, and other entries are summarized with the same badge language used elsewhere in the UI.
+
+### Changed
+- Reworked workspace and runtime status visuals to use color-state cards, compact Host/WSL identity rails, and animated border-orbit treatment for active work instead of the earlier dot-only indicators.
+- Refined Todo Board item rendering with larger SVG status icons, compact deadline deltas, richer detail panels, and iconized status/deadline filters.
+- Expanded `todo_preview` skill guidance and CLI support so task status transitions can be driven directly from the terminal.
+
+### Fixed
+- Fixed terminal startup fallback behavior so live sessions stop hanging on `terminal ready, waiting for session output...` when printable output arrives late or only after a quiet startup window.
+- Fixed workspace autostart so the initial workbench batch still boots automatically while later drag-and-drop instances only start the newly added terminal instead of retriggering every existing session.
+
 ## [0.7.4] - 2026-03-14
 
 > **Code Stats** | Total: 22066 lines | Delta: +358 (-260) = **+98 net** | Change: **+0.46%** vs v0.7.3

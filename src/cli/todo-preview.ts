@@ -56,6 +56,26 @@ program
   });
 
 program
+  .command("doing <name>")
+  .description("Mark a task doing")
+  .action(async (name) => {
+    const filePath = program.opts().file;
+    const document = await getDocument(filePath);
+    updateItemStatus(document, name, "doing");
+    await writeBoardDocument(filePath, document);
+  });
+
+program
+  .command("todo <name>")
+  .description("Mark a task todo")
+  .action(async (name) => {
+    const filePath = program.opts().file;
+    const document = await getDocument(filePath);
+    updateItemStatus(document, name, "todo");
+    await writeBoardDocument(filePath, document);
+  });
+
+program
   .command("update <from> <to>")
   .description("Rename a task or section")
   .option("--description <description>", "new description")

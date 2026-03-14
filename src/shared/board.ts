@@ -283,7 +283,7 @@ export function serializeBoardAsLines(document: BoardDocument): string[] {
       lines.push(`  ${section.description}`);
     }
     for (const item of section.items) {
-      const marker = item.status === "done" ? "[x]" : "[ ]";
+      const marker = item.status === "done" ? "[tree]" : item.status === "doing" ? "[sprout]" : "[seed]";
       const suffixParts = [];
       if (item.deadlineAt) {
         suffixParts.push(`ddl ${item.deadlineAt}`);
@@ -334,7 +334,7 @@ function normalizeSection(raw: unknown, fallbackTime: string): BoardSection {
 
 function normalizeItem(raw: unknown, fallbackTime: string): BoardItem {
   const candidate = asRecord(raw);
-  const status: Status = candidate.status === "done" ? "done" : "todo";
+  const status: Status = candidate.status === "done" ? "done" : candidate.status === "doing" ? "doing" : "todo";
   const createdAt = asString(candidate.createdAt) ?? asString(candidate.updatedAt) ?? fallbackTime;
   const completedAt = status === "done" ? asNullableString(candidate.completedAt) ?? asString(candidate.updatedAt) ?? createdAt : null;
   return BoardItemSchema.parse({

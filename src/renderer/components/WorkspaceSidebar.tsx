@@ -5,6 +5,8 @@ import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ChevronDownIcon, ClaudeIcon, CodexIcon, IconButton, PlusIcon, TrashIcon } from "@renderer/components/IconButton";
 import { LocationBadge } from "@renderer/components/LocationBadge";
+import { StatusOrbit } from "@renderer/components/StatusOrbit";
+import { resolveSessionVisualState, resolveWorkspaceVisualState, visualStateClassName, type SessionVisualState } from "@renderer/components/sessionVisualState";
 import {
   describeTerminalLaunchShort,
   detectAgentKind,
@@ -156,7 +158,7 @@ export function WorkspaceSidebar({
       <div className="workspace-list" role="list">
         {visibleWorkspaces.map((workspace) => {
           const instances = instancesByWorkspace.get(workspace.id) ?? [];
-          const workspaceStatus = getWorkspaceStatus(instances, sessions);
+          const workspaceStatus = resolveWorkspaceVisualState(instances, sessions);
           const isSelected = workspace.id === selectedWorkspaceId;
           const hasInstances = instances.length > 0;
           const environment = resolveWorkspaceEnvironment(workspace);
@@ -170,14 +172,15 @@ export function WorkspaceSidebar({
               className={
                 isDeleteMode
                   ? isMarkedForDelete
-                    ? "workspace-list-item is-delete-selected"
+                    ? `workspace-list-item is-delete-selected ${visualStateClassName(workspaceStatus)}`
                     : "workspace-list-item is-delete-mode"
                   : isSelected
-                    ? "workspace-list-item is-active"
-                    : "workspace-list-item"
+                    ? `workspace-list-item is-active ${visualStateClassName(workspaceStatus)}`
+                    : `workspace-list-item ${visualStateClassName(workspaceStatus)}`
               }
               role="listitem"
             >
+              <StatusOrbit active={workspaceStatus === "working"} />
               <div className="workspace-list-row">
                 <button
                   type="button"
@@ -201,6 +204,9 @@ export function WorkspaceSidebar({
                   }}
                 >
                   <span className="workspace-identity-stack">
+                    <span className="workspace-env-rail">
+                      <LocationBadge location={environment} tone="strong" orientation="vertical-compact" />
+                    </span>
                     {(() => {
                       const terminal = workspace.terminals[0];
                       const agentKind = terminal ? detectAgentKind(terminal) : "unknown";
@@ -212,7 +218,6 @@ export function WorkspaceSidebar({
                       }
                       return <span className="workspace-agent-icon is-placeholder" aria-hidden="true" />;
                     })()}
-                    <LocationBadge location={environment} />
                   </span>
                   <span className="workspace-list-copy">
                     <span className="workspace-list-title-row">
@@ -227,7 +232,6 @@ export function WorkspaceSidebar({
                       </span>
                     ) : (
                       <>
-                        <span className={`status-dot ${statusClassName(workspaceStatus)}`} title={workspaceStatus} />
                         {hasInstances ? (
                           <span className="workspace-instance-count">{instances.length}</span>
                         ) : null}
@@ -272,13 +276,13 @@ export function WorkspaceSidebar({
                     <span className="workspace-instance-list-count">{instances.length}</span>
                   </div>
                   {instances.map((instance) => {
-                    const status = getInstanceStatus(instance, sessions);
+                    const status = resolveSessionVisualState(sessions[instance.sessionId]?.status);
                     const isPaneActive = !instance.collapsed && instance.paneId === activePaneId;
                     const itemClass = instance.collapsed
-                      ? "workspace-instance-item is-collapsed"
+                      ? `workspace-instance-item is-collapsed ${visualStateClassName(status)}`
                       : isPaneActive
-                        ? "workspace-instance-item is-active"
-                        : "workspace-instance-item";
+                        ? `workspace-instance-item is-active ${visualStateClassName(status)}`
+                        : `workspace-instance-item ${visualStateClassName(status)}`;
                     return (
                       <button
                         key={instance.instanceId}
@@ -302,12 +306,12 @@ export function WorkspaceSidebar({
                         }}
                         title={instance.collapsed ? "Click to restore" : undefined}
                       >
-                        <span className={instance.collapsed ? "workspace-instance-rail is-collapsed" : `workspace-instance-rail ${statusClassName(status)}`} />
+                        <StatusOrbit active={status === "working"} />
+                        <span className={`workspace-instance-rail ${visualStateClassName(status)}`} />
                         <span className="workspace-instance-copy">
                           <strong>{instance.title}</strong>
                           <span>{instance.terminalProfileSnapshot.cwd}</span>
                         </span>
-                        <span className={`status-dot ${instance.collapsed ? "is-collapsed" : statusClassName(status)}`} title={instance.collapsed ? "collapsed" : status} />
                       </button>
                     );
                   })}
@@ -378,37 +382,6 @@ function describeWorkspaceLine(workspace: Workspace): string {
   return `${terminal.target} · ${describeTerminalLaunchShort(terminal)}`;
 }
 
-function getWorkspaceStatus(
-  instances: TerminalInstance[],
-  sessions: Record<string, SessionState>
-): "healthy" | "warning" | "idle" {
-  let hasWarning = false;
-  for (const instance of instances) {
-    const status = getInstanceStatus(instance, sessions);
-    if (status === "healthy") {
-      return "healthy";
-    }
-    if (status === "warning") {
-      hasWarning = true;
-    }
-  }
-  return hasWarning ? "warning" : "idle";
-}
-
-function getInstanceStatus(
-  instance: TerminalInstance,
-  sessions: Record<string, SessionState>
-): "healthy" | "warning" | "idle" {
-  const status = sessions[instance.sessionId]?.status;
-  if (status === "running-active" || status === "running-idle") {
-    return "healthy";
-  }
-  if (status === "running-stalled") {
-    return "warning";
-  }
-  return "idle";
-}
-
 export function matchesWorkspaceFilter(
   workspace: Workspace,
   filterMode: WorkspaceFilterMode,
@@ -477,13 +450,4 @@ export function getContextMenuStyle(clientX: number, clientY: number): CSSProper
   };
 }
 
-function statusClassName(status: "healthy" | "warning" | "idle"): string {
-  switch (status) {
-    case "healthy":
-      return "is-active";
-    case "warning":
-      return "is-stalled";
-    default:
-      return "is-stopped";
-  }
-}
+export type { SessionVisualState };

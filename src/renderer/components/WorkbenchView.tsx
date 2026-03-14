@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode
 import { Actions, DockLocation, Layout, Model, type Action, type Node as FlexNode, type TabNode, type TabSetNode } from "flexlayout-react";
 
 import { IconButton, PlusIcon, SplitDownIcon, SplitRightIcon } from "@renderer/components/IconButton";
+import { resolveSessionVisualState, visualStateClassName } from "@renderer/components/sessionVisualState";
+import { StatusOrbit } from "@renderer/components/StatusOrbit";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
 import { type AppSettings, type SessionState, type TerminalInstance, type WorkbenchDocument, type WorkbenchLayoutModel, WorkbenchLayoutModelSchema, type Workspace } from "@shared/schema";
 
@@ -242,10 +244,13 @@ export function WorkbenchView({
       return;
     }
     const session = sessions[instance.sessionId] ?? null;
-    const status = getInstanceStatus(session?.status);
+    const status = resolveSessionVisualState(session?.status);
     renderValues.content = (
-      <span className="pane-tab-label" title={`${instance.title} · ${instance.terminalProfileSnapshot.target} · ${instance.terminalProfileSnapshot.cwd}`}>
-        <span className={`status-dot ${statusClassName(status)}`} title={status} />
+      <span
+        className={`pane-tab-label ${visualStateClassName(status)}`}
+        title={`${instance.title} · ${instance.terminalProfileSnapshot.target} · ${instance.terminalProfileSnapshot.cwd}`}
+      >
+        <StatusOrbit active={status === "working"} />
         <span className="pane-tab-copy">
           <strong>{instance.title}</strong>
           <span className="pane-tab-meta">
@@ -457,29 +462,6 @@ function findPaneId(node: FlexNode): string | null {
     }
   }
   return null;
-}
-
-function getInstanceStatus(status: SessionState["status"] | undefined): "healthy" | "warning" | "idle" {
-  switch (status) {
-    case "running-active":
-    case "running-idle":
-      return "healthy";
-    case "running-stalled":
-      return "warning";
-    default:
-      return "idle";
-  }
-}
-
-function statusClassName(status: "healthy" | "warning" | "idle"): string {
-  switch (status) {
-    case "healthy":
-      return "is-active";
-    case "warning":
-      return "is-stalled";
-    default:
-      return "is-stopped";
-  }
 }
 
 function findSelectedPaneId(layoutModel: WorkbenchLayoutModel): string | null {

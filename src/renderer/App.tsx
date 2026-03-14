@@ -1,6 +1,7 @@
 import { Profiler, startTransition, useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 
 import { AgentConfigPanel } from "@renderer/components/AgentConfigPanel";
+import { resolveAutoStartCandidates } from "@renderer/components/autoStart";
 import { BoardTree } from "@renderer/components/BoardTree";
 import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
 import { DoctorModal } from "@renderer/components/DoctorModal";
@@ -56,7 +57,7 @@ export function App(): ReactElement {
   const bootReadyReportedRef = useRef(false);
   const boardVisibleReportedRef = useRef(false);
   const autoStartedRef = useRef<Set<string>>(new Set());
-  const initialAutoStartCompletedRef = useRef(false);
+  const knownInstanceIdsRef = useRef<Set<string>>(new Set());
   const sessionRequestStartedAtRef = useRef<Map<string, number>>(new Map());
   const persistedSettingsRef = useRef<AppSettings | null>(null);
   const workbenchSaveSequenceRef = useRef(0);
@@ -254,7 +255,7 @@ export function App(): ReactElement {
     }
     if (workbench.instances.length === 0) {
       autoStartedRef.current.clear();
-      initialAutoStartCompletedRef.current = false;
+      knownInstanceIdsRef.current.clear();
       return;
     }
     const liveSessionIds = new Set(workbench.instances.map((instance) => instance.sessionId));
@@ -263,12 +264,12 @@ export function App(): ReactElement {
         autoStartedRef.current.delete(sessionId);
       }
     }
-    if (initialAutoStartCompletedRef.current) {
-      return;
-    }
-    initialAutoStartCompletedRef.current = true;
+    const previousKnownIds = knownInstanceIdsRef.current;
+    const isInitialBatch = previousKnownIds.size === 0;
+    const nextKnownIds = new Set(workbench.instances.map((instance) => instance.instanceId));
+    knownInstanceIdsRef.current = nextKnownIds;
 
-    for (const instance of workbench.instances) {
+    for (const instance of resolveAutoStartCandidates(workbench.instances, previousKnownIds, isInitialBatch)) {
       if (!instance.autoStart) {
         continue;
       }

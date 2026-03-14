@@ -5,8 +5,11 @@ import { Terminal } from "@xterm/xterm";
 
 import { reportRendererPerf } from "@renderer/perf";
 import {
+  containsPrintableTerminalContent,
   getTerminalFallbackText,
+  SILENT_SESSION_READY_TIMEOUT_MS,
   shouldShowTerminalFallback,
+  shouldAutoHideWaitingFallback,
   type TerminalFallbackPhase
 } from "@renderer/components/terminalFallback";
 import { type AppSettings, type SessionState, type TerminalInstance } from "@shared/schema";
@@ -31,6 +34,7 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
   const fitShouldResizeRef = useRef(false);
   const fitReasonsRef = useRef<string[]>([]);
   const dataFrameRef = useRef<number | null>(null);
+  const silentReadyTimerRef = useRef<number | null>(null);
   const dataBufferRef = useRef("");
   const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const hasVisibleContentRef = useRef(false);
@@ -225,6 +229,9 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
       if (!normalized) {
         return;
       }
+      if (!hasVisibleContentRef.current && containsPrintableTerminalContent(normalized)) {
+        updateVisibleContentRef.current?.(true);
+      }
       dataBufferRef.current += normalized;
       scheduleOutputFlush();
     };
@@ -248,6 +255,10 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
 
     return () => {
       flushLatencySample();
+      if (silentReadyTimerRef.current !== null) {
+        window.clearTimeout(silentReadyTimerRef.current);
+        silentReadyTimerRef.current = null;
+      }
       if (fitFrameRef.current !== null) {
         cancelAnimationFrame(fitFrameRef.current);
       }
@@ -325,6 +336,46 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
     performFitRef.current?.("session-start", true);
     sessionStartMeasureRef.current = performance.now();
   }, [session?.startedAt, session?.status, sessionId]);
+
+  useEffect(() => {
+    if (silentReadyTimerRef.current !== null) {
+      window.clearTimeout(silentReadyTimerRef.current);
+      silentReadyTimerRef.current = null;
+    }
+    if (!session || session.status === "stopped") {
+      return;
+    }
+    if (fallbackPhase !== "waiting" || hasVisibleContent || localError) {
+      return;
+    }
+    const startedAt = sessionStartMeasureRef.current ?? performance.now();
+    silentReadyTimerRef.current = window.setTimeout(() => {
+      const elapsedMs = performance.now() - startedAt;
+      if (!shouldAutoHideWaitingFallback(fallbackPhase, hasVisibleContent, localError, session.status, elapsedMs)) {
+        return;
+      }
+      setFallbackPhase("idle");
+      sessionStartMeasureRef.current = null;
+      reportRendererPerf({
+        category: "interaction",
+        name: "session-start-silent-ready",
+        durationMs: elapsedMs,
+        sessionId
+      });
+      void window.watchboard.debugLog("terminal-fallback-hidden", {
+        sessionId,
+        reason: "silent-ready-timeout",
+        timeoutMs: SILENT_SESSION_READY_TIMEOUT_MS
+      });
+    }, SILENT_SESSION_READY_TIMEOUT_MS);
+    return () => {
+      if (silentReadyTimerRef.current !== null) {
+        window.clearTimeout(silentReadyTimerRef.current);
+        silentReadyTimerRef.current = null;
+      }
+    };
+  }, [fallbackPhase, hasVisibleContent, localError, session, sessionId]);
+
   const showFallback = shouldShowTerminalFallback(fallbackPhase, hasVisibleContent, localError);
   const fallbackText = getTerminalFallbackText(fallbackPhase);
 

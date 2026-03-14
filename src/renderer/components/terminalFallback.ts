@@ -1,4 +1,7 @@
+import type { SessionState } from "@shared/schema";
+
 export type TerminalFallbackPhase = "idle" | "waiting" | "hydrating";
+export const SILENT_SESSION_READY_TIMEOUT_MS = 2500;
 
 export function getTerminalFallbackText(phase: TerminalFallbackPhase): string {
   if (phase === "hydrating") {
@@ -22,4 +25,36 @@ export function shouldShowTerminalFallback(
     return false;
   }
   return phase !== "idle";
+}
+
+export function shouldAutoHideWaitingFallback(
+  phase: TerminalFallbackPhase,
+  hasVisibleContent: boolean,
+  localError: string,
+  sessionStatus: SessionState["status"] | undefined,
+  elapsedMs: number
+): boolean {
+  if (phase !== "waiting" || hasVisibleContent || localError) {
+    return false;
+  }
+  if (!sessionStatus || sessionStatus === "stopped") {
+    return false;
+  }
+  return elapsedMs >= SILENT_SESSION_READY_TIMEOUT_MS;
+}
+
+export function toPlainTerminalPreview(data: string): string {
+  return data
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b[\(\)][A-Za-z0-9]/g, "")
+    .replace(/[\u0000-\u0008\u000b-\u001a\u001c-\u001f\u007f]/g, "")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{4,}/g, "\n\n\n")
+    .trimStart();
+}
+
+export function containsPrintableTerminalContent(data: string): boolean {
+  return toPlainTerminalPreview(data).trim().length > 0;
 }

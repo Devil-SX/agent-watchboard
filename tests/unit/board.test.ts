@@ -4,8 +4,7 @@ import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { ensureBoardDocument, writeBoardDocument } from "../../src/shared/board";
-import { createSection } from "../../src/shared/board";
+import { createItem, createSection, ensureBoardDocument, serializeBoardAsLines, updateItemStatus, writeBoardDocument } from "../../src/shared/board";
 
 test("ensureBoardDocument only initializes a missing board file", async () => {
   const dir = await mkdtemp(join(tmpdir(), "watchboard-board-"));
@@ -55,4 +54,55 @@ test("writeBoardDocument snapshots previous board contents and trims old backups
 
   assert.match(oldestBackupContent, /Section 1|Section 2|Section 3/);
   assert.match(newestBackupContent, /Section 10/);
+});
+
+test("updateItemStatus supports todo doing done transitions", () => {
+  const document = {
+    version: 1 as const,
+    workspaceId: "global",
+    title: "Agent Board",
+    updatedAt: "2026-03-14T00:00:00.000Z",
+    sections: [
+      {
+        ...createSection("Demo"),
+        items: [createItem("Task", "demo task", "todo")]
+      }
+    ]
+  };
+
+  updateItemStatus(document, "Task", "doing");
+  assert.equal(document.sections[0]?.items[0]?.status, "doing");
+  assert.equal(document.sections[0]?.items[0]?.completedAt, null);
+
+  updateItemStatus(document, "Task", "done");
+  assert.equal(document.sections[0]?.items[0]?.status, "done");
+  assert.ok(document.sections[0]?.items[0]?.completedAt);
+
+  updateItemStatus(document, "Task", "todo");
+  assert.equal(document.sections[0]?.items[0]?.status, "todo");
+  assert.equal(document.sections[0]?.items[0]?.completedAt, null);
+});
+
+test("serializeBoardAsLines renders three-state task markers", () => {
+  const document = {
+    version: 1 as const,
+    workspaceId: "global",
+    title: "Agent Board",
+    updatedAt: "2026-03-14T00:00:00.000Z",
+    sections: [
+      {
+        ...createSection("Demo"),
+        items: [
+          createItem("Seed Task", "", "todo"),
+          createItem("Sprout Task", "", "doing"),
+          createItem("Tree Task", "", "done")
+        ]
+      }
+    ]
+  };
+
+  const lines = serializeBoardAsLines(document).join("\n");
+  assert.match(lines, /\[seed\] Seed Task/);
+  assert.match(lines, /\[sprout\] Sprout Task/);
+  assert.match(lines, /\[tree\] Tree Task/);
 });
