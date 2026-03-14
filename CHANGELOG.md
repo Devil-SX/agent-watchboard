@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-03-14
+
+> **Code Stats** | Total: 23132 lines | Delta: +38 (-2) = **+36 net** | Change: **+0.16%** vs v0.7.7
+
+### Added
+- Added an in-memory per-session terminal backlog buffer so live sessions can restore recent scrollback when their renderer view is recreated during the same app runtime.
+
+### Fixed
+- Fixed Runtime Pane terminals so collapsing and reopening a live session no longer drops the visible history and scrollbar-backed scrollback window.
+- Preserved the cold-start behavior of not replaying persisted historical session logs automatically while still restoring same-session backlog after renderer remounts.
+
 ## [0.7.7] - 2026-03-14
 
 > **Code Stats** | Total: 23094 lines | Delta: +92 (-52) = **+40 net** | Change: **+0.17%** vs v0.7.6

@@ -14,6 +14,7 @@ type Props = {
   sessions: Record<string, SessionState>;
   settings: AppSettings;
   isVisible: boolean;
+  getSessionBacklog: (sessionId: string) => string;
   canCreatePane: boolean;
   canSplitPane: boolean;
   onLayoutChange: (layoutModel: WorkbenchLayoutModel) => void;
@@ -44,6 +45,7 @@ export function WorkbenchView({
   sessions,
   settings,
   isVisible,
+  getSessionBacklog,
   canCreatePane,
   canSplitPane,
   onLayoutChange,
@@ -232,6 +234,7 @@ export function WorkbenchView({
         session={sessions[instance.sessionId] ?? null}
         settings={settings}
         isVisible={isVisible && workbench.activePaneId === instance.paneId}
+        sessionBacklog={getSessionBacklog(instance.sessionId)}
       />
     );
   }

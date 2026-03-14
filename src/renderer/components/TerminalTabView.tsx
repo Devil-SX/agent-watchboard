@@ -19,9 +19,10 @@ type Props = {
   session: SessionState | null;
   settings: AppSettings;
   isVisible: boolean;
+  sessionBacklog?: string;
 };
 
-export function TerminalTabView({ instance, session, settings, isVisible }: Props): ReactElement {
+export function TerminalTabView({ instance, session, settings, isVisible, sessionBacklog = "" }: Props): ReactElement {
   const terminal = instance.terminalProfileSnapshot;
   const sessionId = instance.sessionId;
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -211,6 +212,23 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
       })
       .catch(() => undefined);
 
+    const initialBacklog = normalizeTerminalOutput(sessionBacklog);
+    if (initialBacklog) {
+      setFallbackPhase("hydrating");
+      xterm.write(initialBacklog, () => {
+        updateVisibleContent(true);
+        reportRendererPerf({
+          category: "terminal",
+          name: "session-backlog-restored",
+          durationMs: 0,
+          sessionId,
+          extra: {
+            chars: initialBacklog.length
+          }
+        });
+      });
+    }
+
     const handleTerminalData = (event: Event): void => {
       const detail = (event as CustomEvent<{ sessionId: string; data: string; emittedAt: number }>).detail;
       if (detail.sessionId !== sessionId) {
@@ -304,7 +322,7 @@ export function TerminalTabView({ instance, session, settings, isVisible }: Prop
     xterm.options.fontFamily = settings.terminalFontFamily;
     xterm.options.fontSize = settings.terminalFontSize;
     scheduleFitRef.current?.("font-settings");
-  }, [sessionId, settings.terminalFontFamily, settings.terminalFontSize]);
+  }, [sessionBacklog, sessionId, settings.terminalFontFamily, settings.terminalFontSize]);
 
   useEffect(() => {
     const xterm = terminalRef.current;

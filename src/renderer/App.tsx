@@ -5,6 +5,7 @@ import { resolveAutoStartCandidates } from "@renderer/components/autoStart";
 import { BoardTree } from "@renderer/components/BoardTree";
 import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
 import { DoctorModal } from "@renderer/components/DoctorModal";
+import { appendSessionBacklogChunk } from "@renderer/components/sessionBacklog";
 import { SettingsPanel } from "@renderer/components/SettingsPanel";
 import { SkillsPanel } from "@renderer/components/SkillsPanel";
 import { buildSkillsChatSessionKey, createSkillsChatInstance } from "@renderer/components/skillsChatSession";
@@ -63,6 +64,7 @@ export function App(): ReactElement {
   const persistedSettingsRef = useRef<AppSettings | null>(null);
   const workbenchSaveSequenceRef = useRef(0);
   const tabSwitchStartedAtRef = useRef<number | null>(null);
+  const sessionBacklogsRef = useRef<Record<string, string>>({});
   const [workspaceList, setWorkspaceList] = useState<WorkspaceList | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [draftWorkspace, setDraftWorkspace] = useState<Workspace | null>(null);
@@ -126,6 +128,7 @@ export function App(): ReactElement {
     };
 
     unsubscribeData = window.watchboard.onSessionData(({ sessionId, data, emittedAt }) => {
+      sessionBacklogsRef.current[sessionId] = appendSessionBacklogChunk(sessionBacklogsRef.current[sessionId] ?? "", data);
       window.dispatchEvent(
         new CustomEvent("watchboard:terminal-data", {
           detail: { sessionId, data, emittedAt }
@@ -151,6 +154,9 @@ export function App(): ReactElement {
         const previous = current[session.sessionId];
         if (previous && shallowSessionEquals(previous, session)) {
           return current;
+        }
+        if (session.status === "stopped") {
+          delete sessionBacklogsRef.current[session.sessionId];
         }
         return {
           ...current,
@@ -184,6 +190,10 @@ export function App(): ReactElement {
         setError(messageOf(selectError));
       });
   }, [settings?.boardLocationKind, settings?.hostBoardPath, settings?.wslBoardPath, settings?.boardWslDistro, settings?.updatedAt, boardDocument]);
+
+  function getSessionBacklog(sessionId: string): string {
+    return sessionBacklogsRef.current[sessionId] ?? "";
+  }
 
   useEffect(() => {
     if (!workspaceList || !workbench || !settingsDraft || bootReadyReportedRef.current) {
@@ -936,6 +946,7 @@ export function App(): ReactElement {
               sessions={sessions}
               settings={settingsDraft}
               isVisible
+              getSessionBacklog={getSessionBacklog}
               canCreatePane={workspaceList.workspaces.length > 0}
               canSplitPane={Boolean(activePaneInstance ?? selectedWorkspace)}
               onLayoutChange={handleWorkbenchLayoutChange}
@@ -981,6 +992,7 @@ export function App(): ReactElement {
             viewState={settingsDraft.skillsPane}
             chatInstance={skillsChatInstance}
             chatError={skillsChatError}
+            getSessionBacklog={getSessionBacklog}
             onViewStateChange={(state) => void handleSkillsPaneStateChange(state)}
           />
         </div>

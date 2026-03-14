@@ -26,6 +26,7 @@ type Props = {
   viewState: SkillsPaneState;
   chatInstance: TerminalInstance | null;
   chatError: string;
+  getSessionBacklog: (sessionId: string) => string;
   onViewStateChange: (state: SkillsPaneState) => void;
 };
 
@@ -36,6 +37,7 @@ export function SkillsPanel({
   viewState,
   chatInstance,
   chatError,
+  getSessionBacklog,
   onViewStateChange
 }: Props): ReactElement {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
@@ -275,6 +277,7 @@ export function SkillsPanel({
                 session={sessions[chatInstance.sessionId] ?? null}
                 settings={settings}
                 isVisible
+                sessionBacklog={getSessionBacklog(chatInstance.sessionId)}
               />
             </div>
           </div>
