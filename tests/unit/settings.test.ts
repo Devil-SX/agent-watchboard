@@ -31,6 +31,7 @@ test("readAppSettings migrates a legacy single boardPath into the selected env s
   assert.equal(settings.activeMainTab, "terminal");
   assert.equal(settings.skillsPane.location, "host");
   assert.equal(settings.agentConfigPane.activeConfigId, "codex-config");
+  assert.equal(settings.settingsPane.activeCategory, "board");
 });
 
 test("writeAppSettings persists separate host and WSL board paths", async () => {
@@ -63,6 +64,9 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
         location: "wsl",
         familyFilter: "claude",
         activeConfigId: "claude-settings"
+      },
+      settingsPane: {
+        activeCategory: "storage"
       }
     },
     settingsPath
@@ -75,9 +79,11 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
   assert.equal(saved.activeMainTab, "skills");
   assert.equal(saved.skillsPane.familyFilter, "claude");
   assert.equal(saved.agentConfigPane.activeConfigId, "claude-settings");
+  assert.equal(saved.settingsPane.activeCategory, "storage");
   assert.equal(raw.hostBoardPath, "~/host-board.json");
   assert.equal(raw.wslBoardPath, "~/wsl-board.json");
   assert.equal(raw.activeMainTab, "skills");
+  assert.deepEqual(raw.settingsPane, { activeCategory: "storage" });
 });
 
 test("writeAppSettings serializes concurrent writes to the same file", async () => {
@@ -108,6 +114,9 @@ test("writeAppSettings serializes concurrent writes to the same file", async () 
       location: "host" as const,
       familyFilter: "all" as const,
       activeConfigId: "codex-config" as const
+    },
+    settingsPane: {
+      activeCategory: "board" as const
     }
   };
 

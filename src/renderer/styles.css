@@ -1343,6 +1343,38 @@ textarea::placeholder {
   margin: 6px 0 0;
 }
 
+.settings-category-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 14px;
+}
+
+.settings-category-tab {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  padding: 0.38rem 0.82rem;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-soft);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.settings-category-tab:hover {
+  border-color: rgba(142, 199, 255, 0.18);
+  background: rgba(142, 199, 255, 0.08);
+  color: #edf5f9;
+}
+
+.settings-category-tab.is-active {
+  border-color: rgba(142, 199, 255, 0.36);
+  background: rgba(142, 199, 255, 0.14);
+  color: #eef5f9;
+}
+
 .settings-panel-body,
 .config-drawer-body {
   flex: 1;

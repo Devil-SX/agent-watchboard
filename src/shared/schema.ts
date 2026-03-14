@@ -93,6 +93,12 @@ export const AgentConfigPaneStateSchema = z.object({
   activeConfigId: z.enum(["codex-config", "codex-auth", "claude-settings"]).default("codex-config")
 });
 export type AgentConfigPaneState = z.infer<typeof AgentConfigPaneStateSchema>;
+export const SettingsCategorySchema = z.enum(["board", "terminal", "storage"]);
+export type SettingsCategory = z.infer<typeof SettingsCategorySchema>;
+export const SettingsPaneStateSchema = z.object({
+  activeCategory: SettingsCategorySchema.default("board")
+});
+export type SettingsPaneState = z.infer<typeof SettingsPaneStateSchema>;
 
 export const AppSettingsSchema = z.object({
   version: z.literal(1).default(1),
@@ -119,6 +125,9 @@ export const AppSettingsSchema = z.object({
     location: "host",
     familyFilter: "all",
     activeConfigId: "codex-config"
+  }),
+  settingsPane: SettingsPaneStateSchema.default({
+    activeCategory: "board"
   })
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;

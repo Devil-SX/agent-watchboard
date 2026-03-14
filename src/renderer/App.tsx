@@ -20,6 +20,7 @@ import {
   createWorkspaceTemplate,
   type BoardDocument,
   type DiagnosticsInfo,
+  type SettingsPaneState,
   type SessionState,
   type SkillsPaneState,
   type TerminalInstance,
@@ -501,6 +502,7 @@ export function App(): ReactElement {
       Pick<
         AppSettings,
         "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "skillsPane" | "agentConfigPane"
+        | "settingsPane"
       >
     >
   ): Promise<void> {
@@ -546,6 +548,10 @@ export function App(): ReactElement {
 
   async function handleAgentConfigPaneStateChange(state: AgentConfigPaneState): Promise<void> {
     await persistSettingsPreference({ agentConfigPane: state });
+  }
+
+  async function handleSettingsPaneStateChange(state: SettingsPaneState): Promise<void> {
+    await persistSettingsPreference({ settingsPane: state });
   }
 
   async function startWorkspaceSession(instance: TerminalInstance): Promise<void> {
@@ -1014,9 +1020,11 @@ export function App(): ReactElement {
             <SettingsPanel
               settings={settingsDraft}
               diagnostics={diagnostics}
+              viewState={settingsDraft.settingsPane}
               isDirty={isSettingsDirty}
               isSaving={isSavingSettings}
               onChange={handleSettingsFieldChange}
+              onViewStateChange={(state) => void handleSettingsPaneStateChange(state)}
               onSave={() => void handleSettingsSave()}
               onReset={handleResetSettings}
             />

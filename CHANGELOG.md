@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-03-14
+
+> **Code Stats** | Total: 23255 lines | Delta: +171 (-81) = **+90 net** | Change: **+0.39%** vs v0.7.9
+
+### Added
+- Added persisted Settings subview state so the app can restore the last active Settings category across restarts.
+
+### Changed
+- Reworked the Settings page from a single stacked form into categorized `Board`, `Terminal`, and `Storage` subviews, creating a scalable navigation model for future settings growth while preserving the existing global save/discard flow.
+
 ## [0.7.9] - 2026-03-14
 
 > **Code Stats** | Total: 23165 lines | Delta: +33 (-0) = **+33 net** | Change: **+0.14%** vs v0.7.8
