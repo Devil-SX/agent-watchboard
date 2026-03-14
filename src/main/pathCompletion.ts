@@ -22,7 +22,7 @@ async function completeHostPath(request: PathCompletionRequest): Promise<PathCom
   const rawInput = request.query.trim();
   const normalizedInput = rawInput || defaultInputForTarget(request.target);
   const resolvedInput = resolveHostInput(normalizedInput, request.target, pathModule);
-  const completionContext = splitCompletionInput(normalizedInput, resolvedInput, pathModule);
+  const completionContext = buildCompletionContext(normalizedInput, resolvedInput, pathModule);
   const suggestions = await listSuggestions(
     completionContext.parentResolved,
     completionContext.prefix,
@@ -46,7 +46,7 @@ async function completeWslPath(request: PathCompletionRequest): Promise<PathComp
   const rawInput = request.query.trim();
   const normalizedInput = rawInput || "~";
   const resolvedLinuxPath = resolveWslLinuxInput(normalizedInput, home);
-  const completionContext = splitCompletionInput(normalizedInput, resolvedLinuxPath, path.posix);
+  const completionContext = buildCompletionContext(normalizedInput, resolvedLinuxPath, path.posix);
   const parentWindowsPath = toWslWindowsPath(distro, completionContext.parentResolved);
   const suggestions = await listSuggestions(
     parentWindowsPath,
@@ -74,6 +74,7 @@ async function listSuggestions(
   try {
     const entries = await readDirectoryCached(parentResolved);
     const filtered = entries
+      // Match against the active segment prefix so `a/b` still suggests `a/bc/`.
       .filter((entryName) => entryName.toLowerCase().startsWith(prefix.toLowerCase()))
       .slice(0, 24)
       .map((entryName) => appendTrailingSeparator(toDisplayValue(entryName), separator));
@@ -161,7 +162,7 @@ function resolveWslLinuxInput(normalizedInput: string, home: string): string {
   return path.posix.resolve(home, converted);
 }
 
-function splitCompletionInput(
+export function buildCompletionContext(
   normalizedInput: string,
   resolvedInput: string,
   pathModule: typeof path.posix | typeof path.win32

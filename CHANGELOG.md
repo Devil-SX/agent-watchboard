@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed runtime pane tab actions so collapse and close now render inside a dedicated fixed-priority trailing action region, keeping `-` and `×` visible in narrow split panes and preventing long titles or paths from crowding them out.
 - Added regression coverage to keep collapse and close handler wiring distinct at the tab-action layer, reducing the risk of the `-` control accidentally behaving like a destructive close.
 - Fixed `Working Dir` keyboard suggestion navigation so the active entry now scrolls back into view while moving through overflowed completion lists.
+- Clarified and regression-tested `Working Dir` path completion so partial segment prefixes such as `a/b` continue to suggest `a/bc/` across the supported path-shape helpers.
 
 ## [0.7.13] - 2026-03-14
 
