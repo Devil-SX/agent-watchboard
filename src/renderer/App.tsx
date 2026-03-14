@@ -7,6 +7,7 @@ import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
 import { DoctorModal } from "@renderer/components/DoctorModal";
 import { SettingsPanel } from "@renderer/components/SettingsPanel";
 import { SkillsPanel } from "@renderer/components/SkillsPanel";
+import { buildSkillsChatSessionKey, createSkillsChatInstance } from "@renderer/components/skillsChatSession";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
@@ -83,6 +84,10 @@ export function App(): ReactElement {
   const [deleteSelection, setDeleteSelection] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<MainTabId>("terminal");
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
+  const [skillsChatInstance, setSkillsChatInstance] = useState<TerminalInstance | null>(null);
+  const [skillsChatError, setSkillsChatError] = useState("");
+  const skillsChatKeyRef = useRef<string | null>(null);
+  const skillsChatStartRequestRef = useRef(0);
 
   const savedWorkspace = workspaceList?.workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedWorkspace =
@@ -287,6 +292,65 @@ export function App(): ReactElement {
       });
     }
   }, [sessions, workbench]);
+
+  useEffect(() => {
+    if (!settingsDraft) {
+      return;
+    }
+    const isChatOpen = settingsDraft.skillsPane.isChatOpen;
+    const nextKey = isChatOpen
+      ? buildSkillsChatSessionKey(settingsDraft.skillsPane.chatAgent, settingsDraft.skillsPane.location, diagnostics?.platform)
+      : null;
+
+    if (!isChatOpen) {
+      const previous = skillsChatInstance;
+      skillsChatKeyRef.current = null;
+      setSkillsChatInstance(null);
+      setSkillsChatError("");
+      if (previous) {
+        void window.watchboard.stopSession(previous.sessionId).catch(() => undefined);
+      }
+      return;
+    }
+
+    if (!nextKey) {
+      return;
+    }
+
+    const current = skillsChatInstance;
+    if (!current || skillsChatKeyRef.current !== nextKey) {
+      const nextInstance = createSkillsChatInstance(settingsDraft.skillsPane.chatAgent, settingsDraft.skillsPane.location, diagnostics?.platform);
+      const previous = current;
+      skillsChatKeyRef.current = nextKey;
+      setSkillsChatInstance(nextInstance);
+      setSkillsChatError("");
+
+      const requestId = ++skillsChatStartRequestRef.current;
+      void window.watchboard.startSession(nextInstance).catch((error) => {
+        if (skillsChatStartRequestRef.current !== requestId) {
+          return;
+        }
+        setSkillsChatError(messageOf(error));
+      });
+
+      if (previous && previous.sessionId !== nextInstance.sessionId) {
+        void window.watchboard.stopSession(previous.sessionId).catch(() => undefined);
+      }
+      return;
+    }
+
+    const session = sessions[current.sessionId];
+    if (!session || session.status === "stopped") {
+      const requestId = ++skillsChatStartRequestRef.current;
+      setSkillsChatError("");
+      void window.watchboard.startSession(current).catch((error) => {
+        if (skillsChatStartRequestRef.current !== requestId) {
+          return;
+        }
+        setSkillsChatError(messageOf(error));
+      });
+    }
+  }, [diagnostics?.platform, sessions, settingsDraft, skillsChatInstance]);
 
   useEffect(() => {
     if (!workbench || !workbenchDirty) {
@@ -915,6 +979,8 @@ export function App(): ReactElement {
             sessions={sessions}
             diagnostics={diagnostics}
             viewState={settingsDraft.skillsPane}
+            chatInstance={skillsChatInstance}
+            chatError={skillsChatError}
             onViewStateChange={(state) => void handleSkillsPaneStateChange(state)}
           />
         </div>

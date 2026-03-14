@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-03-14
+
+> **Code Stats** | Total: 23094 lines | Delta: +92 (-52) = **+40 net** | Change: **+0.17%** vs v0.7.6
+
+### Added
+- Added Skills chat session-key coverage so agent and environment changes rebuild the utility terminal only when the effective runtime target actually changes.
+
+### Fixed
+- Fixed the Skills pane chat terminal so switching between `terminal`, `skills`, `config`, and `settings` no longer tears down and recreates the live session when the chat is still open.
+- Moved Skills chat runtime ownership above `SkillsPanel`, preserving the existing session across main-tab unmount/remount while still rebuilding on explicit agent or environment changes.
+
 ## [0.7.6] - 2026-03-14
 
 > **Code Stats** | Total: 23054 lines | Delta: +112 (-17) = **+95 net** | Change: **+0.42%** vs v0.7.5

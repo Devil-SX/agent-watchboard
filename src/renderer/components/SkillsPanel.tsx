@@ -6,7 +6,7 @@ import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
 import { SkillMarkdownDocument } from "@renderer/components/SkillMarkdownDocument";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
-import { createSkillsChatInstance, type SkillsChatAgent } from "@renderer/components/skillsChatSession";
+import { type SkillsChatAgent } from "@renderer/components/skillsChatSession";
 import {
   type AgentPathLocation,
   type AppSettings,
@@ -24,10 +24,20 @@ type Props = {
   sessions: Record<string, SessionState>;
   diagnostics: DiagnosticsInfo | null;
   viewState: SkillsPaneState;
+  chatInstance: TerminalInstance | null;
+  chatError: string;
   onViewStateChange: (state: SkillsPaneState) => void;
 };
 
-export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp, viewState, onViewStateChange }: Props): ReactElement {
+export function SkillsPanel({
+  settings,
+  sessions,
+  diagnostics: diagnosticsProp,
+  viewState,
+  chatInstance,
+  chatError,
+  onViewStateChange
+}: Props): ReactElement {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [selectedSkillPath, setSelectedSkillPath] = useState<string | null>(viewState.selectedSkillMdPath);
   const [content, setContent] = useState("");
@@ -37,9 +47,6 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp, 
   const [claudeSubtypeFilter, setClaudeSubtypeFilter] = useState<ClaudeSubtypeFilter>(viewState.claudeSubtypeFilter);
   const [isChatOpen, setIsChatOpen] = useState(viewState.isChatOpen);
   const [chatAgent, setChatAgent] = useState<SkillsChatAgent>(viewState.chatAgent);
-  const [chatInstance, setChatInstance] = useState<TerminalInstance | null>(null);
-  const [chatError, setChatError] = useState("");
-  const chatRequestRef = useRef(0);
   const persistReadyRef = useRef(false);
   const isWindows = diagnosticsProp?.platform === "win32";
 
@@ -82,52 +89,6 @@ export function SkillsPanel({ settings, sessions, diagnostics: diagnosticsProp, 
       setContent("");
     }
   }, [selectedSkillPath, visibleSkills]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const requestId = ++chatRequestRef.current;
-
-    if (!isChatOpen) {
-      const staleInstance = chatInstance;
-      setChatInstance(null);
-      setChatError("");
-      if (staleInstance) {
-        void window.watchboard.stopSession(staleInstance.sessionId).catch(() => undefined);
-      }
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const nextInstance = createSkillsChatInstance(chatAgent, location, diagnosticsProp?.platform);
-    setChatInstance(nextInstance);
-    setChatError("");
-
-    void window.watchboard.startSession(nextInstance).catch((error) => {
-      if (cancelled || chatRequestRef.current !== requestId) {
-        return;
-      }
-      setChatError(error instanceof Error ? error.message : String(error));
-    });
-
-    const previousInstance = chatInstance;
-    if (previousInstance && previousInstance.sessionId !== nextInstance.sessionId) {
-      void window.watchboard.stopSession(previousInstance.sessionId).catch(() => undefined);
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [chatAgent, diagnosticsProp?.platform, isChatOpen, location]);
-
-  useEffect(() => {
-    return () => {
-      if (!chatInstance) {
-        return;
-      }
-      void window.watchboard.stopSession(chatInstance.sessionId).catch(() => undefined);
-    };
-  }, [chatInstance]);
 
   useEffect(() => {
     if (isWindows) {

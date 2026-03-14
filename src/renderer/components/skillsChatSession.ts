@@ -9,13 +9,26 @@ import {
 
 export type SkillsChatAgent = "codex" | "claude";
 
+export function resolveSkillsChatLocation(location: AgentPathLocation, platform: NodeJS.Platform | undefined): AgentPathLocation {
+  return platform === "win32" ? location : "host";
+}
+
+export function buildSkillsChatSessionKey(
+  agent: SkillsChatAgent,
+  location: AgentPathLocation,
+  platform: NodeJS.Platform | undefined
+): string {
+  return `${agent}:${resolveSkillsChatLocation(location, platform)}:${platform ?? "unknown"}`;
+}
+
 export function createSkillsChatInstance(
   agent: SkillsChatAgent,
   location: AgentPathLocation,
   platform: NodeJS.Platform | undefined
 ): TerminalInstance {
   const isWindows = platform === "win32";
-  const target = isWindows ? (location === "wsl" ? "wsl" : "windows") : "linux";
+  const effectiveLocation = resolveSkillsChatLocation(location, platform);
+  const target = isWindows ? (effectiveLocation === "wsl" ? "wsl" : "windows") : "linux";
   const shellOrProgram = target === "windows" ? "powershell.exe" : "/bin/bash";
   const profile = createTerminalProfile({
     title: agent === "codex" ? "Codex Chat" : "Claude Chat",
