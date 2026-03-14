@@ -58,8 +58,10 @@ export const LogAdapterSchema = z.object({
 
 export type LogAdapter = z.infer<typeof LogAdapterSchema>;
 
-export const TerminalTargetSchema = z.enum(["linux", "windows", "wsl"]);
+export const TerminalTargetSchema = z.enum(["linux", "windows", "wsl", "ssh"]);
 export type TerminalTarget = z.infer<typeof TerminalTargetSchema>;
+export const SshAuthModeSchema = z.enum(["password", "key"]);
+export type SshAuthMode = z.infer<typeof SshAuthModeSchema>;
 
 export const StartupModeSchema = z.enum(["preset", "custom"]);
 export type StartupMode = z.infer<typeof StartupModeSchema>;
@@ -93,12 +95,28 @@ export const AgentConfigPaneStateSchema = z.object({
   activeConfigId: z.enum(["codex-config", "codex-auth", "claude-settings"]).default("codex-config")
 });
 export type AgentConfigPaneState = z.infer<typeof AgentConfigPaneStateSchema>;
-export const SettingsCategorySchema = z.enum(["board", "terminal", "storage", "debug"]);
+export const SettingsCategorySchema = z.enum(["board", "terminal", "environments", "storage", "debug"]);
 export type SettingsCategory = z.infer<typeof SettingsCategorySchema>;
 export const SettingsPaneStateSchema = z.object({
   activeCategory: SettingsCategorySchema.default("board")
 });
 export type SettingsPaneState = z.infer<typeof SettingsPaneStateSchema>;
+
+export const SshEnvironmentSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  host: z.string(),
+  port: z.number().int().min(1).max(65535).default(22),
+  username: z.string(),
+  authMode: SshAuthModeSchema.default("key"),
+  privateKeyPath: z.string().default(""),
+  remoteCommand: z.string().default(""),
+  savePassword: z.boolean().default(false),
+  savePassphrase: z.boolean().default(false),
+  hasSavedPassword: z.boolean().default(false),
+  hasSavedPassphrase: z.boolean().default(false)
+});
+export type SshEnvironment = z.infer<typeof SshEnvironmentSchema>;
 
 export const AppSettingsSchema = z.object({
   version: z.literal(1).default(1),
@@ -112,6 +130,7 @@ export const AppSettingsSchema = z.object({
   workspaceSortMode: WorkspaceSortModeSchema.default("last-launch"),
   workspaceFilterMode: WorkspaceFilterModeSchema.default("all"),
   workspaceEnvironmentFilterMode: WorkspaceEnvironmentFilterModeSchema.default("all"),
+  sshEnvironments: z.array(SshEnvironmentSchema).default([]),
   activeMainTab: MainViewTabSchema.default("terminal"),
   skillsPane: SkillsPaneStateSchema.default({
     location: "host",
@@ -267,6 +286,7 @@ export const TerminalProfileSchema = z.object({
   env: z.record(z.string(), z.string()).default({}),
   autoStart: z.boolean().default(true),
   wslDistro: z.string().optional(),
+  sshEnvironmentId: z.string().optional(),
   logAdapter: LogAdapterSchema.optional()
 });
 
@@ -469,6 +489,7 @@ export type DiagnosticsInfo = {
   workspaceStorePath: string;
   workbenchStorePath: string;
   settingsStorePath: string;
+  sshSecretsPath: string;
   supervisorStatePath: string;
   defaultHostBoardPath: string;
   defaultWslBoardPath: string;
@@ -663,6 +684,7 @@ export function createTerminalProfile(overrides: Partial<TerminalProfile> = {}):
     env: overrides.env ?? {},
     autoStart: overrides.autoStart ?? true,
     wslDistro: overrides.wslDistro,
+    sshEnvironmentId: overrides.sshEnvironmentId,
     logAdapter: overrides.logAdapter
   });
   return {
@@ -726,6 +748,23 @@ export function createDefaultAppSettings(overrides: Partial<AppSettings> & { boa
   });
 }
 
+export function createSshEnvironment(overrides: Partial<SshEnvironment> = {}): SshEnvironment {
+  return SshEnvironmentSchema.parse({
+    id: overrides.id ?? globalThis.crypto.randomUUID(),
+    name: overrides.name ?? "New SSH Environment",
+    host: overrides.host ?? "",
+    port: overrides.port ?? 22,
+    username: overrides.username ?? "",
+    authMode: overrides.authMode ?? "key",
+    privateKeyPath: overrides.privateKeyPath ?? "",
+    remoteCommand: overrides.remoteCommand ?? "",
+    savePassword: overrides.savePassword ?? false,
+    savePassphrase: overrides.savePassphrase ?? false,
+    hasSavedPassword: overrides.hasSavedPassword ?? false,
+    hasSavedPassphrase: overrides.hasSavedPassphrase ?? false
+  });
+}
+
 export function getBoardPathForLocation(
   settings: Pick<AppSettings, "hostBoardPath" | "wslBoardPath">,
   location: "host" | "wsl"
@@ -772,6 +811,43 @@ export function resolveTerminalStartupCommand(
     return customCommand;
   }
   return profile.startupCommand.trim();
+}
+
+export function resolveTerminalStartupCommandWithEnvironment(
+  profile: Pick<TerminalProfile, "startupMode" | "startupPresetId" | "startupCustomCommand" | "startupCommand" | "target"> & {
+    sshEnvironmentId?: string;
+  },
+  environment?: Pick<SshEnvironment, "host" | "port" | "username" | "authMode" | "privateKeyPath" | "remoteCommand">
+): string {
+  if (profile.target === "ssh" && environment) {
+    return buildSshStartupCommand(environment);
+  }
+  return resolveTerminalStartupCommand(profile);
+}
+
+export function buildSshStartupCommand(
+  environment: Pick<SshEnvironment, "host" | "port" | "username" | "authMode" | "privateKeyPath" | "remoteCommand">
+): string {
+  const target = [environment.username.trim(), environment.host.trim()].filter(Boolean).join("@");
+  const parts = ["ssh"];
+  if (environment.port > 0 && environment.port !== 22) {
+    parts.push("-p", String(environment.port));
+  }
+  if (environment.authMode === "key" && environment.privateKeyPath.trim()) {
+    parts.push("-i", quoteShellArgument(environment.privateKeyPath.trim()));
+  }
+  if (target) {
+    parts.push(quoteShellArgument(target));
+  }
+  const remoteCommand = environment.remoteCommand.trim();
+  if (remoteCommand) {
+    parts.push(quoteShellArgument(remoteCommand));
+  }
+  return parts.join(" ").trim();
+}
+
+function quoteShellArgument(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
 export function describeTerminalLaunch(

@@ -32,6 +32,7 @@ test("readAppSettings migrates a legacy single boardPath into the selected env s
   assert.equal(settings.skillsPane.location, "host");
   assert.equal(settings.agentConfigPane.activeConfigId, "codex-config");
   assert.equal(settings.settingsPane.activeCategory, "board");
+  assert.deepEqual(settings.sshEnvironments, []);
 });
 
 test("writeAppSettings persists separate host and WSL board paths", async () => {
@@ -51,6 +52,22 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
       workspaceSortMode: "last-launch",
       workspaceFilterMode: "all",
       workspaceEnvironmentFilterMode: "all",
+      sshEnvironments: [
+        {
+          id: "env-1",
+          name: "Prod SSH",
+          host: "prod.example.com",
+          port: 2222,
+          username: "deploy",
+          authMode: "key",
+          privateKeyPath: "~/.ssh/id_ed25519",
+          remoteCommand: "tmux attach",
+          savePassword: false,
+          savePassphrase: true,
+          hasSavedPassword: false,
+          hasSavedPassphrase: true
+        }
+      ],
       activeMainTab: "skills",
       skillsPane: {
         location: "wsl",
@@ -66,7 +83,7 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
         activeConfigId: "claude-settings"
       },
       settingsPane: {
-        activeCategory: "debug"
+        activeCategory: "environments"
       }
     },
     settingsPath
@@ -79,11 +96,13 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
   assert.equal(saved.activeMainTab, "skills");
   assert.equal(saved.skillsPane.familyFilter, "claude");
   assert.equal(saved.agentConfigPane.activeConfigId, "claude-settings");
-  assert.equal(saved.settingsPane.activeCategory, "debug");
+  assert.equal(saved.settingsPane.activeCategory, "environments");
+  assert.equal(saved.sshEnvironments[0]?.name, "Prod SSH");
   assert.equal(raw.hostBoardPath, "~/host-board.json");
   assert.equal(raw.wslBoardPath, "~/wsl-board.json");
   assert.equal(raw.activeMainTab, "skills");
-  assert.deepEqual(raw.settingsPane, { activeCategory: "debug" });
+  assert.deepEqual(raw.settingsPane, { activeCategory: "environments" });
+  assert.equal((raw.sshEnvironments as Array<{ host: string }>)[0]?.host, "prod.example.com");
 });
 
 test("writeAppSettings serializes concurrent writes to the same file", async () => {
@@ -101,6 +120,7 @@ test("writeAppSettings serializes concurrent writes to the same file", async () 
     workspaceSortMode: "last-launch" as const,
     workspaceFilterMode: "all" as const,
     workspaceEnvironmentFilterMode: "all" as const,
+    sshEnvironments: [],
     activeMainTab: "terminal" as const,
     skillsPane: {
       location: "host" as const,

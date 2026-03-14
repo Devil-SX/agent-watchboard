@@ -6,7 +6,7 @@ const api: WatchboardApi = {
   getWorkbench: () => ipcRenderer.invoke("watchboard:get-workbench"),
   saveWorkbench: (workbench) => ipcRenderer.invoke("watchboard:save-workbench", workbench),
   getSettings: () => ipcRenderer.invoke("watchboard:get-settings"),
-  saveSettings: (settings) => ipcRenderer.invoke("watchboard:save-settings", settings),
+  saveSettings: (settings, sshSecrets) => ipcRenderer.invoke("watchboard:save-settings", settings, sshSecrets),
   saveWorkspace: (workspace) => ipcRenderer.invoke("watchboard:save-workspace", workspace),
   deleteWorkspace: (workspaceId) => ipcRenderer.invoke("watchboard:delete-workspace", workspaceId),
   startSession: (instance) => ipcRenderer.invoke("watchboard:start-session", instance),
@@ -24,6 +24,7 @@ const api: WatchboardApi = {
   getDiagnostics: () => ipcRenderer.invoke("watchboard:get-diagnostics"),
   openDebugPath: (debugPath) => ipcRenderer.invoke("watchboard:open-debug-path", debugPath),
   completePath: (request) => ipcRenderer.invoke("watchboard:complete-path", request),
+  testSshEnvironment: (environment, secrets) => ipcRenderer.invoke("watchboard:test-ssh-environment", environment, secrets),
   onSessionData: (listener) => {
     const wrapped = (_event: unknown, payload: { sessionId: string; data: string; emittedAt: number }) => listener(payload);
     ipcRenderer.on("session-data", wrapped);

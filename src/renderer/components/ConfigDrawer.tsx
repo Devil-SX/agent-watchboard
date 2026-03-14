@@ -7,11 +7,13 @@ import { scrollActivePathSuggestionIntoView } from "@renderer/components/pathSug
 import type { PathCompletionResult } from "@shared/ipc";
 import {
   buildPresetCommand,
+  buildSshStartupCommand,
   decomposePresetId,
   describeTerminalLaunch,
   findPresetId,
   type DiagnosticsInfo,
   type PresetAgent,
+  type SshEnvironment,
   type TerminalProfile,
   type Workspace
 } from "@shared/schema";
@@ -19,6 +21,7 @@ import {
 type Props = {
   isOpen: boolean;
   workspace: Workspace | null;
+  sshEnvironments: SshEnvironment[];
   diagnostics: DiagnosticsInfo | null;
   isDirty: boolean;
   isSaving: boolean;
@@ -34,6 +37,7 @@ type Props = {
 export function ConfigDrawer({
   isOpen,
   workspace,
+  sshEnvironments,
   diagnostics,
   isDirty,
   isSaving,
@@ -50,6 +54,7 @@ export function ConfigDrawer({
   const cwdQuery = terminal?.cwd ?? "";
   const terminalTarget = terminal?.target ?? "linux";
   const wslDistro = terminal?.wslDistro;
+  const activeSshEnvironment = sshEnvironments.find((environment) => environment.id === terminal?.sshEnvironmentId);
   const [cwdCompletion, setCwdCompletion] = useState<PathCompletionResult | null>(null);
   const [isCompletingCwd, setIsCompletingCwd] = useState(false);
   const [isCwdFocused, setIsCwdFocused] = useState(false);
@@ -57,7 +62,8 @@ export function ConfigDrawer({
   const blurTimerRef = useRef<number | null>(null);
   const completionRequestRef = useRef(0);
   const cwdSuggestionListRef = useRef<HTMLDivElement | null>(null);
-  const resolvedStartupCommand = terminal ? describeTerminalLaunch(terminal) : "";
+  const resolvedStartupCommand =
+    terminal?.target === "ssh" && activeSshEnvironment ? buildSshStartupCommand(activeSshEnvironment) : terminal ? describeTerminalLaunch(terminal) : "";
   const presetState = decomposePresetId(terminal?.startupPresetId);
   const suggestions = cwdCompletion?.suggestions ?? [];
 
@@ -178,11 +184,20 @@ export function ConfigDrawer({
                 <span>Target</span>
                 <select
                   value={terminal.target}
-                  onChange={(event) => onTerminalChange({ target: event.target.value as TerminalProfile["target"] })}
+                  onChange={(event) => {
+                    const nextTarget = event.target.value as TerminalProfile["target"];
+                    onTerminalChange({
+                      target: nextTarget,
+                      sshEnvironmentId:
+                        nextTarget === "ssh" ? terminal.sshEnvironmentId ?? sshEnvironments[0]?.id : undefined,
+                      wslDistro: nextTarget === "wsl" ? terminal.wslDistro : undefined
+                    });
+                  }}
                 >
                   <option value="linux">Linux</option>
                   <option value="windows">Windows</option>
                   <option value="wsl">WSL</option>
+                  <option value="ssh">SSH</option>
                 </select>
               </label>
               <label className="field">
@@ -263,29 +278,46 @@ export function ConfigDrawer({
                   onChange={(event) => onTerminalChange({ shellOrProgram: event.target.value })}
                 />
               </label>
-              <label className="field">
-                <span>Startup Mode</span>
-                <select
-                  value={terminal.startupMode}
-                  onChange={(event) => {
-                    const nextMode = event.target.value as TerminalProfile["startupMode"];
-                    if (nextMode === "preset") {
-                      const presetId = findPresetId(presetState.agent, presetState.continueMode, presetState.skipMode);
-                      const command = buildPresetCommand(presetState.agent, presetState.continueMode, presetState.skipMode);
-                      onTerminalChange({ startupMode: nextMode, startupPresetId: presetId, startupCommand: command });
-                      return;
-                    }
-                    onTerminalChange({
-                      startupMode: nextMode,
-                      startupCustomCommand: terminal.startupCustomCommand || terminal.startupCommand
-                    });
-                  }}
-                >
-                  <option value="preset">Preset</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </label>
-              {terminal.startupMode === "preset" ? (
+              {terminal.target === "ssh" ? (
+                <label className="field">
+                  <span>SSH Environment</span>
+                  <select
+                    value={terminal.sshEnvironmentId ?? ""}
+                    onChange={(event) => onTerminalChange({ sshEnvironmentId: event.target.value || undefined })}
+                  >
+                    {sshEnvironments.length === 0 ? <option value="">Create an SSH environment in Settings</option> : null}
+                    {sshEnvironments.map((environment) => (
+                      <option key={environment.id} value={environment.id}>
+                        {environment.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label className="field">
+                  <span>Startup Mode</span>
+                  <select
+                    value={terminal.startupMode}
+                    onChange={(event) => {
+                      const nextMode = event.target.value as TerminalProfile["startupMode"];
+                      if (nextMode === "preset") {
+                        const presetId = findPresetId(presetState.agent, presetState.continueMode, presetState.skipMode);
+                        const command = buildPresetCommand(presetState.agent, presetState.continueMode, presetState.skipMode);
+                        onTerminalChange({ startupMode: nextMode, startupPresetId: presetId, startupCommand: command });
+                        return;
+                      }
+                      onTerminalChange({
+                        startupMode: nextMode,
+                        startupCustomCommand: terminal.startupCustomCommand || terminal.startupCommand
+                      });
+                    }}
+                  >
+                    <option value="preset">Preset</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </label>
+              )}
+              {terminal.target !== "ssh" && terminal.startupMode === "preset" ? (
                 <>
                   <label className="field">
                     <span>Agent</span>
@@ -329,7 +361,7 @@ export function ConfigDrawer({
                     />
                   </label>
                 </>
-              ) : (
+              ) : terminal.target !== "ssh" ? (
                 <label className="field">
                   <span>Custom Startup Command</span>
                   <input
@@ -342,7 +374,7 @@ export function ConfigDrawer({
                     }
                   />
                 </label>
-              )}
+              ) : null}
               <label className="field">
                 <span>Args</span>
                 <input
@@ -354,6 +386,14 @@ export function ConfigDrawer({
                   }
                 />
               </label>
+              {terminal.target === "ssh" && activeSshEnvironment ? (
+                <div className="field field-readonly">
+                  <span>Remote</span>
+                  <code>
+                    {activeSshEnvironment.username}@{activeSshEnvironment.host}:{activeSshEnvironment.port}
+                  </code>
+                </div>
+              ) : null}
               {terminal.target === "wsl" ? (
                 <label className="field">
                   <span>WSL Distro</span>
@@ -388,6 +428,7 @@ export function ConfigDrawer({
                 <DiagnosticLine label="Session Logs" value={diagnostics.sessionLogsDir} />
                 <DiagnosticLine label="Workspace Store" value={diagnostics.workspaceStorePath} />
                 <DiagnosticLine label="Settings Store" value={diagnostics.settingsStorePath} />
+                <DiagnosticLine label="SSH Secrets" value={diagnostics.sshSecretsPath} />
                 <DiagnosticLine label="Supervisor State" value={diagnostics.supervisorStatePath} />
               </div>
             </details>

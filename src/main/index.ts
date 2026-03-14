@@ -12,6 +12,8 @@ import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
 import { runDoctorCheck } from "@main/doctor";
 import { openDebugPath } from "@main/openDebugPath";
 import { completeTerminalPath } from "@main/pathCompletion";
+import { testSshConnection } from "@main/sshConnection";
+import { attachSshSecretFlags, loadSshSecrets, mergeSshSecretsIntoSettings } from "@main/sshSecrets";
 import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery";
 import { listWslSkillEntries, readWslSkillContent } from "@main/wslSkills";
 import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
@@ -31,6 +33,7 @@ import {
   type DiagnosticsInfo,
   DEFAULT_SUPERVISOR_PORT,
   SessionState,
+  SshEnvironmentSchema,
   type SkillEntry,
   type TerminalInstance,
   Workspace,
@@ -347,7 +350,7 @@ function setupIpc(): void {
 
   ipcMain.handle("watchboard:get-settings", async () => {
     const startedAt = performance.now();
-    const settings = await readAppSettings(runtimePaths.settingsStorePath);
+    const settings = await attachSshSecretFlags(await readAppSettings(runtimePaths.settingsStorePath), runtimePaths.sshSecretsPath);
     recordMainPerf({
       category: "ipc",
       name: "get-settings",
@@ -356,9 +359,10 @@ function setupIpc(): void {
     return settings;
   });
 
-  ipcMain.handle("watchboard:save-settings", async (_event, settings: AppSettings) => {
+  ipcMain.handle("watchboard:save-settings", async (_event, settings: AppSettings, sshSecrets?: Record<string, { password?: string; passphrase?: string }>) => {
     const startedAt = performance.now();
-    const saved = await writeAppSettings(settings, runtimePaths.settingsStorePath);
+    const merged = await mergeSshSecretsIntoSettings(settings, runtimePaths.sshSecretsPath, sshSecrets);
+    const saved = await writeAppSettings(merged, runtimePaths.settingsStorePath);
     await selectBoard(saved);
     recordMainPerf({
       category: "ipc",
@@ -410,6 +414,7 @@ function setupIpc(): void {
     workspaceStorePath: runtimePaths.workspaceStorePath,
     workbenchStorePath: runtimePaths.workbenchStorePath,
     settingsStorePath: runtimePaths.settingsStorePath,
+    sshSecretsPath: runtimePaths.sshSecretsPath,
     supervisorStatePath: runtimePaths.supervisorStatePath,
     defaultHostBoardPath: runtimePaths.defaultHostBoardPath,
     defaultWslBoardPath: runtimePaths.defaultWslBoardPath
@@ -420,6 +425,18 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:complete-path", async (_event, request) => completeTerminalPath(request));
+
+  ipcMain.handle("watchboard:test-ssh-environment", async (_event, environment, secrets?: { password?: string; passphrase?: string }) => {
+    const parsedEnvironment = SshEnvironmentSchema.parse(environment);
+    const persistedSecrets: { password?: string; passphrase?: string } = await loadSshSecrets(
+      parsedEnvironment.id,
+      runtimePaths.sshSecretsPath
+    ).catch(() => ({}));
+    return testSshConnection(parsedEnvironment, {
+      password: secrets?.password ?? persistedSecrets.password,
+      passphrase: secrets?.passphrase ?? persistedSecrets.passphrase
+    });
+  });
 
   ipcMain.handle("watchboard:start-session", async (_event, instance: TerminalInstance) => {
     const sessionId = instance.sessionId;

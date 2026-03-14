@@ -10,6 +10,7 @@ import type {
   DoctorLocation,
   DiagnosticsInfo,
   SessionState,
+  SshEnvironment,
   SkillEntry,
   TerminalProfile,
   TerminalInstance,
@@ -33,12 +34,22 @@ export type PathCompletionResult = {
   message: string;
 };
 
+export type SshSecretInput = {
+  password?: string;
+  passphrase?: string;
+};
+
+export type SshTestResult = {
+  ok: boolean;
+  message: string;
+};
+
 export type WatchboardApi = {
   listWorkspaces: () => Promise<WorkspaceList>;
   getWorkbench: () => Promise<WorkbenchDocument>;
   saveWorkbench: (workbench: WorkbenchDocument) => Promise<WorkbenchDocument>;
   getSettings: () => Promise<AppSettings>;
-  saveSettings: (settings: AppSettings) => Promise<AppSettings>;
+  saveSettings: (settings: AppSettings, sshSecrets?: Record<string, SshSecretInput>) => Promise<AppSettings>;
   saveWorkspace: (workspace: Workspace) => Promise<WorkspaceList>;
   deleteWorkspace: (workspaceId: string) => Promise<WorkspaceList>;
   startSession: (instance: TerminalInstance) => Promise<SessionState>;
@@ -52,6 +63,7 @@ export type WatchboardApi = {
   getDiagnostics: () => Promise<DiagnosticsInfo>;
   openDebugPath: (debugPath: string) => Promise<void>;
   completePath: (request: PathCompletionRequest) => Promise<PathCompletionResult>;
+  testSshEnvironment: (environment: SshEnvironment, secrets?: SshSecretInput) => Promise<SshTestResult>;
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
   onSessionState: (listener: (session: SessionState) => void) => () => void;
   onBoardUpdate: (listener: (document: BoardDocument) => void) => () => void;

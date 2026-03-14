@@ -1,6 +1,14 @@
-import { useState, type ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 
-import { TERMINAL_FONT_PRESETS, type AppSettings, type DiagnosticsInfo, type SettingsCategory, type SettingsPaneState } from "@shared/schema";
+import type { SshSecretInput, SshTestResult } from "@shared/ipc";
+import {
+  TERMINAL_FONT_PRESETS,
+  type AppSettings,
+  type DiagnosticsInfo,
+  type SettingsCategory,
+  type SettingsPaneState,
+  type SshEnvironment
+} from "@shared/schema";
 
 type Props = {
   settings: AppSettings;
@@ -8,10 +16,17 @@ type Props = {
   viewState: SettingsPaneState;
   isDirty: boolean;
   isSaving: boolean;
+  sshSecretDrafts: Record<string, SshSecretInput>;
+  sshTestStates: Record<string, { isRunning: boolean; result: SshTestResult | null }>;
   onChange: (
     field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro",
     value: string | number
   ) => void;
+  onAddSshEnvironment: () => void;
+  onUpdateSshEnvironment: (environmentId: string, update: Partial<SshEnvironment>) => void;
+  onDeleteSshEnvironment: (environmentId: string) => void;
+  onSshSecretChange: (environmentId: string, field: keyof SshSecretInput, value: string) => void;
+  onTestSshEnvironment: (environmentId: string) => void;
   onViewStateChange: (state: SettingsPaneState) => void;
   onOpenDebugPath: (debugPath: string) => Promise<void>;
   onSave: () => void;
@@ -37,7 +52,14 @@ export function SettingsPanel({
   viewState,
   isDirty,
   isSaving,
+  sshSecretDrafts,
+  sshTestStates,
   onChange,
+  onAddSshEnvironment,
+  onUpdateSshEnvironment,
+  onDeleteSshEnvironment,
+  onSshSecretChange,
+  onTestSshEnvironment,
   onViewStateChange,
   onOpenDebugPath,
   onSave,
@@ -49,7 +71,19 @@ export function SettingsPanel({
   const activeCategory = viewState.activeCategory;
   const categoryMeta = SETTINGS_CATEGORIES.find((category) => category.id === activeCategory) ?? SETTINGS_CATEGORIES[0]!;
   const [openingPath, setOpeningPath] = useState<string | null>(null);
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<string | null>(settings.sshEnvironments[0]?.id ?? null);
   const debugEntries = diagnostics ? createDebugPathEntries(diagnostics) : [];
+  const selectedEnvironment =
+    settings.sshEnvironments.find((environment) => environment.id === selectedEnvironmentId) ?? settings.sshEnvironments[0] ?? null;
+  const activeTestState = selectedEnvironment ? sshTestStates[selectedEnvironment.id] : undefined;
+  const secretDraft = selectedEnvironment ? sshSecretDrafts[selectedEnvironment.id] ?? {} : {};
+
+  useEffect(() => {
+    if (selectedEnvironmentId && settings.sshEnvironments.some((environment) => environment.id === selectedEnvironmentId)) {
+      return;
+    }
+    setSelectedEnvironmentId(settings.sshEnvironments[0]?.id ?? null);
+  }, [selectedEnvironmentId, settings.sshEnvironments]);
 
   async function handleOpenDebugPath(debugPath: string): Promise<void> {
     setOpeningPath(debugPath);
@@ -183,12 +217,196 @@ export function SettingsPanel({
           </>
         ) : null}
 
+        {activeCategory === "environments" ? (
+          <section className="settings-section">
+            <div className="settings-debug-hero">
+              <div>
+                <p className="panel-eyebrow">SSH Environments</p>
+                <p className="settings-debug-copy">
+                  Manage reusable SSH targets here, keep secrets out of plain settings files, and test connectivity before a workspace uses them.
+                </p>
+              </div>
+              <button type="button" className="primary-button" onClick={onAddSshEnvironment}>
+                Add SSH Environment
+              </button>
+            </div>
+
+            <div className="settings-debug-list">
+              {settings.sshEnvironments.length === 0 ? (
+                <div className="settings-debug-row">
+                  <div className="settings-debug-details">
+                    <span className="settings-debug-label">No environments configured</span>
+                    <span className="settings-debug-helper">Create one here, then pick it from a workspace pane.</span>
+                  </div>
+                </div>
+              ) : (
+                settings.sshEnvironments.map((environment) => (
+                  <button
+                    key={environment.id}
+                    type="button"
+                    className={selectedEnvironment?.id === environment.id ? "settings-category-tab is-active" : "settings-category-tab"}
+                    onClick={() => setSelectedEnvironmentId(environment.id)}
+                  >
+                    {environment.name}
+                  </button>
+                ))
+              )}
+            </div>
+
+            {selectedEnvironment ? (
+              <>
+                <div className="form-grid">
+                  <label className="field">
+                    <span>Name</span>
+                    <input
+                      value={selectedEnvironment.name}
+                      onChange={(event) => onUpdateSshEnvironment(selectedEnvironment.id, { name: event.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Host</span>
+                    <input
+                      value={selectedEnvironment.host}
+                      onChange={(event) => onUpdateSshEnvironment(selectedEnvironment.id, { host: event.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Port</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={selectedEnvironment.port}
+                      onChange={(event) =>
+                        onUpdateSshEnvironment(selectedEnvironment.id, {
+                          port: Number.isFinite(Number(event.target.value)) ? Math.max(1, Math.min(65535, Number(event.target.value))) : 22
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Username</span>
+                    <input
+                      value={selectedEnvironment.username}
+                      onChange={(event) => onUpdateSshEnvironment(selectedEnvironment.id, { username: event.target.value })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Auth Mode</span>
+                    <select
+                      value={selectedEnvironment.authMode}
+                      onChange={(event) =>
+                        onUpdateSshEnvironment(selectedEnvironment.id, {
+                          authMode: event.target.value as SshEnvironment["authMode"]
+                        })
+                      }
+                    >
+                      <option value="key">SSH Key</option>
+                      <option value="password">Password</option>
+                    </select>
+                  </label>
+                  {selectedEnvironment.authMode === "key" ? (
+                    <label className="field">
+                      <span>Private Key Path</span>
+                      <input
+                        value={selectedEnvironment.privateKeyPath}
+                        onChange={(event) =>
+                          onUpdateSshEnvironment(selectedEnvironment.id, { privateKeyPath: event.target.value })
+                        }
+                      />
+                    </label>
+                  ) : null}
+                  <label className="field">
+                    <span>Remote Command</span>
+                    <input
+                      value={selectedEnvironment.remoteCommand}
+                      onChange={(event) => onUpdateSshEnvironment(selectedEnvironment.id, { remoteCommand: event.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <div className="form-grid">
+                  <label className="field checkbox-field">
+                    <span>Save Password</span>
+                    <input
+                      type="checkbox"
+                      checked={selectedEnvironment.savePassword}
+                      onChange={(event) => onUpdateSshEnvironment(selectedEnvironment.id, { savePassword: event.target.checked })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Password</span>
+                    <input
+                      type="password"
+                      value={secretDraft.password ?? ""}
+                      placeholder={selectedEnvironment.hasSavedPassword ? "Saved in secure storage" : ""}
+                      onChange={(event) => onSshSecretChange(selectedEnvironment.id, "password", event.target.value)}
+                    />
+                  </label>
+                  <label className="field checkbox-field">
+                    <span>Save Key Passphrase</span>
+                    <input
+                      type="checkbox"
+                      checked={selectedEnvironment.savePassphrase}
+                      onChange={(event) => onUpdateSshEnvironment(selectedEnvironment.id, { savePassphrase: event.target.checked })}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Key Passphrase</span>
+                    <input
+                      type="password"
+                      value={secretDraft.passphrase ?? ""}
+                      placeholder={selectedEnvironment.hasSavedPassphrase ? "Saved in secure storage" : ""}
+                      onChange={(event) => onSshSecretChange(selectedEnvironment.id, "passphrase", event.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className="settings-debug-row">
+                  <div className="settings-debug-details">
+                    <span className="settings-debug-label">Secure Storage</span>
+                    <span className="settings-debug-helper">
+                      {selectedEnvironment.hasSavedPassword ? "Password saved. " : ""}
+                      {selectedEnvironment.hasSavedPassphrase ? "Passphrase saved. " : ""}
+                      Secrets are stored outside `settings.json`.
+                    </span>
+                    {activeTestState?.result ? (
+                      <span className="settings-debug-helper">{activeTestState.result.message}</span>
+                    ) : null}
+                  </div>
+                  <div className="toolbar-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={activeTestState?.isRunning}
+                      onClick={() => onTestSshEnvironment(selectedEnvironment.id)}
+                    >
+                      {activeTestState?.isRunning ? "Testing..." : "Test Connection"}
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button danger-button"
+                      onClick={() => onDeleteSshEnvironment(selectedEnvironment.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </section>
+        ) : null}
+
         {activeCategory === "storage" && diagnostics ? (
           <section className="settings-section">
             <p className="panel-eyebrow">Storage</p>
             <div className="diagnostic-line">
               <span>Settings Store</span>
               <code>{diagnostics.settingsStorePath}</code>
+            </div>
+            <div className="diagnostic-line">
+              <span>SSH Secrets</span>
+              <code>{diagnostics.sshSecretsPath}</code>
             </div>
             <div className="diagnostic-line">
               <span>Workspace Store</span>
@@ -297,6 +515,12 @@ const SETTINGS_CATEGORIES: SettingsCategoryMeta[] = [
     label: "Terminal",
     title: "Terminal Rendering",
     copy: "Font settings apply to every workspace terminal in the app."
+  },
+  {
+    id: "environments",
+    label: "Environments",
+    title: "Environment Management",
+    copy: "Manage reusable SSH environments, secure credentials, and connection tests."
   },
   {
     id: "storage",

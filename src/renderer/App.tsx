@@ -16,12 +16,14 @@ import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import {
   type AgentConfigPaneState,
   type AppSettings,
+  createSshEnvironment,
   createTerminalInstance,
   createWorkspaceTemplate,
   type BoardDocument,
   type DiagnosticsInfo,
   type SettingsPaneState,
   type SessionState,
+  type SshEnvironment,
   type SkillsPaneState,
   type TerminalInstance,
   type TerminalProfile,
@@ -32,8 +34,9 @@ import {
   type WorkspaceSortMode,
   type Workspace,
   type WorkspaceList,
-  resolveTerminalStartupCommand
+  resolveTerminalStartupCommandWithEnvironment
 } from "@shared/schema";
+import type { SshSecretInput, SshTestResult } from "@shared/ipc";
 import {
   addInstanceToWorkbench,
   attachExistingInstance,
@@ -89,6 +92,8 @@ export function App(): ReactElement {
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
   const [skillsChatInstance, setSkillsChatInstance] = useState<TerminalInstance | null>(null);
   const [skillsChatError, setSkillsChatError] = useState("");
+  const [sshSecretDrafts, setSshSecretDrafts] = useState<Record<string, SshSecretInput>>({});
+  const [sshTestStates, setSshTestStates] = useState<Record<string, { isRunning: boolean; result: SshTestResult | null }>>({});
   const skillsChatKeyRef = useRef<string | null>(null);
   const skillsChatStartRequestRef = useRef(0);
 
@@ -452,7 +457,7 @@ export function App(): ReactElement {
     }
     const normalizedWorkspace: Workspace = {
       ...workspace,
-      terminals: [normalizeTerminal(workspace, diagnostics)]
+      terminals: [normalizeTerminal(workspace, diagnostics, settingsDraft)]
     };
     setIsSaving(true);
     try {
@@ -484,11 +489,13 @@ export function App(): ReactElement {
       const saved = await window.watchboard.saveSettings({
         ...nextDraft,
         updatedAt: new Date().toISOString()
-      });
+      }, sshSecretDrafts);
       persistedSettingsRef.current = saved;
       setSettings(saved);
       setSettingsDraft(saved);
       setIsSettingsDirty(false);
+      setSshSecretDrafts({});
+      setSshTestStates({});
       setError("");
     } catch (saveError) {
       setError(messageOf(saveError));
@@ -724,12 +731,153 @@ export function App(): ReactElement {
     setIsSettingsDirty(true);
   }
 
+  function handleAddSshEnvironment(): void {
+    if (!settingsDraft) {
+      return;
+    }
+    const nextEnvironment = createSshEnvironment({
+      name: `SSH Environment ${settingsDraft.sshEnvironments.length + 1}`
+    });
+    setSettingsDraft({
+      ...settingsDraft,
+      sshEnvironments: [...settingsDraft.sshEnvironments, nextEnvironment],
+      updatedAt: new Date().toISOString()
+    });
+    setIsSettingsDirty(true);
+  }
+
+  function handleUpdateSshEnvironment(environmentId: string, update: Partial<SshEnvironment>): void {
+    if (!settingsDraft) {
+      return;
+    }
+    setSettingsDraft({
+      ...settingsDraft,
+      sshEnvironments: settingsDraft.sshEnvironments.map((environment) =>
+        environment.id === environmentId
+          ? {
+              ...environment,
+              ...update,
+              ...(update.savePassword === false ? { hasSavedPassword: false } : {}),
+              ...(update.savePassphrase === false ? { hasSavedPassphrase: false } : {})
+            }
+          : environment
+      ),
+      updatedAt: new Date().toISOString()
+    });
+    if (update.savePassword === false || update.savePassphrase === false) {
+      setSshSecretDrafts((current) => ({
+        ...current,
+        [environmentId]: {
+          ...current[environmentId],
+          ...(update.savePassword === false ? { password: "" } : {}),
+          ...(update.savePassphrase === false ? { passphrase: "" } : {})
+        }
+      }));
+    }
+    setIsSettingsDirty(true);
+  }
+
+  function handleDeleteSshEnvironment(environmentId: string): void {
+    if (!settingsDraft) {
+      return;
+    }
+    setSettingsDraft({
+      ...settingsDraft,
+      sshEnvironments: settingsDraft.sshEnvironments.filter((environment) => environment.id !== environmentId),
+      updatedAt: new Date().toISOString()
+    });
+    setSshSecretDrafts((current) => {
+      const next = { ...current };
+      delete next[environmentId];
+      return next;
+    });
+    setSshTestStates((current) => {
+      const next = { ...current };
+      delete next[environmentId];
+      return next;
+    });
+    setDraftWorkspace((current) => {
+      if (!current) {
+        return current;
+      }
+      const terminal = current.terminals[0];
+      if (!terminal || terminal.sshEnvironmentId !== environmentId) {
+        return current;
+      }
+      return {
+        ...current,
+        terminals: [
+          {
+            ...terminal,
+            sshEnvironmentId: undefined,
+            startupCommand: "",
+            target: diagnostics?.platform === "win32" ? "windows" : "linux"
+          }
+        ],
+        updatedAt: new Date().toISOString()
+      };
+    });
+    setIsDirty((current) => current || selectedWorkspace?.terminals[0]?.sshEnvironmentId === environmentId);
+    setIsSettingsDirty(true);
+  }
+
+  function handleSshSecretDraftChange(environmentId: string, field: keyof SshSecretInput, value: string): void {
+    setSshSecretDrafts((current) => ({
+      ...current,
+      [environmentId]: {
+        ...current[environmentId],
+        [field]: value
+      }
+    }));
+    setIsSettingsDirty(true);
+  }
+
+  async function handleTestSshEnvironment(environmentId: string): Promise<void> {
+    const environment = settingsDraft?.sshEnvironments.find((item) => item.id === environmentId);
+    if (!environment) {
+      return;
+    }
+    setSshTestStates((current) => ({
+      ...current,
+      [environmentId]: {
+        isRunning: true,
+        result: current[environmentId]?.result ?? null
+      }
+    }));
+    try {
+      const result = await window.watchboard.testSshEnvironment(environment, sshSecretDrafts[environmentId]);
+      setSshTestStates((current) => ({
+        ...current,
+        [environmentId]: {
+          isRunning: false,
+          result
+        }
+      }));
+      setError("");
+    } catch (testError) {
+      const message = messageOf(testError);
+      setSshTestStates((current) => ({
+        ...current,
+        [environmentId]: {
+          isRunning: false,
+          result: {
+            ok: false,
+            message
+          }
+        }
+      }));
+      setError(message);
+    }
+  }
+
   function handleResetSettings(): void {
     if (!settings) {
       return;
     }
     setSettingsDraft(structuredClone(settings));
     setIsSettingsDirty(false);
+    setSshSecretDrafts({});
+    setSshTestStates({});
     setError("");
   }
 
@@ -777,7 +925,13 @@ export function App(): ReactElement {
     if (!workspace) {
       return null;
     }
-    const instance = createTerminalInstance(workspace, currentWorkbench.instances);
+    const instance = createTerminalInstance(
+      {
+        ...workspace,
+        terminals: [normalizeTerminal(workspace, diagnostics, settingsDraft)]
+      },
+      currentWorkbench.instances
+    );
     reportRendererPerf({
       category: "interaction",
       name: "workspace-drag-open-request",
@@ -813,7 +967,13 @@ export function App(): ReactElement {
       setError(`Workspace ${workspaceId} not found`);
       return;
     }
-    const instance = createTerminalInstance(workspace, workbench.instances);
+    const instance = createTerminalInstance(
+      {
+        ...workspace,
+        terminals: [normalizeTerminal(workspace, diagnostics, settingsDraft)]
+      },
+      workbench.instances
+    );
     stageWorkbench(addInstanceToWorkbench(workbench, instance, openMode, anchorPaneId));
     setError("");
   }
@@ -1032,7 +1192,14 @@ export function App(): ReactElement {
               viewState={settingsDraft.settingsPane}
               isDirty={isSettingsDirty}
               isSaving={isSavingSettings}
+              sshSecretDrafts={sshSecretDrafts}
+              sshTestStates={sshTestStates}
               onChange={handleSettingsFieldChange}
+              onAddSshEnvironment={handleAddSshEnvironment}
+              onUpdateSshEnvironment={handleUpdateSshEnvironment}
+              onDeleteSshEnvironment={handleDeleteSshEnvironment}
+              onSshSecretChange={handleSshSecretDraftChange}
+              onTestSshEnvironment={(environmentId) => void handleTestSshEnvironment(environmentId)}
               onViewStateChange={(state) => void handleSettingsPaneStateChange(state)}
               onOpenDebugPath={handleOpenDebugPath}
               onSave={() => void handleSettingsSave()}
@@ -1092,6 +1259,7 @@ export function App(): ReactElement {
       <ConfigDrawer
         isOpen={isConfigOpen}
         workspace={selectedWorkspace}
+        sshEnvironments={settingsDraft.sshEnvironments}
         diagnostics={diagnostics}
         isDirty={isDirty}
         isSaving={isSaving}
@@ -1147,30 +1315,41 @@ function clearWorkspaceEditor(
   setIsDirty(false);
 }
 
-function normalizeTerminal(workspace: Workspace, diagnostics: DiagnosticsInfo | null): TerminalProfile {
+function normalizeTerminal(workspace: Workspace, diagnostics: DiagnosticsInfo | null, settings: AppSettings | null): TerminalProfile {
   const terminal = workspace.terminals[0];
   if (!terminal) {
     throw new Error("Workspace has no terminal profile");
   }
   const target = terminal.target === "wsl" && diagnostics?.platform !== "win32" ? "linux" : terminal.target;
+  const sshEnvironment = target === "ssh" ? settings?.sshEnvironments.find((item) => item.id === terminal.sshEnvironmentId) : undefined;
   const shellOrProgram =
-    target === "wsl"
+    target === "ssh"
+      ? diagnostics?.platform === "win32"
+        ? "powershell.exe"
+        : "/bin/bash"
+      : target === "wsl"
       ? "bash"
       : target === "windows"
         ? "powershell.exe"
         : terminal.shellOrProgram || "/bin/bash";
-  const startupCommand = resolveTerminalStartupCommand({
-    startupMode: terminal.startupMode,
-    startupPresetId: terminal.startupPresetId,
-    startupCustomCommand: terminal.startupCustomCommand,
-    startupCommand: terminal.startupCommand
-  });
+  const startupCommand = resolveTerminalStartupCommandWithEnvironment(
+    {
+      target,
+      sshEnvironmentId: terminal.sshEnvironmentId,
+      startupMode: terminal.startupMode,
+      startupPresetId: terminal.startupPresetId,
+      startupCustomCommand: terminal.startupCustomCommand,
+      startupCommand: terminal.startupCommand
+    },
+    sshEnvironment
+  );
   return {
     ...terminal,
     title: workspace.name || terminal.title,
     target,
     shellOrProgram,
-    startupCommand
+    startupCommand,
+    startupCustomCommand: target === "ssh" ? "" : terminal.startupCustomCommand
   };
 }
 
