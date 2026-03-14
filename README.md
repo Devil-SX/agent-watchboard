@@ -1,12 +1,27 @@
 # Agent Watchboard
 
-Agent Watchboard is a desktop control surface for running and monitoring multiple code-agent terminals side by side.
+Desktop watchboard for orchestrating multiple code agents across persistent terminal workspaces, shared task boards, and reconnectable runtime panes.
 
-It combines three pieces in one app:
+![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
+![Platform: WSL](https://img.shields.io/badge/platform-WSL-4D7CFE?style=flat-square)
+![Agent: Codex](https://img.shields.io/badge/agent-Codex-10A37F?style=flat-square)
+![Agent: Claude%20Code](https://img.shields.io/badge/agent-Claude%20Code-D97757?style=flat-square)
 
-- persistent workspace profiles for agent terminals
-- a split-pane terminal workbench with reconnectable PTY sessions
-- a JSON todo board that can be shared with the repo-local `todo_preview` CLI and skill
+<p align="center">
+  <img src="./screenshot.png" alt="Agent Watchboard screenshot" width="100%" />
+</p>
+
+## Overview
+
+Agent Watchboard is a desktop control surface for people who run more than one coding agent at the same time and need the runtime state to stay visible.
+
+It combines three layers in one application:
+
+- persistent workspace templates for Codex, Claude Code, bash, and custom terminal profiles
+- a split-pane runtime workbench with reconnectable PTY sessions
+- a shared Todo Board that stays in sync with the repo-local `todo_preview` CLI and skill
+
+The current real-world target is Windows with WSL, where host-side and WSL-side tools need to coexist without forcing the user to mentally switch between two different environments.
 
 ## Platform Support
 
@@ -14,18 +29,60 @@ It combines three pieces in one app:
 - Windows + WSL
 - Linux
 
-Windows + WSL is the configuration that has been tested end to end in practice.
+Windows + WSL is the setup that has been exercised most heavily in day-to-day usage.
 
-## What It Does
+## Supported Agents
 
-- launch Linux, Windows, or WSL terminals from saved workspace profiles
-- reopen the app and reconnect to existing sessions instead of losing state
-- split terminals into tabs or panes and keep the workbench layout
-- monitor session health through runtime state and persisted logs
-- display a shared JSON board for tasks, sections, deadlines, and calendar views
-- manage the board from the desktop UI or from `todo_preview`
+- Codex
+- Claude Code
+- plain shell / bash profiles
+- custom terminal profiles built from saved workspace templates
 
-## Development
+## Why This Exists
+
+Typical agent tooling still treats each terminal as an isolated session. That breaks down when you want to:
+
+- keep multiple agents open across different repos and environments
+- reconnect after closing the UI
+- switch between host and WSL paths without losing context
+- track shared tasks in a board that both the desktop UI and CLI can mutate
+- understand which agent is ready, working, stalled, or stopped
+
+Agent Watchboard is designed as the missing operational layer above individual agent CLIs.
+
+## Core Capabilities
+
+- Save workspace templates and launch them into tabs, splits, or background runtime instances.
+- Reconnect to live PTY sessions after restarting the desktop UI instead of discarding terminal state.
+- Run host and WSL workspaces side by side in a single watchboard.
+- Inspect skills, configs, and runtime state from the same application shell.
+- Share a JSON Todo Board between the desktop app and terminal automation through `todo_preview`.
+- Persist workbench layout, workspace definitions, settings, and runtime diagnostics outside the repository.
+
+## Development Priorities
+
+These are the two product directions the project is being shaped around:
+
+### 1. Seamless Multi-Environment Operation
+
+The long-term goal is to make agent execution feel continuous across:
+
+- host
+- WSL
+- server / remote runtime targets
+
+Today the app already supports host and WSL workflows. The next step is to extend the same visual language, runtime health model, and path-aware tooling into remote or server-backed agent environments without forcing separate UIs.
+
+### 2. Multi-Agent Monitoring And Sync
+
+The watchboard is meant to become a single surface for supervising several agents at once:
+
+- unified session state and health visibility
+- synchronized task tracking through the board + CLI bridge
+- consistent workspace identity across Codex and Claude Code
+- better operational insight into which agent is running, idle, blocked, or producing output
+
+## Quick Start
 
 ```bash
 pnpm install
@@ -40,6 +97,8 @@ pnpm dist:linux
 pnpm dist:win
 pnpm dist:win:portable
 ```
+
+Notes:
 
 - Linux packages are written under `release/` as `AppImage`.
 - `pnpm dist:win` writes a runnable `release/win-unpacked/` folder that is useful for Windows-side testing from a non-Windows host.
@@ -89,10 +148,17 @@ Add a task with more detail and a deadline:
 pnpm todo_preview add "Release v0.5.2" --topic Release --description "Push tag after CI passes" --ddl 2026-03-13
 ```
 
-Mark a task done:
+Mark a task as in progress or done:
 
 ```bash
+pnpm todo_preview doing "Investigate CI failure"
 pnpm todo_preview done "Investigate CI failure"
+```
+
+Move a finished task back to `todo`:
+
+```bash
+pnpm todo_preview todo "Investigate CI failure"
 ```
 
 Rename a task and update metadata:

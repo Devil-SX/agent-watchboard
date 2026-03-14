@@ -32,6 +32,20 @@ test("attachExistingInstance repositions a visible instance without duplicating 
   assert.equal(moved.activePaneId, second.paneId);
 });
 
+test("attachExistingInstance keeps layout node ids unique after collapse and split restore", () => {
+  const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
+  const first = createTerminalInstance(workspace, []);
+  const second = createTerminalInstance(workspace, [first]);
+  let workbench = addInstanceToWorkbench(addInstanceToWorkbench(createEmptyWorkbench(), first), second);
+
+  workbench = attachExistingInstance(workbench, second.instanceId, "right", first.paneId);
+  workbench = collapseInstance(workbench, second.instanceId);
+  workbench = attachExistingInstance(workbench, second.instanceId, "right", first.paneId);
+
+  const ids = collectLayoutNodeIds(workbench.layoutModel.layout);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
 function createEmptyWorkbench() {
   return {
     version: 1 as const,
@@ -67,4 +81,15 @@ function createEmptyWorkbench() {
       }
     }
   };
+}
+
+function collectLayoutNodeIds(node: { id: string; children?: Array<{ id: string; children?: Array<{ id: string }> }> }): string[] {
+  const ids = [node.id];
+  for (const child of node.children ?? []) {
+    ids.push(child.id);
+    for (const grandchild of child.children ?? []) {
+      ids.push(grandchild.id);
+    }
+  }
+  return ids;
 }

@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-03-14
+
+> **Code Stats** | Total: 23054 lines | Delta: +112 (-17) = **+95 net** | Change: **+0.42%** vs v0.7.5
+
+### Added
+- Added a repository screenshot asset to the README so the GitHub project page shows the live Windows + WSL watchboard UI immediately.
+
+### Changed
+- Reworked the README into a more recognizable GitHub project homepage with platform badges, supported agent badges, product framing, and explicit development priorities.
+
+### Fixed
+- Fixed workbench split-layout node generation so collapsing an instance and dragging it back into the runtime panes no longer crashes the renderer with duplicate FlexLayout row ids.
+
 ## [0.7.5] - 2026-03-14
 
 > **Code Stats** | Total: 22687 lines | Delta: +1776 (-434) = **+1342 net** | Change: **+6.29%** vs v0.7.3

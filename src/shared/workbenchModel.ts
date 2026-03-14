@@ -443,7 +443,7 @@ function insertRelativeTabset(
 
     const wrappedRow: FlexLayoutRowNode = {
       type: "row",
-      id: `row-${nextTab.id}`,
+      id: createLayoutContainerId("row"),
       weight: child.weight ?? 100,
       children: insertBefore
         ? [
@@ -477,12 +477,16 @@ function insertRelativeTabset(
 function createStandaloneTabset(tab: FlexLayoutTabNode): FlexLayoutTabSetNode {
   return {
     type: "tabset",
-    id: `tabset-${tab.id}`,
+    id: createLayoutContainerId("tabset"),
     weight: 100,
     selected: 0,
     active: true,
     children: [tab]
   };
+}
+
+function createLayoutContainerId(prefix: "row" | "tabset"): string {
+  return `${prefix}-${globalThis.crypto.randomUUID()}`;
 }
 
 function findFirstTabset(row: FlexLayoutRowNode): FlexLayoutTabSetNode | null {
