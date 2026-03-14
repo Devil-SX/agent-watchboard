@@ -4,8 +4,8 @@ import { Actions, DockLocation, Layout, Model, type Action, type Node as FlexNod
 
 import { IconButton, PlusIcon, SplitDownIcon, SplitRightIcon } from "@renderer/components/IconButton";
 import { resolveSessionVisualState, visualStateClassName } from "@renderer/components/sessionVisualState";
-import { StatusOrbit } from "@renderer/components/StatusOrbit";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
+import { PaneTabActions, PaneTabLabel } from "@renderer/components/workbenchTabActions";
 import { type AppSettings, type SessionState, type TerminalInstance, type WorkbenchDocument, type WorkbenchLayoutModel, WorkbenchLayoutModelSchema, type Workspace } from "@shared/schema";
 
 type Props = {
@@ -249,50 +249,23 @@ export function WorkbenchView({
     const session = sessions[instance.sessionId] ?? null;
     const status = resolveSessionVisualState(session?.status);
     renderValues.content = (
-      <span
-        className={`pane-tab-label ${visualStateClassName(status)}`}
-        title={`${instance.title} · ${instance.terminalProfileSnapshot.target} · ${instance.terminalProfileSnapshot.cwd}`}
-      >
-        <StatusOrbit active={status === "working"} />
-        <span className="pane-tab-copy">
-          <strong>{instance.title}</strong>
-          <span className="pane-tab-meta">
-            {instance.terminalProfileSnapshot.target} · {instance.terminalProfileSnapshot.cwd}
-          </span>
-        </span>
-      </span>
+      <PaneTabLabel
+        title={instance.title}
+        meta={`${instance.terminalProfileSnapshot.target} · ${instance.terminalProfileSnapshot.cwd}`}
+        statusClassName={visualStateClassName(status)}
+        isWorking={status === "working"}
+        tooltip={`${instance.title} · ${instance.terminalProfileSnapshot.target} · ${instance.terminalProfileSnapshot.cwd}`}
+      />
     );
     renderValues.buttons = [
-      <button
-        key={`${node.getId()}-collapse`}
-        type="button"
-        className="pane-tab-collapse"
-        title={`Collapse ${instance.title}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          onCollapsePane(instance.instanceId);
-        }}
-        onMouseDown={(event) => {
-          event.stopPropagation();
-        }}
-      >
-        −
-      </button>,
-      <button
-        key={`${node.getId()}-close`}
-        type="button"
-        className="pane-tab-close"
-        title={`Close ${instance.title}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          void onClosePane(instance.instanceId);
-        }}
-        onMouseDown={(event) => {
-          event.stopPropagation();
-        }}
-      >
-        ×
-      </button>
+      <PaneTabActions
+        key={`${node.getId()}-actions`}
+        nodeId={node.getId()}
+        instanceId={instance.instanceId}
+        instanceTitle={instance.title}
+        onCollapsePane={onCollapsePane}
+        onClosePane={onClosePane}
+      />
     ];
   }
 

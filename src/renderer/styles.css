@@ -1063,6 +1063,7 @@ textarea::placeholder {
   min-width: 0;
   max-width: 100%;
   padding: 1px 6px;
+  gap: 6px;
   color: #aab9c2;
 }
 
@@ -1147,13 +1148,21 @@ textarea::placeholder {
 
 .workbench-layout .flexlayout__tab_button_trailing {
   display: flex;
-  flex: 0 0 20px;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: center;
-  min-width: 20px;
+  justify-content: flex-end;
+  min-width: 44px;
   visibility: visible;
   margin-left: 4px;
   overflow: visible;
+}
+
+.pane-tab-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 40px;
 }
 
 .pane-tab-label {
@@ -1194,6 +1203,7 @@ textarea::placeholder {
 }
 
 .pane-tab-copy strong {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1201,7 +1211,7 @@ textarea::placeholder {
 }
 
 .pane-tab-meta {
-  flex: 0 1 40%;
+  flex: 0 1 32%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1212,6 +1222,7 @@ textarea::placeholder {
 .pane-tab-close {
   width: 18px;
   height: 18px;
+  flex: 0 0 18px;
   border: 0;
   border-radius: 6px;
   background: transparent;
