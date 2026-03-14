@@ -1,11 +1,14 @@
-# Agent Watchboard
+<p align="center">
+  <h1>Agent Watchboard</h1>
+  <p>Desktop watchboard for orchestrating multiple code agents across persistent terminal workspaces, shared task boards, and reconnectable runtime panes.</p>
+</p>
 
-Desktop watchboard for orchestrating multiple code agents across persistent terminal workspaces, shared task boards, and reconnectable runtime panes.
-
-![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square)
-![Platform: WSL](https://img.shields.io/badge/platform-WSL-4D7CFE?style=flat-square)
-![Agent: Codex](https://img.shields.io/badge/agent-Codex-10A37F?style=flat-square)
-![Agent: Claude%20Code](https://img.shields.io/badge/agent-Claude%20Code-D97757?style=flat-square)
+<p align="center">
+  <img alt="Platform: Windows" src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square" />
+  <img alt="Platform: WSL" src="https://img.shields.io/badge/platform-WSL-4D7CFE?style=flat-square" />
+  <img alt="Agent: Codex" src="https://img.shields.io/badge/agent-Codex-10A37F?style=flat-square" />
+  <img alt="Agent: Claude Code" src="https://img.shields.io/badge/agent-Claude%20Code-D97757?style=flat-square" />
+</p>
 
 <p align="center">
   <img src="./screenshot.png" alt="Agent Watchboard screenshot" width="100%" />
