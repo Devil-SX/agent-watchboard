@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added schema, persistence, renderer, and SSH command-generation regression coverage for the new environment-management flow so credential flags and workspace launch wiring do not silently regress.
 - Added regression coverage for SKILL metadata parsing and Skills list rendering so description-backed list rows and WSL discovery payloads do not silently regress.
 - Added deterministic migration and renderer coverage for legacy board items so old `description` text now lands in `history`, and board detail drawers render `history` / `next` as markdown instead of plain text.
+- Reworked Settings category navigation into a left-hand sidebar so `Board`, `Terminal`, `Environments`, `Storage`, and `Debug` switch reliably while staying visually scannable.
+- Added a headless Electron Playwright regression test for Settings category switching so WSL runs do not depend on a live GPU or display server.
 
 ## [0.7.13] - 2026-03-14
 

@@ -1352,18 +1352,24 @@ textarea::placeholder {
 
 .settings-category-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-  padding-bottom: 14px;
+  padding-right: 8px;
 }
 
 .settings-category-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  padding: 0.38rem 0.82rem;
+  border-radius: 16px;
+  padding: 0.72rem 0.9rem;
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-soft);
   cursor: pointer;
+  text-align: left;
   transition:
     border-color 120ms ease,
     background 120ms ease,
@@ -1382,12 +1388,35 @@ textarea::placeholder {
   color: #eef5f9;
 }
 
-.settings-panel-body,
+.settings-category-tab-label {
+  font-weight: 700;
+  color: inherit;
+}
+
+.settings-category-tab-copy {
+  font-size: 0.79rem;
+  line-height: 1.4;
+  color: rgba(221, 232, 240, 0.72);
+}
+
+.settings-panel-body {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.settings-category-sidebar {
+  position: sticky;
+  top: 0;
+}
+
+.settings-category-content,
 .config-drawer-body {
   flex: 1;
   min-height: 0;
   overflow: overlay;
-  padding-top: 16px;
+  padding-top: 0;
 }
 
 .settings-section,
@@ -1561,7 +1590,7 @@ textarea::placeholder {
 }
 
 .workspace-list,
-.settings-panel-body,
+.settings-category-content,
 .config-drawer-body,
 .board-tree,
 .terminal-fallback {
@@ -1569,7 +1598,7 @@ textarea::placeholder {
 }
 
 .workspace-list::-webkit-scrollbar,
-.settings-panel-body::-webkit-scrollbar,
+.settings-category-content::-webkit-scrollbar,
 .config-drawer-body::-webkit-scrollbar,
 .board-tree::-webkit-scrollbar,
 .terminal-fallback::-webkit-scrollbar,
@@ -1580,7 +1609,7 @@ textarea::placeholder {
 }
 
 .workspace-list::-webkit-scrollbar-thumb,
-.settings-panel-body::-webkit-scrollbar-thumb,
+.settings-category-content::-webkit-scrollbar-thumb,
 .config-drawer-body::-webkit-scrollbar-thumb,
 .board-tree::-webkit-scrollbar-thumb,
 .terminal-fallback::-webkit-scrollbar-thumb,
@@ -1593,7 +1622,7 @@ textarea::placeholder {
 }
 
 .workspace-list:hover::-webkit-scrollbar-thumb,
-.settings-panel-body:hover::-webkit-scrollbar-thumb,
+.settings-category-content:hover::-webkit-scrollbar-thumb,
 .config-drawer-body:hover::-webkit-scrollbar-thumb,
 .board-tree:hover::-webkit-scrollbar-thumb,
 .terminal-fallback:hover::-webkit-scrollbar-thumb,
@@ -1604,7 +1633,7 @@ textarea::placeholder {
 }
 
 .workspace-list::-webkit-scrollbar-track,
-.settings-panel-body::-webkit-scrollbar-track,
+.settings-category-content::-webkit-scrollbar-track,
 .config-drawer-body::-webkit-scrollbar-track,
 .board-tree::-webkit-scrollbar-track,
 .terminal-fallback::-webkit-scrollbar-track,

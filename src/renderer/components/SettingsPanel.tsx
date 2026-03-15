@@ -113,21 +113,32 @@ export function SettingsPanel({
       </header>
 
       <div className="settings-panel-body">
-        <div className="settings-category-bar" role="tablist" aria-label="Settings categories">
-          {SETTINGS_CATEGORIES.map((category) => (
-            <button
-              key={category.id}
-              type="button"
-              role="tab"
-              aria-selected={activeCategory === category.id}
-              className={activeCategory === category.id ? "settings-category-tab is-active" : "settings-category-tab"}
-              onClick={() => onViewStateChange({ activeCategory: category.id })}
-            >
-              {category.label}
-            </button>
-          ))}
-        </div>
+        <aside className="settings-category-sidebar">
+          <div className="settings-category-bar" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
+            {SETTINGS_CATEGORIES.map((category) => (
+              <button
+                key={category.id}
+                id={`settings-category-tab-${category.id}`}
+                type="button"
+                role="tab"
+                aria-selected={activeCategory === category.id}
+                aria-controls={`settings-category-panel-${category.id}`}
+                className={activeCategory === category.id ? "settings-category-tab is-active" : "settings-category-tab"}
+                onClick={() => onViewStateChange({ activeCategory: category.id })}
+              >
+                <span className="settings-category-tab-label">{category.label}</span>
+                <span className="settings-category-tab-copy">{category.copy}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
 
+        <div
+          id={`settings-category-panel-${activeCategory}`}
+          className="settings-category-content"
+          role="tabpanel"
+          aria-labelledby={`settings-category-tab-${activeCategory}`}
+        >
         {activeCategory === "board" ? (
           <section className="settings-section">
             <p className="panel-eyebrow">Shared Board</p>
@@ -463,6 +474,7 @@ export function SettingsPanel({
             </div>
           </section>
         ) : null}
+        </div>
       </div>
     </div>
   );

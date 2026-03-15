@@ -3,11 +3,23 @@ import path from "node:path";
 
 let app: ElectronApplication;
 let page: Page;
+const ELECTRON_TEST_ARGS = [
+  path.resolve("out/main/index.js"),
+  "--disable-gpu",
+  "--disable-software-rasterizer",
+  "--use-gl=disabled",
+  "--disable-dev-shm-usage"
+];
 
 test.beforeAll(async () => {
   app = await _electron.launch({
-    args: [path.resolve("out/main/index.js")],
-    env: { ...process.env, NODE_ENV: "production" }
+    args: ELECTRON_TEST_ARGS,
+    env: {
+      ...process.env,
+      NODE_ENV: "production",
+      WATCHBOARD_DISABLE_GPU: "1",
+      WATCHBOARD_HEADLESS_TEST: "1"
+    }
   });
   page = await app.firstWindow();
   await page.waitForLoadState("domcontentloaded");
@@ -117,4 +129,25 @@ test("can switch back to terminal tab", async () => {
   await page.locator("nav button", { hasText: "terminal" }).click();
   await expect(page.locator(".workspace-sidebar")).toBeVisible();
   await expect(page.locator(".center-panel")).toBeVisible();
+});
+
+test("settings categories switch content from the left sidebar", async () => {
+  await page.getByRole("navigation").getByRole("button", { name: "settings", exact: true }).click();
+  await expect(page.locator(".settings-panel")).toBeVisible();
+
+  const sidebar = page.locator(".settings-category-sidebar");
+  await expect(sidebar).toBeVisible();
+  await expect(page.getByRole("tab", { name: /^Board\b/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /^Environments\b/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /^Debug\b/ })).toBeVisible();
+
+  const content = page.locator(".settings-category-content");
+  await page.getByRole("tab", { name: /^Board\b/ }).click();
+  await expect(content).toContainText("Shared Board");
+
+  await page.getByRole("tab", { name: /^Environments\b/ }).click();
+  await expect(content).toContainText("SSH Environments");
+
+  await page.getByRole("tab", { name: /^Debug\b/ }).click();
+  await expect(content).toContainText("Debug Actions");
 });

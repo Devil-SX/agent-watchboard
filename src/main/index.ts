@@ -66,6 +66,7 @@ function defaultWorkspaceSeed(): { platform: NodeJS.Platform } {
 }
 
 function createWindow(): void {
+  const isHeadlessTest = process.env.WATCHBOARD_HEADLESS_TEST === "1";
   mainWindow = new BrowserWindow({
     width: 1680,
     height: 980,
@@ -88,7 +89,9 @@ function createWindow(): void {
   mainWindow.removeMenu();
 
   mainWindow.on("ready-to-show", () => {
-    mainWindow?.show();
+    if (!isHeadlessTest) {
+      mainWindow?.show();
+    }
   });
 
   mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
