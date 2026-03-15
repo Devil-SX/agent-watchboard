@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { applyPtyActivityStatus, shouldReuseLiveSession } from "../../src/main/supervisor/server";
+import { applyPtyActivityStatus, isSupervisorEntrypoint, shouldReuseLiveSession } from "../../src/main/supervisor/server";
 import type { SessionState } from "../../src/shared/schema";
 
 function makeSession(status: SessionState["status"]): SessionState {
@@ -63,4 +63,8 @@ test("shouldReuseLiveSession keeps running skills sessions attached instead of r
   };
 
   assert.equal(shouldReuseLiveSession(stopped), false);
+});
+
+test("isSupervisorEntrypoint stays false when imported by tests", () => {
+  assert.equal(isSupervisorEntrypoint(), false);
 });

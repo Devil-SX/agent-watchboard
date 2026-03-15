@@ -114,6 +114,12 @@ pnpm todo_preview add "new task" --topic Inbox
 pnpm watchboard --help
 ```
 
+Stable invocation patterns:
+
+- Inside this repository: `pnpm todo_preview ...`
+- Outside this repository: `pnpm --dir /home/sdu/pure_auto/agent_watchboard todo_preview ...`
+- In restricted/sandboxed runtimes where `tsx` may fail: `node /home/sdu/pure_auto/agent_watchboard/dist-node/cli/todo-preview.cjs ...`
+
 ## `todo_preview` Skill Setup
 
 `todo_preview` is the shared task-management surface for this project. The desktop board UI and the CLI both read and write the same JSON board file, so agents can update tasks from the terminal while the app reflects the changes immediately.
@@ -128,6 +134,18 @@ The default board path is `~/.agent-watchboard/board.json`. Keep the desktop app
 
 ```bash
 pnpm todo_preview --file ~/.agent-watchboard/board.json list
+```
+
+If you are not currently in the repository root, use:
+
+```bash
+pnpm --dir /home/sdu/pure_auto/agent_watchboard todo_preview --file ~/.agent-watchboard/board.json list
+```
+
+If your runtime blocks `tsx` child IPC features, use the built CLI directly after `pnpm build`:
+
+```bash
+node /home/sdu/pure_auto/agent_watchboard/dist-node/cli/todo-preview.cjs --file ~/.agent-watchboard/board.json list
 ```
 
 ## Common `todo_preview` Workflows
@@ -198,6 +216,22 @@ Import an older Markdown checklist one time into the JSON board:
 
 ```bash
 pnpm todo_preview migrate-markdown ./legacy-todo.md
+```
+
+Apply several mutations atomically from one JSON file:
+
+```bash
+pnpm todo_preview batch ./ops.json
+```
+
+Example `ops.json`:
+
+```json
+[
+  { "op": "add", "topic": "Circuit", "name": "SRAM data analysis" },
+  { "op": "add", "topic": "Circuit", "name": "Compute unit analysis" },
+  { "op": "ddl", "name": "SRAM data analysis", "date": "2026-03-20" }
+]
 ```
 
 ## Runtime Data And Logs

@@ -1,6 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
 
 import chokidar, { type FSWatcher } from "chokidar";
 import pty from "node-pty";
@@ -628,6 +627,10 @@ async function main(): Promise<void> {
   await server.start();
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+export function isSupervisorEntrypoint(): boolean {
+  return typeof require === "function" && typeof module !== "undefined" && require.main === module;
+}
+
+if (isSupervisorEntrypoint()) {
   void main();
 }

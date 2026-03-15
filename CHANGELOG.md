@@ -13,12 +13,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added main-process SSH credential storage backed by Electron secure storage with metadata flags kept in app settings and encrypted secret payloads persisted outside plain `settings.json`.
 - Added SKILL frontmatter metadata parsing for host and WSL skill discovery so `name` and `description` can be surfaced directly in the Skills pane list.
 - Added explicit task-level `history` and `next` fields to the watchboard item model so completed work and next actions can be stored separately instead of sharing one freeform description field.
+- Added an ESLint guard for tsup-bundled CommonJS-targeted TypeScript sources so `import.meta` usage in CLI, supervisor, and shared runtime modules is caught before packaging.
 
 ### Changed
 - Reworked the existing `Storage` Settings view to focus on persisted store/state files while moving actionable runtime log inspection into the new debug-focused Settings flow.
 - Extended workspace terminal targets to support saved SSH environments so pane/workspace config can launch named remote connections instead of relying on ad hoc startup commands.
 - Reworked Skills list rows to show a primary title plus a muted truncated description line, making SKILL entries scannable without opening each markdown document.
 - Updated `todo_preview` CLI add/update/batch flows and board list serialization to use `history` / `next`, while still mapping legacy `description` input into `history` during migration paths.
+- Expanded the README and `todo_preview` skill guidance with stable invocation patterns, batch examples, and stronger `doing` handoff-note conventions for shared board updates.
 
 ### Fixed
 - Fixed runtime pane tab actions so collapse and close now render inside a dedicated fixed-priority trailing action region, keeping `-` and `×` visible in narrow split panes and preventing long titles or paths from crowding them out.
@@ -35,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed supervisor duplicate-start handling for live Skills chat sessions so transient renderer/session-state churn reuses the existing PTY instead of tearing it down and starting over.
 - Reworked `workspaces.json`, `workbench.json`, and `settings.json` through a shared atomic JSON-store writer so updates now write via temp-file rename, keep bounded `.bak` snapshots, and stop overwriting corrupted store files during read failures.
 - Added regression coverage for corrupted workspace/workbench/settings reads plus atomic backup cleanup behavior so persistence bugs fail fast without silently destroying recovery evidence.
+- Fixed the supervisor module entrypoint check to use a CommonJS-safe runtime guard, and added unit coverage so importing the server in tests no longer depends on `import.meta` semantics.
 
 ## [0.7.13] - 2026-03-14
 
