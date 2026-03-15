@@ -1091,6 +1091,7 @@ export function App(): ReactElement {
               onClosePane={(instanceId) => void handleClosePane(instanceId)}
               onCollapsePane={handleCollapsePane}
               onRestorePane={handleRestorePane}
+              getSessionBacklogPreview={getSessionBacklog}
             />
           </Profiler>
 

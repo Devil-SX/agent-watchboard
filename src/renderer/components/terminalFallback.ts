@@ -55,6 +55,16 @@ export function toPlainTerminalPreview(data: string): string {
     .trimStart();
 }
 
+export function createTerminalPreviewSnippet(data: string, maxLines = 8, maxChars = 700): string {
+  const normalized = toPlainTerminalPreview(data).trim();
+  if (!normalized) {
+    return "";
+  }
+  const tail = normalized.length > maxChars ? normalized.slice(normalized.length - maxChars) : normalized;
+  const lines = tail.split("\n");
+  return lines.slice(Math.max(0, lines.length - maxLines)).join("\n").trim();
+}
+
 export function containsPrintableTerminalContent(data: string): boolean {
   return toPlainTerminalPreview(data).trim().length > 0;
 }

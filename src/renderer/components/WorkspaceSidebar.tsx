@@ -6,6 +6,7 @@ import { CompactDropdown, CompactToggleButton } from "@renderer/components/Compa
 import { ChevronDownIcon, ClaudeIcon, CodexIcon, IconButton, PlusIcon, TrashIcon } from "@renderer/components/IconButton";
 import { LocationBadge } from "@renderer/components/LocationBadge";
 import { StatusOrbit } from "@renderer/components/StatusOrbit";
+import { createTerminalPreviewSnippet } from "@renderer/components/terminalFallback";
 import { resolveSessionVisualState, resolveWorkspaceVisualState, visualStateClassName, type SessionVisualState } from "@renderer/components/sessionVisualState";
 import {
   describeTerminalLaunchShort,
@@ -44,6 +45,7 @@ type Props = {
   onClosePane: (instanceId: string) => void;
   onCollapsePane: (instanceId: string) => void;
   onRestorePane: (instanceId: string) => void;
+  getSessionBacklogPreview: (sessionId: string) => string;
   onDragInstanceStart?: (instanceId: string) => void;
 };
 
@@ -71,12 +73,18 @@ export function WorkspaceSidebar({
   onClosePane,
   onCollapsePane,
   onRestorePane,
+  getSessionBacklogPreview,
   onDragInstanceStart
 }: Props): ReactElement {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<{
     instanceId: string;
     style: CSSProperties;
+  } | null>(null);
+  const [hoverPreview, setHoverPreview] = useState<{
+    instanceId: string;
+    style: CSSProperties;
+    content: string;
   } | null>(null);
   const instancesByWorkspace = useMemo(() => groupInstances(workbench.instances), [workbench.instances]);
   const visibleWorkspaces = useMemo(
@@ -304,6 +312,20 @@ export function WorkspaceSidebar({
                             style: getContextMenuStyle(event.clientX, event.clientY)
                           });
                         }}
+                        onMouseEnter={(event) => {
+                          if (!instance.collapsed) {
+                            return;
+                          }
+                          const bounds = event.currentTarget.getBoundingClientRect();
+                          setHoverPreview({
+                            instanceId: instance.instanceId,
+                            style: getPreviewStyle(bounds),
+                            content: createTerminalPreviewSnippet(getSessionBacklogPreview(instance.sessionId))
+                          });
+                        }}
+                        onMouseLeave={() => {
+                          setHoverPreview((current) => (current?.instanceId === instance.instanceId ? null : current));
+                        }}
                         title={instance.collapsed ? "Click to restore" : undefined}
                       >
                         <StatusOrbit active={status === "working"} />
@@ -340,6 +362,15 @@ export function WorkspaceSidebar({
               >
                 Close
               </button>
+            </div>,
+            document.body
+          )
+        : null}
+      {hoverPreview
+        ? createPortal(
+            <div className="workspace-instance-preview" style={hoverPreview.style}>
+              <p className="panel-eyebrow">Background Runtime Preview</p>
+              <pre>{hoverPreview.content || "No printable terminal backlog yet."}</pre>
             </div>,
             document.body
           )
@@ -424,6 +455,18 @@ export function deriveVisibleWorkspaces(
       return (instancesByWorkspace.get(workspace.id)?.length ?? 0) > 0;
     })
     .sort((left, right) => compareWorkspaces(left, right, sortMode));
+}
+
+export function getPreviewStyle(bounds: Pick<DOMRect, "right" | "top" | "width">): CSSProperties {
+  const width = 360;
+  const left = Math.min(window.innerWidth - width - 12, bounds.right + 12);
+  return {
+    position: "fixed",
+    top: Math.max(12, bounds.top),
+    left: Math.max(12, left),
+    width,
+    zIndex: 1000
+  };
 }
 
 export function compareWorkspaces(left: Workspace, right: Workspace, sortMode: WorkspaceSortMode): number {

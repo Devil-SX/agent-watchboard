@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.18] - 2026-03-15
+
+> **Code Stats** | Total: 28951 lines | Delta: +96 (-1) = **+95 net** | Change: **+0.33%** vs v0.7.17
+
+### Added
+- Added lightweight hover previews for collapsed runtime instances in the workspace sidebar using cached plain-text terminal backlog tails instead of a second live xterm renderer.
+
+### Fixed
+- Added bounded preview derivation and viewport-safe hover-card placement for collapsed runtime rows so background sessions can be inspected without restoring the pane or creating extra session subscriptions.
+- Added regression coverage for collapsed preview text derivation and preview placement helpers in the workspace sidebar test suite.
+
 ## [0.7.17] - 2026-03-15
 
 > **Code Stats** | Total: 28750 lines | Delta: +20 (-17) = **+3 net** | Change: **+0.01%** vs v0.7.16

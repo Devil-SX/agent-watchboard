@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { compareWorkspaces, deriveVisibleWorkspaces, getContextMenuStyle, matchesWorkspaceFilter } from "../../src/renderer/components/WorkspaceSidebar";
+import { compareWorkspaces, deriveVisibleWorkspaces, getContextMenuStyle, getPreviewStyle, matchesWorkspaceFilter } from "../../src/renderer/components/WorkspaceSidebar";
+import { createTerminalPreviewSnippet } from "../../src/renderer/components/terminalFallback";
 import type { TerminalInstance, Workspace } from "../../src/shared/schema";
 
 function makeWorkspace(
@@ -138,6 +139,28 @@ test("getContextMenuStyle keeps instance context menu within the viewport", () =
     position: "fixed",
     left: 136,
     top: 148,
+    zIndex: 1000
+  });
+});
+
+test("createTerminalPreviewSnippet keeps the most recent printable terminal tail", () => {
+  const preview = createTerminalPreviewSnippet("\u001b[31mboot\u001b[0m\nline-1\nline-2\nline-3\nline-4\nline-5", 3, 100);
+
+  assert.equal(preview, "line-3\nline-4\nline-5");
+});
+
+test("getPreviewStyle keeps the hover preview inside the viewport", () => {
+  Object.assign(globalThis, {
+    window: {
+      innerWidth: 420
+    }
+  });
+
+  assert.deepEqual(getPreviewStyle({ right: 390, top: 40, width: 120 }), {
+    position: "fixed",
+    top: 40,
+    left: 48,
+    width: 360,
     zIndex: 1000
   });
 });
