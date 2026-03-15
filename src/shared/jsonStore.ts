@@ -67,6 +67,19 @@ export async function writeJsonStore<T>(options: {
   return normalized;
 }
 
+export async function listJsonStoreBackups(filePath: string): Promise<string[]> {
+  const storeDir = dirname(filePath);
+  const storeBase = basename(filePath);
+  const backupPrefix = `${storeBase}.`;
+  const backupSuffix = JSON_STORE_BACKUP_SUFFIX;
+  const entries = await readdir(storeDir, { withFileTypes: true }).catch(() => []);
+
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.startsWith(backupPrefix) && entry.name.endsWith(backupSuffix))
+    .map((entry) => join(storeDir, entry.name))
+    .sort();
+}
+
 async function enqueueJsonStoreWrite(filePath: string, task: () => Promise<void>): Promise<void> {
   const pending = jsonStoreWriteQueues.get(filePath) ?? Promise.resolve();
   const next = pending
@@ -99,14 +112,7 @@ async function backupExistingJsonStore(filePath: string): Promise<void> {
 
 async function trimJsonStoreBackups(filePath: string): Promise<void> {
   const storeDir = dirname(filePath);
-  const storeBase = basename(filePath);
-  const backupPrefix = `${storeBase}.`;
-  const backupSuffix = JSON_STORE_BACKUP_SUFFIX;
-  const entries = await readdir(storeDir, { withFileTypes: true });
-  const backupNames = entries
-    .filter((entry) => entry.isFile() && entry.name.startsWith(backupPrefix) && entry.name.endsWith(backupSuffix))
-    .map((entry) => entry.name)
-    .sort();
+  const backupNames = (await listJsonStoreBackups(filePath)).map((path) => basename(path));
 
   const stale = backupNames.slice(0, Math.max(0, backupNames.length - MAX_JSON_STORE_BACKUPS));
   await Promise.all(stale.map((name) => rm(join(storeDir, name), { force: true })));

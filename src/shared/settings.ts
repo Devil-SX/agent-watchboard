@@ -3,16 +3,23 @@ import {
   DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_SETTINGS_STORE_PATH,
+  type PersistenceStoreHealth,
   LEGACY_TERMINAL_FONT_FAMILY,
   LEGACY_TERMINAL_FONT_SIZE,
   createDefaultAppSettings,
   normalizeBoardDocumentPath,
   nowIso
 } from "@shared/schema";
-import { readJsonStore, writeJsonStore } from "@shared/jsonStore";
+import { listJsonStoreBackups, readJsonStore, writeJsonStore } from "@shared/jsonStore";
 import { expandHomePath } from "@shared/nodePath";
 
 export async function readAppSettings(filePath = DEFAULT_SETTINGS_STORE_PATH): Promise<AppSettings> {
+  return (await readAppSettingsWithHealth(filePath)).settings;
+}
+
+export async function readAppSettingsWithHealth(
+  filePath = DEFAULT_SETTINGS_STORE_PATH
+): Promise<{ settings: AppSettings; health: PersistenceStoreHealth }> {
   const resolvedPath = expandHomePath(filePath);
   const result = await readJsonStore({
     filePath: resolvedPath,
@@ -22,13 +29,45 @@ export async function readAppSettings(filePath = DEFAULT_SETTINGS_STORE_PATH): P
       return normalizeSettingsFromRaw(parsed);
     }
   });
-  if (result.status !== "ok") {
-    return result.value;
+  const backupPaths = await listJsonStoreBackups(resolvedPath);
+  if (result.status === "missing") {
+    return {
+      settings: result.value,
+      health: {
+        key: "settings",
+        path: resolvedPath,
+        status: "missing",
+        recoveryMode: false,
+        backupPaths
+      }
+    };
+  }
+  if (result.status === "corrupted") {
+    return {
+      settings: result.value,
+      health: {
+        key: "settings",
+        path: resolvedPath,
+        status: "corrupted",
+        recoveryMode: true,
+        backupPaths,
+        errorMessage: result.error instanceof Error ? result.error.message : String(result.error)
+      }
+    };
   }
   if (JSON.stringify(JSON.parse(result.raw ?? "{}")) !== JSON.stringify(result.value)) {
     await writeAppSettings(result.value, resolvedPath);
   }
-  return result.value;
+  return {
+    settings: result.value,
+    health: {
+      key: "settings",
+      path: resolvedPath,
+      status: "healthy",
+      recoveryMode: false,
+      backupPaths
+    }
+  };
 }
 
 export async function writeAppSettings(settings: AppSettings, filePath = DEFAULT_SETTINGS_STORE_PATH): Promise<AppSettings> {

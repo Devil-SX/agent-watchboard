@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.15] - 2026-03-15
+
+> **Code Stats** | Total: 28628 lines | Delta: +306 (-44) = **+262 net** | Change: **+0.92%** vs v0.7.14
+
+### Added
+- Added structured persistence store health metadata for settings, workspaces, and workbench documents so corruption, missing-store, and orphaned-workspace recovery states can be carried through diagnostics instead of being silently flattened into defaults.
+
+### Fixed
+- Fixed corrupted `workspaces.json` recovery so startup no longer silently regenerates a fake `Default Workspace` over damaged workspace state, preserving recovery evidence while still booting in degraded mode.
+- Fixed workbench persistence recovery so orphaned runtime instances referencing missing workspaces remain loadable and are surfaced as explicit `orphaned-reference` health instead of being treated as an exceptional crash path.
+- Added regression coverage for corrupted settings/workspace/workbench stores plus orphaned workbench references so degraded recovery mode stays stable across future persistence changes.
+
 ## [0.7.14] - 2026-03-15
 
 > **Code Stats** | Total: 28362 lines | Delta: +4161 (-437) = **+3724 net** | Change: **+15.12%** vs v0.7.13

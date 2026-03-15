@@ -462,6 +462,25 @@ export const SupervisorSnapshotSchema = z.object({
 
 export type SupervisorSnapshot = z.infer<typeof SupervisorSnapshotSchema>;
 
+export type PersistenceStoreStatus = "healthy" | "missing" | "corrupted" | "orphaned-reference";
+
+export type OrphanedWorkbenchInstanceInfo = {
+  instanceId: string;
+  workspaceId: string;
+  sessionId: string;
+  title: string;
+};
+
+export type PersistenceStoreHealth = {
+  key: "settings" | "workspaces" | "workbench" | "supervisor-state";
+  path: string;
+  status: PersistenceStoreStatus;
+  recoveryMode: boolean;
+  backupPaths: string[];
+  errorMessage?: string;
+  orphanedInstances?: OrphanedWorkbenchInstanceInfo[];
+};
+
 export type SupervisorCommand =
   | { type: "hello" }
   | { type: "list-sessions" }
@@ -495,6 +514,7 @@ export type DiagnosticsInfo = {
   supervisorStatePath: string;
   defaultHostBoardPath: string;
   defaultWslBoardPath: string;
+  storeHealth: PersistenceStoreHealth[];
 };
 
 export const DoctorAgentSchema = z.enum(["codex", "claude"]);

@@ -23,7 +23,8 @@ test("SettingsPanel renders debug actions and runtime log paths", () => {
     sshSecretsPath: "/tmp/agent-watchboard/ssh-secrets.json",
     supervisorStatePath: "/tmp/agent-watchboard/supervisor-state.json",
     defaultHostBoardPath: "~/.agent-watchboard/board.json",
-    defaultWslBoardPath: "~/.agent-watchboard/board.json"
+    defaultWslBoardPath: "~/.agent-watchboard/board.json",
+    storeHealth: []
   };
 
   const html = renderToStaticMarkup(

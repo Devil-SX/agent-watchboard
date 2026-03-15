@@ -1,5 +1,6 @@
 import {
   DEFAULT_WORKSPACE_STORE_PATH,
+  type PersistenceStoreHealth,
   TerminalProfile,
   Workspace,
   WorkspaceList,
@@ -10,18 +11,20 @@ import {
   nowIso,
   resolveTerminalStartupCommand
 } from "@shared/schema";
-import { readJsonStore, writeJsonStore } from "@shared/jsonStore";
+import { listJsonStoreBackups, readJsonStore, writeJsonStore } from "@shared/jsonStore";
 import { expandHomePath } from "@shared/nodePath";
 
-function emptyWorkspaceList(platform?: NodeJS.Platform): WorkspaceList {
+function emptyWorkspaceList(platform?: NodeJS.Platform, includeDefaultWorkspace = true): WorkspaceList {
   return WorkspaceListSchema.parse({
     version: 1,
     updatedAt: nowIso(),
-    workspaces: [
-      createWorkspaceTemplate("Default Workspace", {
-        platform
-      })
-    ]
+    workspaces: includeDefaultWorkspace
+      ? [
+          createWorkspaceTemplate("Default Workspace", {
+            platform
+          })
+        ]
+      : []
   });
 }
 
@@ -54,6 +57,13 @@ export async function readWorkspaceList(
   filePath = DEFAULT_WORKSPACE_STORE_PATH,
   defaults?: { platform?: NodeJS.Platform }
 ): Promise<WorkspaceList> {
+  return (await readWorkspaceListWithHealth(filePath, defaults)).list;
+}
+
+export async function readWorkspaceListWithHealth(
+  filePath = DEFAULT_WORKSPACE_STORE_PATH,
+  defaults?: { platform?: NodeJS.Platform }
+): Promise<{ list: WorkspaceList; health: PersistenceStoreHealth }> {
   const resolvedPath = expandHomePath(filePath);
   const fallback = () => emptyWorkspaceList(defaults?.platform);
   const result = await readJsonStore({
@@ -62,8 +72,31 @@ export async function readWorkspaceList(
     parse: (raw) => WorkspaceListSchema.parse(JSON.parse(raw))
   });
 
-  if (result.status !== "ok") {
-    return result.value;
+  const backupPaths = await listJsonStoreBackups(resolvedPath);
+  if (result.status === "missing") {
+    return {
+      list: result.value,
+      health: {
+        key: "workspaces",
+        path: resolvedPath,
+        status: "missing",
+        recoveryMode: false,
+        backupPaths
+      }
+    };
+  }
+  if (result.status === "corrupted") {
+    return {
+      list: emptyWorkspaceList(defaults?.platform, false),
+      health: {
+        key: "workspaces",
+        path: resolvedPath,
+        status: "corrupted",
+        recoveryMode: true,
+        backupPaths,
+        errorMessage: result.error instanceof Error ? result.error.message : String(result.error)
+      }
+    };
   }
 
   const normalized = WorkspaceListSchema.parse({
@@ -71,12 +104,30 @@ export async function readWorkspaceList(
     workspaces: result.value.workspaces.map((workspace) => normalizeWorkspace(workspace))
   });
   if (result.value.workspaces.length === 0) {
-    return fallback();
+    return {
+      list: fallback(),
+      health: {
+        key: "workspaces",
+        path: resolvedPath,
+        status: "healthy",
+        recoveryMode: false,
+        backupPaths
+      }
+    };
   }
   if (JSON.stringify(result.value) !== JSON.stringify(normalized)) {
     await writeWorkspaceList(normalized, resolvedPath);
   }
-  return normalized;
+  return {
+    list: normalized,
+    health: {
+      key: "workspaces",
+      path: resolvedPath,
+      status: "healthy",
+      recoveryMode: false,
+      backupPaths
+    }
+  };
 }
 
 export async function writeWorkspaceList(data: WorkspaceList, filePath = DEFAULT_WORKSPACE_STORE_PATH): Promise<void> {

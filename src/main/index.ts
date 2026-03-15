@@ -18,7 +18,7 @@ import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery
 import { listWslSkillEntries, readWslSkillContent } from "@main/wslSkills";
 import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
 import { readDoctorDiagnostics, upsertDoctorCheckResult } from "@shared/doctorDiagnostics";
-import { readAppSettings, writeAppSettings } from "@shared/settings";
+import { readAppSettings, readAppSettingsWithHealth, writeAppSettings } from "@shared/settings";
 import {
   AGENT_CONFIG_FILES,
   type AgentConfigDocument,
@@ -32,6 +32,7 @@ import {
   type AppSettings,
   type DiagnosticsInfo,
   DEFAULT_SUPERVISOR_PORT,
+  type PersistenceStoreHealth,
   SessionState,
   SshEnvironmentSchema,
   type SkillEntry,
@@ -44,8 +45,8 @@ import { createPerfEvent, type PerfEvent } from "@shared/perf";
 import { PerfRecorder } from "@shared/perfNode";
 import { resolveElectronRuntimePaths, type RuntimePaths } from "@shared/runtimePaths";
 import { SupervisorClient } from "@shared/supervisorClient";
-import { readWorkbenchDocument, writeWorkbenchDocument } from "@shared/workbench";
-import { deleteWorkspace, readWorkspaceList, upsertWorkspace } from "@shared/workspaces";
+import { readWorkbenchDocument, readWorkbenchDocumentWithHealth, writeWorkbenchDocument } from "@shared/workbench";
+import { deleteWorkspace, readWorkspaceList, readWorkspaceListWithHealth, upsertWorkspace } from "@shared/workspaces";
 import { updateWorkspace } from "@shared/workspaces";
 
 let mainWindow: BrowserWindow | null = null;
@@ -54,6 +55,7 @@ let currentBoard: BoardDocument | null = null;
 let runtimePaths: RuntimePaths;
 let mainPerfRecorder: PerfRecorder | null = null;
 let rendererPerfRecorder: PerfRecorder | null = null;
+let persistenceHealth: PersistenceStoreHealth[] = [];
 
 const supervisorClient = new SupervisorClient();
 const sessionStates = new Map<string, SessionState>();
@@ -159,6 +161,22 @@ function logRendererSnapshot(label: string): void {
 
 function emit(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload);
+}
+
+function upsertPersistenceHealth(nextHealth: PersistenceStoreHealth): void {
+  const next = new Map(persistenceHealth.map((entry) => [entry.key, entry] as const));
+  next.set(nextHealth.key, nextHealth);
+  persistenceHealth = [...next.values()];
+  if (nextHealth.status !== "healthy") {
+    log.warn("persistence-store-health", {
+      key: nextHealth.key,
+      status: nextHealth.status,
+      recoveryMode: nextHealth.recoveryMode,
+      backupCount: nextHealth.backupPaths.length,
+      orphanedInstanceCount: nextHealth.orphanedInstances?.length ?? 0,
+      errorMessage: nextHealth.errorMessage
+    });
+  }
 }
 
 async function ensureSupervisorReady(): Promise<void> {
@@ -312,7 +330,8 @@ function setupIpc(): void {
   ipcMain.handle("watchboard:list-workspaces", async () => {
     log.info("ipc:list-workspaces:start");
     const startedAt = performance.now();
-    const list = await readWorkspaceList(runtimePaths.workspaceStorePath, defaultWorkspaceSeed());
+    const { list, health } = await readWorkspaceListWithHealth(runtimePaths.workspaceStorePath, defaultWorkspaceSeed());
+    upsertPersistenceHealth(health);
     log.info("ipc:list-workspaces:done", { count: list.workspaces.length });
     recordMainPerf({
       category: "ipc",
@@ -325,7 +344,11 @@ function setupIpc(): void {
 
   ipcMain.handle("watchboard:get-workbench", async () => {
     const startedAt = performance.now();
-    const workbench = await readWorkbenchDocument(runtimePaths.workbenchStorePath);
+    const workspaceIds = new Set(
+      (await readWorkspaceListWithHealth(runtimePaths.workspaceStorePath, defaultWorkspaceSeed())).list.workspaces.map((workspace) => workspace.id)
+    );
+    const { document: workbench, health } = await readWorkbenchDocumentWithHealth(runtimePaths.workbenchStorePath, { workspaceIds });
+    upsertPersistenceHealth(health);
     recordMainPerf({
       category: "ipc",
       name: "get-workbench",
@@ -420,7 +443,8 @@ function setupIpc(): void {
     sshSecretsPath: runtimePaths.sshSecretsPath,
     supervisorStatePath: runtimePaths.supervisorStatePath,
     defaultHostBoardPath: runtimePaths.defaultHostBoardPath,
-    defaultWslBoardPath: runtimePaths.defaultWslBoardPath
+    defaultWslBoardPath: runtimePaths.defaultWslBoardPath,
+    storeHealth: persistenceHealth
   }));
 
   ipcMain.handle("watchboard:open-debug-path", async (_event, debugPath: string) => {
@@ -734,8 +758,19 @@ async function bootstrap(): Promise<void> {
     log.error("unhandledRejection", error);
   });
   await ensureSupervisorReady();
-  await readAppSettings(runtimePaths.settingsStorePath).catch(() => createDefaultAppSettings());
-  await readWorkbenchDocument(runtimePaths.workbenchStorePath);
+  const settingsResult = await readAppSettingsWithHealth(runtimePaths.settingsStorePath).catch(() => ({
+    settings: createDefaultAppSettings(),
+    health: null
+  }));
+  if (settingsResult.health) {
+    upsertPersistenceHealth(settingsResult.health);
+  }
+  const workspaceResult = await readWorkspaceListWithHealth(runtimePaths.workspaceStorePath, defaultWorkspaceSeed());
+  upsertPersistenceHealth(workspaceResult.health);
+  const workbenchResult = await readWorkbenchDocumentWithHealth(runtimePaths.workbenchStorePath, {
+    workspaceIds: workspaceResult.list.workspaces.map((workspace) => workspace.id)
+  });
+  upsertPersistenceHealth(workbenchResult.health);
   setupSupervisorEventRelay();
   setupIpc();
   createWindow();
