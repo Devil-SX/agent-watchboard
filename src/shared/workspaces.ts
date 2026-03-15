@@ -1,6 +1,3 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-
 import {
   DEFAULT_WORKSPACE_STORE_PATH,
   TerminalProfile,
@@ -13,6 +10,7 @@ import {
   nowIso,
   resolveTerminalStartupCommand
 } from "@shared/schema";
+import { readJsonStore, writeJsonStore } from "@shared/jsonStore";
 import { expandHomePath } from "@shared/nodePath";
 
 function emptyWorkspaceList(platform?: NodeJS.Platform): WorkspaceList {
@@ -57,48 +55,49 @@ export async function readWorkspaceList(
   defaults?: { platform?: NodeJS.Platform }
 ): Promise<WorkspaceList> {
   const resolvedPath = expandHomePath(filePath);
-  try {
-    const content = await readFile(resolvedPath, "utf8");
-    const parsed = WorkspaceListSchema.parse(JSON.parse(content));
-    if (parsed.workspaces.some((workspace) => workspace.terminals.length !== 1)) {
-      const initial = emptyWorkspaceList(defaults?.platform);
-      await writeWorkspaceList(initial, resolvedPath);
-      return initial;
-    }
-    const normalized = WorkspaceListSchema.parse({
-      ...parsed,
-      workspaces: parsed.workspaces.map((workspace) => normalizeWorkspace(workspace))
-    });
-    if (parsed.workspaces.length > 0) {
-      if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
-        await writeWorkspaceList(normalized, resolvedPath);
-      }
-      return normalized;
-    }
-    const initial = emptyWorkspaceList(defaults?.platform);
-    await writeWorkspaceList(initial, resolvedPath);
-    return initial;
-  } catch {
-    const initial = emptyWorkspaceList(defaults?.platform);
-    await writeWorkspaceList(initial, resolvedPath);
-    return initial;
+  const fallback = () => emptyWorkspaceList(defaults?.platform);
+  const result = await readJsonStore({
+    filePath: resolvedPath,
+    fallback,
+    parse: (raw) => WorkspaceListSchema.parse(JSON.parse(raw))
+  });
+
+  if (result.status !== "ok") {
+    return result.value;
   }
+
+  const normalized = WorkspaceListSchema.parse({
+    ...result.value,
+    workspaces: result.value.workspaces.map((workspace) => normalizeWorkspace(workspace))
+  });
+  if (result.value.workspaces.length === 0) {
+    return fallback();
+  }
+  if (JSON.stringify(result.value) !== JSON.stringify(normalized)) {
+    await writeWorkspaceList(normalized, resolvedPath);
+  }
+  return normalized;
 }
 
 export async function writeWorkspaceList(data: WorkspaceList, filePath = DEFAULT_WORKSPACE_STORE_PATH): Promise<void> {
   const resolvedPath = expandHomePath(filePath);
-  await mkdir(dirname(resolvedPath), { recursive: true });
-  const normalized = WorkspaceListSchema.parse({
-    ...data,
-    updatedAt: nowIso(),
-    workspaces: data.workspaces.map((workspace) =>
-      WorkspaceSchema.parse({
-        ...workspace,
-        updatedAt: workspace.updatedAt ?? nowIso()
+  await writeJsonStore({
+    filePath: resolvedPath,
+    data,
+    normalize: (value) =>
+      WorkspaceListSchema.parse({
+        ...value,
+        updatedAt: nowIso(),
+        workspaces: value.workspaces.map((workspace) =>
+          normalizeWorkspace(
+            WorkspaceSchema.parse({
+              ...workspace,
+              updatedAt: workspace.updatedAt ?? nowIso()
+            })
+          )
+        )
       })
-    )
   });
-  await writeFile(resolvedPath, JSON.stringify(normalized, null, 2), "utf8");
 }
 
 export async function upsertWorkspace(workspace: Workspace, filePath = DEFAULT_WORKSPACE_STORE_PATH): Promise<WorkspaceList> {

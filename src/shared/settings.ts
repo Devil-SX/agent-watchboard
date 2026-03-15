@@ -1,9 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-
 import {
   AppSettings,
-  AppSettingsSchema,
   DEFAULT_TERMINAL_FONT_FAMILY,
   DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_SETTINGS_STORE_PATH,
@@ -13,64 +9,54 @@ import {
   normalizeBoardDocumentPath,
   nowIso
 } from "@shared/schema";
+import { readJsonStore, writeJsonStore } from "@shared/jsonStore";
 import { expandHomePath } from "@shared/nodePath";
-
-const settingsWriteQueues = new Map<string, Promise<void>>();
 
 export async function readAppSettings(filePath = DEFAULT_SETTINGS_STORE_PATH): Promise<AppSettings> {
   const resolvedPath = expandHomePath(filePath);
-  try {
-    const content = await readFile(resolvedPath, "utf8");
-    const parsed = JSON.parse(content) as Partial<AppSettings> & { boardPath?: string };
-    const normalized = normalizeSettingsForPlatform(
-      createDefaultAppSettings({
-        ...parsed,
-        boardPath: normalizeBoardDocumentPath(parsed.boardPath),
-        ...(parsed.hostBoardPath ? { hostBoardPath: normalizeBoardDocumentPath(parsed.hostBoardPath) } : {}),
-        ...(parsed.wslBoardPath ? { wslBoardPath: normalizeBoardDocumentPath(parsed.wslBoardPath) } : {})
-      })
-    );
-    if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
-      await writeAppSettings(normalized, resolvedPath);
+  const result = await readJsonStore({
+    filePath: resolvedPath,
+    fallback: () => createDefaultAppSettings(),
+    parse: (raw) => {
+      const parsed = JSON.parse(raw) as Partial<AppSettings> & { boardPath?: string };
+      return normalizeSettingsFromRaw(parsed);
     }
-    return normalized;
-  } catch {
-    const initial = createDefaultAppSettings();
-    await writeAppSettings(initial, resolvedPath);
-    return initial;
+  });
+  if (result.status !== "ok") {
+    return result.value;
   }
+  if (JSON.stringify(JSON.parse(result.raw ?? "{}")) !== JSON.stringify(result.value)) {
+    await writeAppSettings(result.value, resolvedPath);
+  }
+  return result.value;
 }
 
 export async function writeAppSettings(settings: AppSettings, filePath = DEFAULT_SETTINGS_STORE_PATH): Promise<AppSettings> {
   const resolvedPath = expandHomePath(filePath);
-  const normalized = normalizeSettingsForPlatform(
-    createDefaultAppSettings({
-      ...settings,
-      hostBoardPath: normalizeBoardDocumentPath(settings.hostBoardPath),
-      wslBoardPath: normalizeBoardDocumentPath(settings.wslBoardPath),
-      updatedAt: nowIso()
-    })
-  );
-  await enqueueSettingsWrite(resolvedPath, async () => {
-    await mkdir(dirname(resolvedPath), { recursive: true });
-    await writeFile(resolvedPath, JSON.stringify(normalized, null, 2), "utf8");
+  return writeJsonStore({
+    filePath: resolvedPath,
+    data: settings,
+    normalize: (value) =>
+      normalizeSettingsForPlatform(
+        createDefaultAppSettings({
+          ...value,
+          hostBoardPath: normalizeBoardDocumentPath(value.hostBoardPath),
+          wslBoardPath: normalizeBoardDocumentPath(value.wslBoardPath),
+          updatedAt: nowIso()
+        })
+      )
   });
-  return normalized;
 }
 
-async function enqueueSettingsWrite(filePath: string, task: () => Promise<void>): Promise<void> {
-  const pending = settingsWriteQueues.get(filePath) ?? Promise.resolve();
-  const next = pending
-    .catch(() => undefined)
-    .then(task);
-  settingsWriteQueues.set(filePath, next);
-  try {
-    await next;
-  } finally {
-    if (settingsWriteQueues.get(filePath) === next) {
-      settingsWriteQueues.delete(filePath);
-    }
-  }
+function normalizeSettingsFromRaw(parsed: Partial<AppSettings> & { boardPath?: string }): AppSettings {
+  return normalizeSettingsForPlatform(
+    createDefaultAppSettings({
+      ...parsed,
+      boardPath: normalizeBoardDocumentPath(parsed.boardPath),
+      ...(parsed.hostBoardPath ? { hostBoardPath: normalizeBoardDocumentPath(parsed.hostBoardPath) } : {}),
+      ...(parsed.wslBoardPath ? { wslBoardPath: normalizeBoardDocumentPath(parsed.wslBoardPath) } : {})
+    })
+  );
 }
 
 function normalizeSettingsForPlatform(settings: AppSettings): AppSettings {

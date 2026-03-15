@@ -33,6 +33,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added an explicit Skills pane refresh action plus a headless e2e regression so newly added skill entries can appear in the left sidebar without restarting the app.
 - Fixed Skills pane preference updates to apply optimistically in the renderer so the selected chat agent stays aligned with the actual skills chat session instead of lagging behind persisted settings writes.
 - Fixed supervisor duplicate-start handling for live Skills chat sessions so transient renderer/session-state churn reuses the existing PTY instead of tearing it down and starting over.
+- Reworked `workspaces.json`, `workbench.json`, and `settings.json` through a shared atomic JSON-store writer so updates now write via temp-file rename, keep bounded `.bak` snapshots, and stop overwriting corrupted store files during read failures.
+- Added regression coverage for corrupted workspace/workbench/settings reads plus atomic backup cleanup behavior so persistence bugs fail fast without silently destroying recovery evidence.
 
 ## [0.7.13] - 2026-03-14
 
