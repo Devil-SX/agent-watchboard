@@ -1,7 +1,8 @@
-import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 
 import type { AgentPathLocation, SkillEntry } from "@shared/schema";
+import { parseSkillFrontmatter } from "@main/skillMetadata";
 
 type FilesystemEntryKind = "file" | "directory" | "other";
 
@@ -49,9 +50,11 @@ export function scanSkillEntries(
           continue;
         }
         seen.add(dedupeKey);
-        const relativeName = relative(rootDir, dirname(entryPath)).replaceAll("\\", "/");
+        const fallbackName = relative(rootDir, dirname(entryPath)).replaceAll("\\", "/") || dirname(entryPath);
+        const metadata = readSkillMetadata(entryPath);
         skills.push({
-          name: relativeName || dirname(entryPath),
+          name: metadata.name || fallbackName,
+          description: metadata.description || "",
           source,
           location,
           entryPath,
@@ -86,6 +89,7 @@ export function scanClaudeCommandEntries(rootDir: string, location: AgentPathLoc
       }
       skills.push({
         name: entryName.replace(/\.md$/, ""),
+        description: "",
         source: "claude-command" as const,
         location,
         entryPath,
@@ -146,5 +150,13 @@ function canonicalizeFilePath(filePath: string): string {
     return realpathSync(filePath);
   } catch {
     return filePath;
+  }
+}
+
+function readSkillMetadata(skillMdPath: string): { name?: string; description?: string } {
+  try {
+    return parseSkillFrontmatter(readFileSync(skillMdPath, "utf8"));
+  } catch {
+    return {};
   }
 }

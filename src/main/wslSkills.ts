@@ -7,6 +7,7 @@ const execFileAsync = promisify(execFile);
 
 type WslSkillRow = {
   name: string;
+  description: string;
   source: SkillEntry["source"];
   entryPath: string;
   resolvedPath: string;
@@ -65,6 +66,7 @@ export function parseWslSkillScanOutput(output: string, location: AgentPathLocat
     seen.add(dedupeKey);
     skills.push({
       name: parsed.name,
+      description: parsed.description,
       source: parsed.source,
       location,
       entryPath: parsed.entryPath,
@@ -89,10 +91,32 @@ function parseWslSkillRow(row: string): WslSkillRow | null {
     return jsonRow;
   }
   const parts = row.split("\t");
-  if (parts.length !== 6) {
+  if (parts.length !== 6 && parts.length !== 7) {
     return null;
   }
-  const [name, source, entryPath, resolvedPath, isSymlinkRaw, skillMdPath] = parts;
+  let name = "";
+  let description = "";
+  let source = "";
+  let entryPath = "";
+  let resolvedPath = "";
+  let isSymlinkRaw = "";
+  let skillMdPath = "";
+  if (parts.length === 7) {
+    name = parts[0] ?? "";
+    description = parts[1] ?? "";
+    source = parts[2] ?? "";
+    entryPath = parts[3] ?? "";
+    resolvedPath = parts[4] ?? "";
+    isSymlinkRaw = parts[5] ?? "";
+    skillMdPath = parts[6] ?? "";
+  } else {
+    name = parts[0] ?? "";
+    source = parts[1] ?? "";
+    entryPath = parts[2] ?? "";
+    resolvedPath = parts[3] ?? "";
+    isSymlinkRaw = parts[4] ?? "";
+    skillMdPath = parts[5] ?? "";
+  }
   if (source !== "codex" && source !== "claude-command" && source !== "claude-skill") {
     return null;
   }
@@ -101,6 +125,7 @@ function parseWslSkillRow(row: string): WslSkillRow | null {
   }
   return {
     name,
+    description,
     source,
     entryPath,
     resolvedPath,
@@ -116,6 +141,7 @@ function tryParseJsonRow(row: string): WslSkillRow | null {
       !parsed ||
       (parsed.source !== "codex" && parsed.source !== "claude-command" && parsed.source !== "claude-skill") ||
       typeof parsed.name !== "string" ||
+      typeof parsed.description !== "string" ||
       typeof parsed.entryPath !== "string" ||
       typeof parsed.resolvedPath !== "string" ||
       typeof parsed.skillMdPath !== "string" ||
@@ -125,6 +151,7 @@ function tryParseJsonRow(row: string): WslSkillRow | null {
     }
     return {
       name: parsed.name,
+      description: parsed.description,
       source: parsed.source,
       entryPath: parsed.entryPath,
       resolvedPath: parsed.resolvedPath,
@@ -141,6 +168,27 @@ function buildWslSkillScanScript(): string {
     "import json",
     "import os",
     "",
+    "def parse_frontmatter(path):",
+    "    try:",
+    "        with open(path, 'r', encoding='utf-8') as handle:",
+    "            lines = handle.read().splitlines()",
+    "    except OSError:",
+    "        return {}",
+    "    if not lines or lines[0].strip() != '---':",
+    "        return {}",
+    "    metadata = {}",
+    "    for line in lines[1:]:",
+    "        stripped = line.strip()",
+    "        if stripped == '---':",
+    "            break",
+    "        if not stripped or stripped.startswith('#') or ':' not in stripped:",
+    "            continue",
+    "        key, value = stripped.split(':', 1)",
+    "        value = value.strip().strip(\"\\\"'\")",
+    "        if key.strip() in ('name', 'description') and value:",
+    "            metadata[key.strip()] = value",
+    "    return metadata",
+    "",
     "def emit_skill_tree(root, source):",
     "    if not os.path.isdir(root):",
     "        return",
@@ -150,8 +198,10 @@ function buildWslSkillScanScript(): string {
     "        path = os.path.join(current, 'SKILL.md')",
     "        resolved = os.path.realpath(path)",
     "        rel = os.path.relpath(current, root)",
+    "        metadata = parse_frontmatter(path)",
     "        row = {",
-    "            'name': '.' if rel == '.' else rel.replace('\\\\\\\\', '/'),",
+    "            'name': metadata.get('name') or ('.' if rel == '.' else rel.replace('\\\\\\\\', '/')),",
+    "            'description': metadata.get('description', ''),",
     "            'source': source,",
     "            'entryPath': path,",
     "            'resolvedPath': resolved,",
@@ -172,6 +222,7 @@ function buildWslSkillScanScript(): string {
     "        resolved = os.path.realpath(path)",
     "        row = {",
     "            'name': name[:-3],",
+    "            'description': '',",
     "            'source': 'claude-command',",
     "            'entryPath': path,",
     "            'resolvedPath': resolved,",

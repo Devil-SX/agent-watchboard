@@ -209,6 +209,7 @@ export function resolveWorkspaceEnvironment(
 
 export type SkillEntry = {
   name: string;
+  description: string;
   source: SkillSource;
   location: AgentPathLocation;
   entryPath: string;

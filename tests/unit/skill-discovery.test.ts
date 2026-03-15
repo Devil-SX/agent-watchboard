@@ -5,6 +5,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { scanClaudeCommandEntries, scanSkillEntries } from "../../src/main/skillDiscovery";
+import { parseSkillFrontmatter } from "../../src/main/skillMetadata";
+
+test("parseSkillFrontmatter extracts name and description from leading metadata", () => {
+  const metadata = parseSkillFrontmatter(`---
+name: sync_windows
+description: Build and sync Agent Watchboard to C:\\Tools\\win-unpacked on Windows host
+---
+
+# Sync Windows
+`);
+
+  assert.deepEqual(metadata, {
+    name: "sync_windows",
+    description: "Build and sync Agent Watchboard to C:\\Tools\\win-unpacked on Windows host"
+  });
+});
 
 test("scanSkillEntries discovers nested skills through symlinked directories", () => {
   const root = mkdtempSync(join(tmpdir(), "watchboard-skill-scan-"));
@@ -12,14 +28,25 @@ test("scanSkillEntries discovers nested skills through symlinked directories", (
   const externalSkillDir = join(root, "external-skills", "nested-tool");
   mkdirSync(codexRoot, { recursive: true });
   mkdirSync(externalSkillDir, { recursive: true });
-  writeFileSync(join(externalSkillDir, "SKILL.md"), "# Nested Tool\n");
+  writeFileSync(
+    join(externalSkillDir, "SKILL.md"),
+    `---
+name: nested-tool
+description: Scan a nested symlinked skill entry
+---
+
+# Nested Tool
+`
+  );
   symlinkSync(join(root, "external-skills"), join(codexRoot, ".system"), "dir");
 
   const entries = scanSkillEntries(codexRoot, "codex", "host", new Set());
-  const nested = entries.find((entry) => entry.name === ".system/nested-tool");
+  const nested = entries.find((entry) => entry.skillMdPath.endsWith("nested-tool/SKILL.md"));
 
   assert.ok(nested, "expected nested skill under symlinked parent directory to be discovered");
   assert.equal(nested.isSymlink, true);
+  assert.equal(nested.name, "nested-tool");
+  assert.equal(nested.description, "Scan a nested symlinked skill entry");
   assert.match(nested.skillMdPath, /\.codex[\\/]skills[\\/]\.system[\\/]nested-tool[\\/]SKILL\.md$/);
   assert.match(nested.resolvedPath, /external-skills[\\/]+nested-tool[\\/]SKILL\.md$/);
 });
@@ -38,6 +65,7 @@ test("scanClaudeCommandEntries keeps symlinked markdown command files", () => {
 
   assert.ok(review, "expected symlinked claude command markdown file to be discovered");
   assert.equal(review.isSymlink, true);
+  assert.equal(review.description, "");
   assert.match(review.skillMdPath, /\.claude[\\/]commands[\\/]review\.md$/);
   assert.match(review.resolvedPath, /shared-commands[\\/]review\.md$/);
 });

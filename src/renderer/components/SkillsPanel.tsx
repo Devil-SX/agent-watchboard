@@ -4,6 +4,7 @@ import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
+import { SkillListItemContent } from "@renderer/components/SkillListItemContent";
 import { SkillMarkdownDocument } from "@renderer/components/SkillMarkdownDocument";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
 import { type SkillsChatAgent } from "@renderer/components/skillsChatSession";
@@ -206,10 +207,7 @@ export function SkillsPanel({
                 className={isSelected ? "skills-list-item is-active" : "skills-list-item"}
                 onClick={() => setSelectedSkillPath(skill.skillMdPath)}
               >
-                <span className="skills-list-icon">
-                  {skill.source === "codex" ? <CodexIcon /> : <ClaudeIcon />}
-                </span>
-                <span className="skills-list-name">{skill.name}</span>
+                <SkillListItemContent skill={skill} />
                 {skill.isSymlink ? <span className="entry-badge">Softlink</span> : null}
               </button>
             );
