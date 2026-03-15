@@ -16,7 +16,11 @@ test("applyOptimisticSettingsPreference immediately updates skills pane agent se
       claudeSubtypeFilter: "all",
       selectedSkillMdPath: null,
       isChatOpen: true,
-      chatAgent: "claude"
+      chatAgent: "claude",
+      chatPrompts: {
+        codex: { mode: "default", text: "" },
+        claude: { mode: "default", text: "" }
+      }
     }
   });
 
@@ -63,6 +67,26 @@ test("hasSettingsPreferenceChange skips no-op skills pane updates", () => {
       skillsPane: {
         ...baseSettings.skillsPane,
         familyFilter: "claude"
+      }
+    }),
+    true
+  );
+});
+
+test("hasSettingsPreferenceChange detects chat prompt edits for config pane", () => {
+  const baseSettings = createDefaultAppSettings();
+
+  assert.equal(
+    hasSettingsPreferenceChange(baseSettings, {
+      agentConfigPane: {
+        ...baseSettings.agentConfigPane,
+        chatPrompts: {
+          ...baseSettings.agentConfigPane.chatPrompts,
+          codex: {
+            mode: "custom",
+            text: "Inspect config drift."
+          }
+        }
       }
     }),
     true

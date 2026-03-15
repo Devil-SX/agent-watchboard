@@ -13,6 +13,14 @@ import { runDoctorCheck } from "@main/doctor";
 import { isWatchboardHeadlessTest, shouldDisableGpuForWatchboard } from "@main/headlessTestMode";
 import { readSkillScanCache, shouldLogSlowSkillScan, writeSkillScanCache } from "@main/skillScanCache";
 import {
+  buildAnalysisDatabasePath,
+  createMissingAnalysisDatabaseInfo,
+  getAnalysisSessionDetailAtPath,
+  inspectAnalysisDatabaseAtPath,
+  listAnalysisSessionsAtPath,
+  runAnalysisQueryAtPath
+} from "@main/analysisDatabase";
+import {
   createSessionStartWaiterMap,
   rejectPendingSessionStart,
   settlePendingSessionStart,
@@ -857,6 +865,29 @@ function setupIpc(): void {
       await writeFile(entry.entryPath, content, "utf8");
     }
   );
+
+  ipcMain.handle("watchboard:get-analysis-database", async (_event, location: AgentPathLocation) => {
+    const filePath = await resolveAnalysisDatabasePath(location);
+    if (!filePath) {
+      return createMissingAnalysisDatabaseInfo(location);
+    }
+    return inspectAnalysisDatabaseAtPath(location, filePath);
+  });
+
+  ipcMain.handle("watchboard:run-analysis-query", async (_event, location: AgentPathLocation, sql: string) => {
+    const filePath = await requireAnalysisDatabasePath(location);
+    return runAnalysisQueryAtPath(location, filePath, sql);
+  });
+
+  ipcMain.handle("watchboard:list-analysis-sessions", async (_event, location: AgentPathLocation, limit?: number) => {
+    const filePath = await requireAnalysisDatabasePath(location);
+    return listAnalysisSessionsAtPath(filePath, limit);
+  });
+
+  ipcMain.handle("watchboard:get-analysis-session-detail", async (_event, location: AgentPathLocation, sessionId: string) => {
+    const filePath = await requireAnalysisDatabasePath(location);
+    return getAnalysisSessionDetailAtPath(filePath, sessionId);
+  });
 }
 
 async function waitForSessionAttach(sessionId: string, requestId?: string): Promise<SessionAttachResult> {
@@ -921,6 +952,22 @@ async function buildAgentConfigEntry(configId: AgentConfigFileId, location: Agen
     isSymlink: exists && isSymbolicLink(entryPath),
     exists
   };
+}
+
+async function resolveAnalysisDatabasePath(location: AgentPathLocation): Promise<string | null> {
+  const home = await resolveAgentHome(location);
+  if (!home) {
+    return null;
+  }
+  return buildAnalysisDatabasePath(home);
+}
+
+async function requireAnalysisDatabasePath(location: AgentPathLocation): Promise<string> {
+  const filePath = await resolveAnalysisDatabasePath(location);
+  if (!filePath) {
+    throw new Error(`Unable to resolve ${location.toUpperCase()} profiler database path`);
+  }
+  return filePath;
 }
 
 function canonicalizeFilePath(filePath: string): string {

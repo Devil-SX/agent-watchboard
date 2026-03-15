@@ -75,27 +75,81 @@ export const WorkspaceFilterModeSchema = z.enum(["all", "codex", "claude", "othe
 export type WorkspaceFilterMode = z.infer<typeof WorkspaceFilterModeSchema>;
 export const WorkspaceEnvironmentFilterModeSchema = z.enum(["all", "host", "wsl"]);
 export type WorkspaceEnvironmentFilterMode = z.infer<typeof WorkspaceEnvironmentFilterModeSchema>;
-export const MainViewTabSchema = z.enum(["terminal", "skills", "config", "settings"]);
+export const MainViewTabSchema = z.enum(["terminal", "skills", "config", "analysis", "settings"]);
 export type MainViewTab = z.infer<typeof MainViewTabSchema>;
 export const SkillFamilyFilterSchema = z.enum(["all", "codex", "claude"]);
 export type SkillFamilyFilter = z.infer<typeof SkillFamilyFilterSchema>;
 export const ClaudeSubtypeFilterSchema = z.enum(["all", "commands", "skills"]);
 export type ClaudeSubtypeFilter = z.infer<typeof ClaudeSubtypeFilterSchema>;
+export const ChatPromptModeSchema = z.enum(["default", "custom"]);
+export type ChatPromptMode = z.infer<typeof ChatPromptModeSchema>;
+export const ChatPromptSchema = z.object({
+  mode: ChatPromptModeSchema.default("default"),
+  text: z.string().default("")
+});
+export type ChatPrompt = z.infer<typeof ChatPromptSchema>;
+export const ChatPromptSetSchema = z.object({
+  codex: ChatPromptSchema.default({
+    mode: "default",
+    text: ""
+  }),
+  claude: ChatPromptSchema.default({
+    mode: "default",
+    text: ""
+  })
+});
+export type ChatPromptSet = z.infer<typeof ChatPromptSetSchema>;
 export const SkillsPaneStateSchema = z.object({
   location: z.enum(["host", "wsl"]).default("host"),
   familyFilter: SkillFamilyFilterSchema.default("all"),
   claudeSubtypeFilter: ClaudeSubtypeFilterSchema.default("all"),
   selectedSkillMdPath: z.string().nullable().default(null),
   isChatOpen: z.boolean().default(false),
-  chatAgent: z.enum(["codex", "claude"]).default("codex")
+  chatAgent: z.enum(["codex", "claude"]).default("codex"),
+  chatPrompts: ChatPromptSetSchema.default({
+    codex: {
+      mode: "default",
+      text: ""
+    },
+    claude: {
+      mode: "default",
+      text: ""
+    }
+  })
 });
 export type SkillsPaneState = z.infer<typeof SkillsPaneStateSchema>;
 export const AgentConfigPaneStateSchema = z.object({
   location: z.enum(["host", "wsl"]).default("host"),
   familyFilter: z.enum(["all", "codex", "claude"]).default("all"),
-  activeConfigId: z.enum(["codex-config", "codex-auth", "claude-settings"]).default("codex-config")
+  activeConfigId: z.enum(["codex-config", "codex-auth", "claude-settings"]).default("codex-config"),
+  isChatOpen: z.boolean().default(false),
+  chatAgent: z.enum(["codex", "claude"]).default("codex"),
+  chatPrompts: ChatPromptSetSchema.default({
+    codex: {
+      mode: "default",
+      text: ""
+    },
+    claude: {
+      mode: "default",
+      text: ""
+    }
+  })
 });
 export type AgentConfigPaneState = z.infer<typeof AgentConfigPaneStateSchema>;
+export const AnalysisPaneSectionSchema = z.enum(["overview", "sessions", "query"]);
+export type AnalysisPaneSection = z.infer<typeof AnalysisPaneSectionSchema>;
+export const AnalysisPaneStateSchema = z.object({
+  location: z.enum(["host", "wsl"]).default("host"),
+  activeSection: AnalysisPaneSectionSchema.default("overview"),
+  selectedSessionId: z.string().nullable().default(null),
+  queryText: z.string().default(
+    "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;"
+  ),
+  executedQueryText: z.string().default(
+    "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;"
+  )
+});
+export type AnalysisPaneState = z.infer<typeof AnalysisPaneStateSchema>;
 export const SettingsCategorySchema = z.enum(["board", "terminal", "environments", "storage", "debug"]);
 export type SettingsCategory = z.infer<typeof SettingsCategorySchema>;
 export const SettingsPaneStateSchema = z.object({
@@ -139,12 +193,41 @@ export const AppSettingsSchema = z.object({
     claudeSubtypeFilter: "all",
     selectedSkillMdPath: null,
     isChatOpen: false,
-    chatAgent: "codex"
+    chatAgent: "codex",
+    chatPrompts: {
+      codex: {
+        mode: "default",
+        text: ""
+      },
+      claude: {
+        mode: "default",
+        text: ""
+      }
+    }
   }),
   agentConfigPane: AgentConfigPaneStateSchema.default({
     location: "host",
     familyFilter: "all",
-    activeConfigId: "codex-config"
+    activeConfigId: "codex-config",
+    isChatOpen: false,
+    chatAgent: "codex",
+    chatPrompts: {
+      codex: {
+        mode: "default",
+        text: ""
+      },
+      claude: {
+        mode: "default",
+        text: ""
+      }
+    }
+  }),
+  analysisPane: AnalysisPaneStateSchema.default({
+    location: "host",
+    activeSection: "overview",
+    selectedSessionId: null,
+    queryText: "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;",
+    executedQueryText: "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;"
   }),
   settingsPane: SettingsPaneStateSchema.default({
     activeCategory: "board"

@@ -30,7 +30,10 @@ test("readAppSettings migrates a legacy single boardPath into the selected env s
   assert.equal(settings.hostBoardPath, "~/.agent-watchboard/board.json");
   assert.equal(settings.activeMainTab, "terminal");
   assert.equal(settings.skillsPane.location, "host");
+  assert.equal(settings.skillsPane.chatPrompts.codex.mode, "default");
   assert.equal(settings.agentConfigPane.activeConfigId, "codex-config");
+  assert.equal(settings.agentConfigPane.isChatOpen, false);
+  assert.equal(settings.analysisPane.activeSection, "overview");
   assert.equal(settings.settingsPane.activeCategory, "board");
   assert.deepEqual(settings.sshEnvironments, []);
 });
@@ -75,12 +78,40 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
         claudeSubtypeFilter: "commands",
         selectedSkillMdPath: "/tmp/SKILL.md",
         isChatOpen: true,
-        chatAgent: "claude"
+        chatAgent: "claude",
+        chatPrompts: {
+          codex: {
+            mode: "default",
+            text: ""
+          },
+          claude: {
+            mode: "custom",
+            text: "Stay focused on skill authoring."
+          }
+        }
       },
       agentConfigPane: {
         location: "wsl",
         familyFilter: "claude",
-        activeConfigId: "claude-settings"
+        activeConfigId: "claude-settings",
+        isChatOpen: true,
+        chatAgent: "claude",
+        chatPrompts: {
+          codex: {
+            mode: "default",
+            text: ""
+          },
+          claude: {
+            mode: "custom",
+            text: "Compare config values before writing."
+          }
+        }
+      },
+      analysisPane: {
+        location: "wsl",
+        activeSection: "query",
+        selectedSessionId: "session-1",
+        queryText: "select * from sessions limit 5;"
       },
       settingsPane: {
         activeCategory: "environments"
@@ -96,6 +127,9 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
   assert.equal(saved.activeMainTab, "skills");
   assert.equal(saved.skillsPane.familyFilter, "claude");
   assert.equal(saved.agentConfigPane.activeConfigId, "claude-settings");
+  assert.equal(saved.agentConfigPane.isChatOpen, true);
+  assert.equal(saved.agentConfigPane.chatPrompts.claude.mode, "custom");
+  assert.equal(saved.analysisPane.activeSection, "query");
   assert.equal(saved.settingsPane.activeCategory, "environments");
   assert.equal(saved.sshEnvironments[0]?.name, "Prod SSH");
   assert.equal(raw.hostBoardPath, "~/host-board.json");
@@ -128,12 +162,28 @@ test("writeAppSettings serializes concurrent writes to the same file", async () 
       claudeSubtypeFilter: "all" as const,
       selectedSkillMdPath: null,
       isChatOpen: false,
-      chatAgent: "codex" as const
+      chatAgent: "codex" as const,
+      chatPrompts: {
+        codex: { mode: "default" as const, text: "" },
+        claude: { mode: "default" as const, text: "" }
+      }
     },
     agentConfigPane: {
       location: "host" as const,
       familyFilter: "all" as const,
-      activeConfigId: "codex-config" as const
+      activeConfigId: "codex-config" as const,
+      isChatOpen: false,
+      chatAgent: "codex" as const,
+      chatPrompts: {
+        codex: { mode: "default" as const, text: "" },
+        claude: { mode: "default" as const, text: "" }
+      }
+    },
+    analysisPane: {
+      location: "host" as const,
+      activeSection: "overview" as const,
+      selectedSessionId: null,
+      queryText: "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;"
     },
     settingsPane: {
       activeCategory: "board" as const

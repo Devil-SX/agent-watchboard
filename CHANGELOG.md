@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-16
+
+> **Code Stats** | Total: 32246 lines | Delta: +1284 (-212) = **+1072 net** | Change: **+7.40%** vs v0.8.0
+
+### Added
+- Added a scoped Codex/Claude chat surface to the Agent Config pane, with persisted open state, agent selection, and shared session lifecycle handling across renderer remounts and main-tab switches.
+- Added configurable per-agent chat prompt state for Skills and Agent Config, plus prompt editors and regression coverage so pane-local startup instructions survive persisted settings reloads.
+- Added a new Analysis tab backed by read-only profiler-database discovery, canonical session/query IPC methods, and renderer flows for overview cards, session browsing, and SQL result inspection.
+- Added unit coverage for pane-chat startup/command generation, analysis database query guards, analysis renderer states, and chat prompt editor rendering.
+
+### Changed
+- Reworked pane chat startup so Skills and Agent Config both build from one shared pane-chat session model instead of divergent ad hoc startup logic.
+- Reused provider-safe prompt startup mappings across Claude and Codex utility chats, keeping custom prompt application on next start rather than silently mutating a running session.
+
+### Fixed
+- Fixed the missing Agent Config panel chat implementation path so the existing `analysis`/prompt-aware settings schema now matches an actual renderer surface instead of leaving imports and persisted state half-wired.
+- Fixed renderer type drift around `analysis` tab persistence so `App.tsx`, settings draft comparisons, and panel rendering all agree on the saved main-tab and pane-state model.
+
 ## [0.8.0] - 2026-03-15
 
 > **Code Stats** | Total: 30023 lines | Delta: +1300 (-239) = **+1061 net** | Change: **+3.67%** vs v0.7.18

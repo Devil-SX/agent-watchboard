@@ -1,16 +1,16 @@
-import {
-  createSingleTerminalLayout,
-  createTerminalInstance,
-  createTerminalProfile,
-  type AgentPathLocation,
-  type TerminalInstance,
-  type Workspace
-} from "@shared/schema";
+import type { AgentPathLocation, ChatPrompt, TerminalInstance } from "@shared/schema";
 
-export type SkillsChatAgent = "codex" | "claude";
+import {
+  buildPaneChatSessionKey,
+  createPaneChatInstance,
+  resolvePaneChatLocation,
+  type PaneChatAgent
+} from "@renderer/components/paneChatSession";
+
+export type SkillsChatAgent = PaneChatAgent;
 
 export function resolveSkillsChatLocation(location: AgentPathLocation, platform: NodeJS.Platform | undefined): AgentPathLocation {
-  return platform === "win32" ? location : "host";
+  return resolvePaneChatLocation(location, platform);
 }
 
 export function buildSkillsChatSessionKey(
@@ -18,39 +18,14 @@ export function buildSkillsChatSessionKey(
   location: AgentPathLocation,
   platform: NodeJS.Platform | undefined
 ): string {
-  return `${agent}:${resolveSkillsChatLocation(location, platform)}:${platform ?? "unknown"}`;
+  return buildPaneChatSessionKey("skills", agent, location, platform);
 }
 
 export function createSkillsChatInstance(
   agent: SkillsChatAgent,
   location: AgentPathLocation,
-  platform: NodeJS.Platform | undefined
+  platform: NodeJS.Platform | undefined,
+  prompt: ChatPrompt
 ): TerminalInstance {
-  const isWindows = platform === "win32";
-  const effectiveLocation = resolveSkillsChatLocation(location, platform);
-  const target = isWindows ? (effectiveLocation === "wsl" ? "wsl" : "windows") : "linux";
-  const shellOrProgram = target === "windows" ? "powershell.exe" : "/bin/bash";
-  const profile = createTerminalProfile({
-    title: agent === "codex" ? "Codex Chat" : "Claude Chat",
-    target,
-    shellOrProgram,
-    cwd: "~",
-    startupMode: "preset",
-    startupPresetId: agent,
-    startupCustomCommand: ""
-  });
-  const createdAt = new Date().toISOString();
-  const workspace: Workspace = {
-    id: `skills-chat-${agent}`,
-    name: agent === "codex" ? "Codex Chat" : "Claude Chat",
-    autoReconnect: false,
-    terminals: [profile],
-    layoutTree: createSingleTerminalLayout(profile),
-    createdAt,
-    updatedAt: createdAt
-  };
-  return createTerminalInstance(workspace, [], {
-    title: workspace.name,
-    ordinal: 1
-  });
+  return createPaneChatInstance("skills", agent, location, platform, prompt);
 }

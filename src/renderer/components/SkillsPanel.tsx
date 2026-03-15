@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
+import { ChatPromptEditor } from "@renderer/components/ChatPromptEditor";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
@@ -60,6 +61,7 @@ export function SkillsPanel({
   const [claudeSubtypeFilter, setClaudeSubtypeFilter] = useState<ClaudeSubtypeFilter>(viewState.claudeSubtypeFilter);
   const [isChatOpen, setIsChatOpen] = useState(viewState.isChatOpen);
   const [chatAgent, setChatAgent] = useState<SkillsChatAgent>(viewState.chatAgent);
+  const [chatPrompts, setChatPrompts] = useState(viewState.chatPrompts);
   const [loadError, setLoadError] = useState("");
   const [contentError, setContentError] = useState("");
   const [syncWarning, setSyncWarning] = useState("");
@@ -77,7 +79,8 @@ export function SkillsPanel({
     claudeSubtypeFilter,
     selectedSkillMdPath: selectedSkillPath,
     isChatOpen,
-    chatAgent
+    chatAgent,
+    chatPrompts
   };
 
   useEffect(() => {
@@ -88,6 +91,7 @@ export function SkillsPanel({
     setSelectedSkillPath(viewState.selectedSkillMdPath);
     setIsChatOpen(viewState.isChatOpen);
     setChatAgent(viewState.chatAgent);
+    setChatPrompts(viewState.chatPrompts);
     setSyncWarning("");
   }, [viewState]);
 
@@ -214,6 +218,7 @@ export function SkillsPanel({
     };
   }, [
     chatAgent,
+    chatPrompts,
     claudeSubtypeFilter,
     familyFilter,
     isChatOpen,
@@ -399,6 +404,15 @@ export function SkillsPanel({
               <code>Scoped utility session in ~</code>
               {chatError ? <span className="toolbar-error">{chatError}</span> : null}
             </div>
+            <ChatPromptEditor
+              agent={chatAgent}
+              prompt={chatPrompts[chatAgent]}
+              onPromptChange={(prompt) =>
+                setChatPrompts((current) => ({
+                  ...current,
+                  [chatAgent]: prompt
+                }))}
+            />
             <div className="skills-chat-terminal">
               <TerminalTabView
                 instance={chatInstance}

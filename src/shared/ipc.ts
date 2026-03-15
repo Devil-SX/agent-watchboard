@@ -80,4 +80,51 @@ export type WatchboardApi = {
   writeAgentConfig: (configId: string, location: AgentPathLocation, content: string) => Promise<void>;
   getDoctorDiagnostics: () => Promise<DoctorDiagnosticsDocument>;
   runDoctorCheck: (location: DoctorLocation, agent: DoctorAgent) => Promise<DoctorCheckResult>;
+  getAnalysisDatabase: (location: AgentPathLocation) => Promise<AnalysisDatabaseInfo>;
+  runAnalysisQuery: (location: AgentPathLocation, sql: string) => Promise<AnalysisQueryResult>;
+  listAnalysisSessions: (location: AgentPathLocation, limit?: number) => Promise<AnalysisSessionSummary[]>;
+  getAnalysisSessionDetail: (location: AgentPathLocation, sessionId: string) => Promise<AnalysisSessionDetail | null>;
+};
+
+export type AnalysisDatabaseStatus = "ready" | "missing" | "unreadable" | "unsupported";
+
+export type AnalysisDatabaseInfo = {
+  location: AgentPathLocation;
+  status: AnalysisDatabaseStatus;
+  displayPath: string;
+  error: string | null;
+  tableNames: string[];
+  sessionCount: number;
+  totalFiles: number;
+  lastParsedAt: string | null;
+};
+
+export type AnalysisQueryValue = string | number | boolean | null;
+
+export type AnalysisQueryResult = {
+  location: AgentPathLocation;
+  columns: string[];
+  rows: AnalysisQueryValue[][];
+  rowCount: number;
+  truncated: boolean;
+  durationMs: number;
+};
+
+export type AnalysisSessionSummary = {
+  sessionId: string;
+  logicalSessionId: string | null;
+  ecosystem: string | null;
+  projectPath: string | null;
+  totalTokens: number;
+  totalToolCalls: number;
+  parsedAt: string | null;
+  updatedAt: string | null;
+  durationSeconds: number | null;
+  automationRatio: number | null;
+  bottleneck: string | null;
+};
+
+export type AnalysisSessionDetail = {
+  summary: AnalysisSessionSummary;
+  statistics: Record<string, unknown> | null;
 };

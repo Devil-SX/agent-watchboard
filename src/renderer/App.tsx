@@ -1,6 +1,7 @@
 import { Profiler, startTransition, useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 
 import { AgentConfigPanel } from "@renderer/components/AgentConfigPanel";
+import { AnalysisPanel } from "@renderer/components/AnalysisPanel";
 import { resolveAutoStartCandidates } from "@renderer/components/autoStart";
 import { BoardTree } from "@renderer/components/BoardTree";
 import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
@@ -9,6 +10,8 @@ import { appendSessionBacklogChunk } from "@renderer/components/sessionBacklog";
 import { summarizeInstance, summarizeWorkbenchInstances } from "@renderer/components/sessionDebug";
 import { SettingsPanel } from "@renderer/components/SettingsPanel";
 import { SkillsPanel } from "@renderer/components/SkillsPanel";
+import { buildPaneChatSessionKey, createPaneChatInstance } from "@renderer/components/paneChatSession";
+import { shouldStartPaneChatSession } from "@renderer/components/paneChatStartup";
 import { createTerminalViewState, type TerminalViewState } from "@renderer/components/terminalViewState";
 import { buildSkillsChatSessionKey, createSkillsChatInstance } from "@renderer/components/skillsChatSession";
 import { shouldStartSkillsChatSession } from "@renderer/components/skillsChatStartup";
@@ -18,6 +21,7 @@ import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import {
+  type AnalysisPaneState,
   type AgentConfigPaneState,
   type AppSettings,
   createSshEnvironment,
@@ -56,6 +60,7 @@ const MAIN_TABS = [
   { id: "terminal", label: "terminal" },
   { id: "skills", label: "skills" },
   { id: "config", label: "config" },
+  { id: "analysis", label: "analysis" },
   { id: "settings", label: "settings" }
 ] as const;
 
@@ -97,10 +102,14 @@ export function App(): ReactElement {
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
   const [skillsChatInstance, setSkillsChatInstance] = useState<TerminalInstance | null>(null);
   const [skillsChatError, setSkillsChatError] = useState("");
+  const [configChatInstance, setConfigChatInstance] = useState<TerminalInstance | null>(null);
+  const [configChatError, setConfigChatError] = useState("");
   const [sshSecretDrafts, setSshSecretDrafts] = useState<Record<string, SshSecretInput>>({});
   const [sshTestStates, setSshTestStates] = useState<Record<string, { isRunning: boolean; result: SshTestResult | null }>>({});
   const skillsChatKeyRef = useRef<string | null>(null);
   const skillsChatStartRequestRef = useRef(0);
+  const configChatKeyRef = useRef<string | null>(null);
+  const configChatStartRequestRef = useRef(0);
 
   const savedWorkspace = workspaceList?.workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedWorkspace =
@@ -414,50 +423,39 @@ export function App(): ReactElement {
     if (!settingsDraft) {
       return;
     }
-    const isChatOpen = settingsDraft.skillsPane.isChatOpen;
-    const shouldAllowSkillsChatStartup = shouldStartSkillsChatSession(activeTab, isChatOpen);
-    const nextKey = isChatOpen
-      ? buildSkillsChatSessionKey(settingsDraft.skillsPane.chatAgent, settingsDraft.skillsPane.location, diagnostics?.platform)
-      : null;
+    const platform = diagnostics?.platform;
 
-    if (!isChatOpen) {
-      const previous = skillsChatInstance;
-      skillsChatKeyRef.current = null;
-      setSkillsChatInstance(null);
-      setSkillsChatError("");
-      if (previous) {
-        void window.watchboard.stopSession(previous.sessionId).catch(() => undefined);
+    function stopPaneChat(
+      instance: TerminalInstance | null,
+      keyRef: { current: string | null },
+      setInstance: (value: TerminalInstance | null) => void,
+      setChatError: (value: string) => void
+    ): void {
+      keyRef.current = null;
+      setInstance(null);
+      setChatError("");
+      if (instance) {
+        void window.watchboard.stopSession(instance.sessionId).catch(() => undefined);
       }
-      return;
     }
 
-    if (!shouldAllowSkillsChatStartup) {
-      return;
-    }
-
-    if (!nextKey) {
-      return;
-    }
-
-    const current = skillsChatInstance;
-    if (!current || skillsChatKeyRef.current !== nextKey) {
-      const nextInstance = createSkillsChatInstance(settingsDraft.skillsPane.chatAgent, settingsDraft.skillsPane.location, diagnostics?.platform);
-      const previous = current;
-      skillsChatKeyRef.current = nextKey;
-      setSkillsChatInstance(nextInstance);
-      setSkillsChatError("");
-
-      const requestId = ++skillsChatStartRequestRef.current;
-      const startRequestId = createRequestId("skills-chat");
+    function startPaneChat(
+      instance: TerminalInstance,
+      reason: string,
+      startRequestRef: { current: number },
+      setChatError: (value: string) => void
+    ): void {
+      const requestId = ++startRequestRef.current;
+      const startRequestId = createRequestId(reason);
       emitRendererDebugLog("session-invoke-begin", {
         requestId: startRequestId,
-        reason: "skills-chat-open",
-        ...summarizeInstance(nextInstance)
+        reason,
+        ...summarizeInstance(instance)
       });
-      void window.watchboard.startSession(nextInstance, startRequestId).then((session) => {
+      void window.watchboard.startSession(instance, startRequestId).then((session) => {
         emitRendererDebugLog("session-invoke-resolved", {
           requestId: startRequestId,
-          reason: "skills-chat-open",
+          reason,
           sessionId: session.sessionId,
           status: session.status,
           startedAt: session.startedAt
@@ -465,54 +463,111 @@ export function App(): ReactElement {
       }).catch((error) => {
         emitRendererDebugLog("session-invoke-rejected", {
           requestId: startRequestId,
-          reason: "skills-chat-open",
-          ...summarizeInstance(nextInstance),
+          reason,
+          ...summarizeInstance(instance),
           message: messageOf(error)
         });
-        if (skillsChatStartRequestRef.current !== requestId) {
+        if (startRequestRef.current !== requestId) {
           return;
         }
-        setSkillsChatError(messageOf(error));
+        setChatError(messageOf(error));
       });
+    }
 
+    const skillsIsChatOpen = settingsDraft.skillsPane.isChatOpen;
+    const shouldAllowSkillsChatStartup = shouldStartSkillsChatSession(activeTab, skillsIsChatOpen);
+    const nextSkillsKey = skillsIsChatOpen
+      ? buildSkillsChatSessionKey(settingsDraft.skillsPane.chatAgent, settingsDraft.skillsPane.location, platform)
+      : null;
+
+    if (!skillsIsChatOpen) {
+      stopPaneChat(skillsChatInstance, skillsChatKeyRef, setSkillsChatInstance, setSkillsChatError);
+    } else if (shouldAllowSkillsChatStartup && nextSkillsKey) {
+      const current = skillsChatInstance;
+      const nextPrompt = settingsDraft.skillsPane.chatPrompts[settingsDraft.skillsPane.chatAgent];
+      if (!current || skillsChatKeyRef.current !== nextSkillsKey) {
+        const nextInstance = createSkillsChatInstance(
+          settingsDraft.skillsPane.chatAgent,
+          settingsDraft.skillsPane.location,
+          platform,
+          nextPrompt
+        );
+        const previous = current;
+        skillsChatKeyRef.current = nextSkillsKey;
+        setSkillsChatInstance(nextInstance);
+        setSkillsChatError("");
+        startPaneChat(nextInstance, "skills-chat-open", skillsChatStartRequestRef, setSkillsChatError);
+        if (previous && previous.sessionId !== nextInstance.sessionId) {
+          void window.watchboard.stopSession(previous.sessionId).catch(() => undefined);
+        }
+      } else {
+        const session = sessions[current.sessionId];
+        if (!session || session.status === "stopped") {
+          const nextInstance = createSkillsChatInstance(
+            settingsDraft.skillsPane.chatAgent,
+            settingsDraft.skillsPane.location,
+            platform,
+            nextPrompt
+          );
+          skillsChatKeyRef.current = nextSkillsKey;
+          setSkillsChatInstance(nextInstance);
+          setSkillsChatError("");
+          startPaneChat(nextInstance, "skills-chat-restart", skillsChatStartRequestRef, setSkillsChatError);
+        }
+      }
+    }
+
+    const configIsChatOpen = settingsDraft.agentConfigPane.isChatOpen;
+    const shouldAllowConfigChatStartup = shouldStartPaneChatSession(activeTab, "config", configIsChatOpen);
+    const nextConfigKey = configIsChatOpen
+      ? buildPaneChatSessionKey("config", settingsDraft.agentConfigPane.chatAgent, settingsDraft.agentConfigPane.location, platform)
+      : null;
+
+    if (!configIsChatOpen) {
+      stopPaneChat(configChatInstance, configChatKeyRef, setConfigChatInstance, setConfigChatError);
+      return;
+    }
+
+    if (!shouldAllowConfigChatStartup || !nextConfigKey) {
+      return;
+    }
+
+    const configPrompt = settingsDraft.agentConfigPane.chatPrompts[settingsDraft.agentConfigPane.chatAgent];
+    const currentConfig = configChatInstance;
+    if (!currentConfig || configChatKeyRef.current !== nextConfigKey) {
+      const nextInstance = createPaneChatInstance(
+        "config",
+        settingsDraft.agentConfigPane.chatAgent,
+        settingsDraft.agentConfigPane.location,
+        platform,
+        configPrompt
+      );
+      const previous = currentConfig;
+      configChatKeyRef.current = nextConfigKey;
+      setConfigChatInstance(nextInstance);
+      setConfigChatError("");
+      startPaneChat(nextInstance, "config-chat-open", configChatStartRequestRef, setConfigChatError);
       if (previous && previous.sessionId !== nextInstance.sessionId) {
         void window.watchboard.stopSession(previous.sessionId).catch(() => undefined);
       }
       return;
     }
 
-    const session = sessions[current.sessionId];
-    if (!session || session.status === "stopped") {
-      const requestId = ++skillsChatStartRequestRef.current;
-      setSkillsChatError("");
-      const startRequestId = createRequestId("skills-chat");
-      emitRendererDebugLog("session-invoke-begin", {
-        requestId: startRequestId,
-        reason: "skills-chat-restart",
-        ...summarizeInstance(current)
-      });
-      void window.watchboard.startSession(current, startRequestId).then((sessionState) => {
-        emitRendererDebugLog("session-invoke-resolved", {
-          requestId: startRequestId,
-          reason: "skills-chat-restart",
-          sessionId: sessionState.sessionId,
-          status: sessionState.status,
-          startedAt: sessionState.startedAt
-        });
-      }).catch((error) => {
-        emitRendererDebugLog("session-invoke-rejected", {
-          requestId: startRequestId,
-          reason: "skills-chat-restart",
-          ...summarizeInstance(current),
-          message: messageOf(error)
-        });
-        if (skillsChatStartRequestRef.current !== requestId) {
-          return;
-        }
-        setSkillsChatError(messageOf(error));
-      });
+    const configSession = sessions[currentConfig.sessionId];
+    if (!configSession || configSession.status === "stopped") {
+      const nextInstance = createPaneChatInstance(
+        "config",
+        settingsDraft.agentConfigPane.chatAgent,
+        settingsDraft.agentConfigPane.location,
+        platform,
+        configPrompt
+      );
+      configChatKeyRef.current = nextConfigKey;
+      setConfigChatInstance(nextInstance);
+      setConfigChatError("");
+      startPaneChat(nextInstance, "config-chat-restart", configChatStartRequestRef, setConfigChatError);
     }
-  }, [activeTab, diagnostics?.platform, sessions, settingsDraft, skillsChatInstance]);
+  }, [activeTab, configChatInstance, diagnostics?.platform, sessions, settingsDraft, skillsChatInstance]);
 
   useEffect(() => {
     if (!workbench || !workbenchDirty) {
@@ -655,7 +710,7 @@ export function App(): ReactElement {
       Pick<
         AppSettings,
         "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "skillsPane" | "agentConfigPane"
-        | "settingsPane"
+        | "analysisPane" | "settingsPane"
       >
     >
   ): Promise<void> {
@@ -698,6 +753,10 @@ export function App(): ReactElement {
 
   async function handleSettingsPaneStateChange(state: SettingsPaneState): Promise<void> {
     await persistSettingsPreference({ settingsPane: state });
+  }
+
+  async function handleAnalysisPaneStateChange(state: AnalysisPaneState): Promise<void> {
+    await persistSettingsPreference({ analysisPane: state });
   }
 
   async function startWorkspaceSession(
@@ -1342,9 +1401,27 @@ export function App(): ReactElement {
       <section className="content-pane is-active">
         <div className="single-view-panel">
           <AgentConfigPanel
+            settings={settingsDraft}
+            sessions={sessions}
             diagnostics={diagnostics}
             viewState={settingsDraft.agentConfigPane}
+            chatInstance={configChatInstance}
+            chatError={configChatError}
+            getSessionBacklog={getSessionBacklog}
+            getTerminalViewState={getTerminalViewState}
+            attachSessionBacklog={attachSessionBacklog}
+            onTerminalViewStateChange={updateTerminalViewState}
             onViewStateChange={(state) => void handleAgentConfigPaneStateChange(state)}
+          />
+        </div>
+      </section>
+    ) : activeTab === "analysis" ? (
+      <section className="content-pane is-active">
+        <div className="single-view-panel">
+          <AnalysisPanel
+            diagnostics={diagnostics}
+            viewState={settingsDraft.analysisPane}
+            onViewStateChange={(state) => void handleAnalysisPaneStateChange(state)}
           />
         </div>
       </section>

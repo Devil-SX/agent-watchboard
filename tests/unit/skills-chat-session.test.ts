@@ -15,4 +15,5 @@ test("buildSkillsChatSessionKey stays stable across tab switches and changes onl
   assert.notEqual(buildSkillsChatSessionKey("codex", "wsl", "win32"), buildSkillsChatSessionKey("claude", "wsl", "win32"));
   assert.notEqual(buildSkillsChatSessionKey("codex", "wsl", "win32"), buildSkillsChatSessionKey("codex", "host", "win32"));
   assert.equal(buildSkillsChatSessionKey("codex", "wsl", "linux"), buildSkillsChatSessionKey("codex", "host", "linux"));
+  assert.match(buildSkillsChatSessionKey("codex", "host", "linux"), /^skills:/);
 });
