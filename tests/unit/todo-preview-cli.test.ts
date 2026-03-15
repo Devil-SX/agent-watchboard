@@ -4,8 +4,9 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
-const REPO_ROOT = "/home/sdu/pure_auto/agent_watchboard";
+const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CLI_ENTRY = join(REPO_ROOT, "src/cli/todo-preview.ts");
 
 test("todo_preview CLI batch applies multiple operations atomically", async () => {
