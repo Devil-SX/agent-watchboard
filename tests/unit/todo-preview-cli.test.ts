@@ -91,7 +91,7 @@ test("todo_preview CLI list renders expected markers after mutations", async () 
 
 async function runCli(args: string[]): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
-    const child = spawn(process.execPath, ["--import", "tsx", CLI_ENTRY, ...args], {
+    const child = spawn("node", ["--import", "tsx", CLI_ENTRY, ...args], {
       cwd: REPO_ROOT,
       env: {
         ...process.env
