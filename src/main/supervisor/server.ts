@@ -56,6 +56,10 @@ export function applyPtyActivityStatus(state: SessionState): boolean {
   return true;
 }
 
+export function shouldReuseLiveSession(state: SessionState): boolean {
+  return !state.endedAt && state.status !== "stopped";
+}
+
 class SupervisorServer {
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly clients = new Set<WebSocket>();
@@ -197,6 +201,22 @@ class SupervisorServer {
     const startedPerfAt = performance.now();
     const sessionLogPath = join(this.sessionLogDir, workspaceId, `${instanceId}.log`);
     const existing = this.sessions.get(sessionId);
+    if (existing && shouldReuseLiveSession(existing.state)) {
+      existing.sessionLogger.info("reusing existing live session", {
+        sessionId,
+        instanceId,
+        workspaceId,
+        pid: existing.state.pid
+      });
+      this.logger.info("reusing existing live session", {
+        sessionId,
+        instanceId,
+        workspaceId,
+        pid: existing.state.pid
+      });
+      this.broadcastState(existing.state);
+      return;
+    }
     if (existing) {
       existing.logWatcher?.close().catch(() => undefined);
       existing.logWatcher = null;

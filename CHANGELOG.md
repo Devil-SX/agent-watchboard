@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added a headless Electron Playwright regression test for Settings category switching so WSL runs do not depend on a live GPU or display server.
 - Added an explicit Skills pane refresh action plus a headless e2e regression so newly added skill entries can appear in the left sidebar without restarting the app.
 - Fixed Skills pane preference updates to apply optimistically in the renderer so the selected chat agent stays aligned with the actual skills chat session instead of lagging behind persisted settings writes.
+- Fixed supervisor duplicate-start handling for live Skills chat sessions so transient renderer/session-state churn reuses the existing PTY instead of tearing it down and starting over.
 
 ## [0.7.13] - 2026-03-14
 
