@@ -1065,6 +1065,7 @@ textarea::placeholder {
   padding: 1px 6px;
   gap: 6px;
   color: #aab9c2;
+  overflow: hidden;
 }
 
 .workbench-layout .flexlayout__tab_button--selected {
@@ -1082,6 +1083,12 @@ textarea::placeholder {
 
 .workbench-layout .flexlayout__tabset_tabbar_inner {
   scrollbar-width: none;
+  overflow-x: hidden !important;
+}
+
+.workbench-layout .flexlayout__tabset_tabbar_inner_tab_container {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .workbench-layout .flexlayout__tabset_tabbar_inner::-webkit-scrollbar {
@@ -1144,17 +1151,6 @@ textarea::placeholder {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-}
-
-.workbench-layout .flexlayout__tab_button_trailing {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 44px;
-  visibility: visible;
-  margin-left: 4px;
-  overflow: visible;
 }
 
 .pane-tab-actions {
