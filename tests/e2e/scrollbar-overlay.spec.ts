@@ -1,30 +1,20 @@
-import { test, expect, _electron, type ElectronApplication, type Page } from "@playwright/test";
+import { test, expect, type ElectronApplication, type Page } from "@playwright/test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { launchHeadlessElectronTestApp } from "./headlessElectronApp";
+
 let app: ElectronApplication;
 let page: Page;
 let testHomeDir = "";
-const ELECTRON_TEST_ARGS = [
-  path.resolve("out/main/index.js"),
-  "--disable-gpu",
-  "--disable-software-rasterizer",
-  "--use-gl=disabled",
-  "--disable-dev-shm-usage"
-];
 
 test.beforeAll(async () => {
   testHomeDir = mkdtempSync(path.join(tmpdir(), "watchboard-e2e-home-"));
   writeSkillFixture(testHomeDir, "base-skill", "Base skill", "Base skill used to seed the list");
-  app = await _electron.launch({
-    args: ELECTRON_TEST_ARGS,
+  app = await launchHeadlessElectronTestApp({
     env: {
-      ...process.env,
-      HOME: testHomeDir,
-      NODE_ENV: "production",
-      WATCHBOARD_DISABLE_GPU: "1",
-      WATCHBOARD_HEADLESS_TEST: "1"
+      HOME: testHomeDir
     }
   });
   page = await app.firstWindow();

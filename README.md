@@ -114,6 +114,17 @@ pnpm todo_preview add "new task" --topic Inbox
 pnpm watchboard --help
 ```
 
+## Headless E2E Contract
+
+End-to-end tests in this repository are expected to run without a graphical desktop session.
+
+- Electron Playwright suites should launch the app through `tests/e2e/headlessElectronApp.ts`.
+- The shared helper applies the repository-standard headless contract:
+  - `WATCHBOARD_HEADLESS_TEST=1`
+  - `WATCHBOARD_DISABLE_GPU=1`
+  - Chromium flags that disable GPU- and display-dependent rendering paths
+- New E2E suites should not call `_electron.launch(...)` directly unless they preserve the same contract.
+
 Stable invocation patterns:
 
 - Inside this repository: `pnpm todo_preview ...`

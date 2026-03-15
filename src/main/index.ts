@@ -10,6 +10,7 @@ import log from "electron-log/main.js";
 
 import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
 import { runDoctorCheck } from "@main/doctor";
+import { isWatchboardHeadlessTest, shouldDisableGpuForWatchboard } from "@main/headlessTestMode";
 import { openDebugPath } from "@main/openDebugPath";
 import { completeTerminalPath } from "@main/pathCompletion";
 import { testSshConnection } from "@main/sshConnection";
@@ -68,7 +69,7 @@ function defaultWorkspaceSeed(): { platform: NodeJS.Platform } {
 }
 
 function createWindow(): void {
-  const isHeadlessTest = process.env.WATCHBOARD_HEADLESS_TEST === "1";
+  const isHeadlessTest = isWatchboardHeadlessTest();
   mainWindow = new BrowserWindow({
     width: 1680,
     height: 980,
@@ -731,7 +732,7 @@ function isSymbolicLink(filePath: string): boolean {
 }
 
 async function bootstrap(): Promise<void> {
-  if (process.env.WATCHBOARD_DISABLE_GPU === "1") {
+  if (shouldDisableGpuForWatchboard()) {
     app.disableHardwareAcceleration();
   }
   await app.whenReady();

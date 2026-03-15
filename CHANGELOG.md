@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.17] - 2026-03-15
+
+> **Code Stats** | Total: 28750 lines | Delta: +20 (-17) = **+3 net** | Change: **+0.01%** vs v0.7.16
+
+### Added
+- Added a shared Electron E2E headless-launch helper plus policy tests that require repository E2E specs to use the approved non-GUI startup path.
+
+### Fixed
+- Fixed headless Electron test detection so the main process now honors explicit watchboard test flags from either environment variables or launch arguments, reducing the chance of WSL/desktop GUI windows appearing during E2E runs.
+- Tightened Playwright E2E guidance in the README so new Electron suites inherit the repository-standard headless contract instead of re-implementing launch flags ad hoc.
+
 ## [0.7.16] - 2026-03-15
 
 > **Code Stats** | Total: 28736 lines | Delta: +146 (-50) = **+96 net** | Change: **+0.34%** vs v0.7.15
