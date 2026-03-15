@@ -42,9 +42,7 @@ import {
   addInstanceToWorkbench,
   attachExistingInstance,
   collapseInstance,
-  collectLayoutInstanceIds,
-  findActivePaneId,
-  normalizeWorkbenchDocument,
+  reconcileWorkbenchLayoutChange,
   removeInstanceFromWorkbench,
   restoreInstance,
   updateWorkbenchActivePane
@@ -1028,22 +1026,13 @@ export function App(): ReactElement {
     if (!workbench) {
       return;
     }
-    const visibleInstanceIds = new Set(collectLayoutInstanceIds(layoutModel));
-    const removedInstances = workbench.instances.filter((instance) => !visibleInstanceIds.has(instance.instanceId));
+    const { nextDocument, removedInstances } = reconcileWorkbenchLayoutChange(workbench, layoutModel);
     for (const instance of removedInstances) {
       if (sessions[instance.sessionId] && sessions[instance.sessionId]?.status !== "stopped") {
         void window.watchboard.stopSession(instance.sessionId);
       }
     }
-    stageWorkbench(
-      normalizeWorkbenchDocument({
-        ...workbench,
-        updatedAt: new Date().toISOString(),
-        activePaneId: findActivePaneId(layoutModel),
-        instances: workbench.instances.filter((instance) => visibleInstanceIds.has(instance.instanceId)),
-        layoutModel
-      })
-    );
+    stageWorkbench(nextDocument);
   }
 
   function handleFocusPane(paneId: string): void {

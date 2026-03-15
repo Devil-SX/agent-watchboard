@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createTerminalInstance, createWorkspaceTemplate } from "../../src/shared/schema";
-import { addInstanceToWorkbench, attachExistingInstance, collapseInstance } from "../../src/shared/workbenchModel";
+import { addInstanceToWorkbench, attachExistingInstance, collapseInstance, reconcileWorkbenchLayoutChange } from "../../src/shared/workbenchModel";
 
 test("attachExistingInstance restores a collapsed instance into the requested position", () => {
   const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
@@ -44,6 +44,46 @@ test("attachExistingInstance keeps layout node ids unique after collapse and spl
 
   const ids = collectLayoutNodeIds(workbench.layoutModel.layout);
   assert.equal(new Set(ids).size, ids.length);
+});
+
+test("reconcileWorkbenchLayoutChange preserves collapsed instances that are absent from the visible layout", () => {
+  const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
+  const first = createTerminalInstance(workspace, []);
+  const second = createTerminalInstance(workspace, [first]);
+  let workbench = addInstanceToWorkbench(addInstanceToWorkbench(createEmptyWorkbench(), first), second);
+
+  workbench = collapseInstance(workbench, second.instanceId);
+
+  const { nextDocument, removedInstances } = reconcileWorkbenchLayoutChange(workbench, workbench.layoutModel);
+
+  assert.deepEqual(removedInstances.map((instance) => instance.instanceId), []);
+  assert.equal(nextDocument.instances.length, 2);
+  assert.equal(nextDocument.instances.find((instance) => instance.instanceId === second.instanceId)?.collapsed, true);
+});
+
+test("reconcileWorkbenchLayoutChange removes visible instances that disappear from the layout", () => {
+  const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
+  const first = createTerminalInstance(workspace, []);
+  const second = createTerminalInstance(workspace, [first]);
+  const workbench = addInstanceToWorkbench(addInstanceToWorkbench(createEmptyWorkbench(), first), second);
+  const firstOnlyLayout = {
+    ...workbench.layoutModel,
+    layout: {
+      ...workbench.layoutModel.layout,
+      children: [
+        {
+          ...workbench.layoutModel.layout.children[0]!,
+          selected: 0,
+          children: [workbench.layoutModel.layout.children[0]!.children[0]!]
+        }
+      ]
+    }
+  };
+
+  const { nextDocument, removedInstances } = reconcileWorkbenchLayoutChange(workbench, firstOnlyLayout);
+
+  assert.deepEqual(removedInstances.map((instance) => instance.instanceId), [second.instanceId]);
+  assert.deepEqual(nextDocument.instances.map((instance) => instance.instanceId), [first.instanceId]);
 });
 
 function createEmptyWorkbench() {

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.14] - 2026-03-15
+
+> **Code Stats** | Total: 28362 lines | Delta: +4161 (-437) = **+3724 net** | Change: **+15.12%** vs v0.7.13
+
 ### Added
 - Added a `Debug` Settings category with one-click actions for opening the watchboard logs directory and the containing folders for main, supervisor, session, and perf runtime logs.
 - Added main-process debug-path opening helpers and regression coverage so log-opening failures surface cleanly and the new Settings actions remain testable across platforms.
@@ -38,6 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Reworked `workspaces.json`, `workbench.json`, and `settings.json` through a shared atomic JSON-store writer so updates now write via temp-file rename, keep bounded `.bak` snapshots, and stop overwriting corrupted store files during read failures.
 - Added regression coverage for corrupted workspace/workbench/settings reads plus atomic backup cleanup behavior so persistence bugs fail fast without silently destroying recovery evidence.
 - Fixed the supervisor module entrypoint check to use a CommonJS-safe runtime guard, and added unit coverage so importing the server in tests no longer depends on `import.meta` semantics.
+- Fixed workbench layout reconciliation so collapsed runtime instances stay attached to the persisted workbench and no longer trigger implicit `stopSession` calls just because they are absent from the visible FlexLayout tree.
+- Added lifecycle regression coverage for reconciling layout changes with collapsed instances so backgrounded sessions are preserved while genuinely removed visible panes are still cleaned up.
 
 ## [0.7.13] - 2026-03-14
 

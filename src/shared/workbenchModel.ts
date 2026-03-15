@@ -241,6 +241,27 @@ export function collectLayoutInstanceIds(layoutModel: WorkbenchLayoutModel): str
   return instanceIds;
 }
 
+export function reconcileWorkbenchLayoutChange(
+  document: WorkbenchDocument,
+  layoutModel: WorkbenchLayoutModel
+): { nextDocument: WorkbenchDocument; removedInstances: TerminalInstance[] } {
+  const base = normalizeWorkbenchDocument(document);
+  const visibleInstanceIds = new Set(collectLayoutInstanceIds(layoutModel));
+  const removedInstances = base.instances.filter((instance) => !instance.collapsed && !visibleInstanceIds.has(instance.instanceId));
+  const nextInstances = base.instances.filter((instance) => instance.collapsed || visibleInstanceIds.has(instance.instanceId));
+
+  return {
+    removedInstances,
+    nextDocument: normalizeWorkbenchDocument({
+      ...base,
+      updatedAt: nowIso(),
+      activePaneId: findActivePaneId(layoutModel),
+      instances: nextInstances,
+      layoutModel
+    })
+  };
+}
+
 export function findActivePaneId(layoutModel: WorkbenchLayoutModel): string | null {
   let activePaneId: string | null = null;
   visitLayoutTabsets(layoutModel.layout, (tabset) => {
