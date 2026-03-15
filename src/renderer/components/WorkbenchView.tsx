@@ -5,6 +5,8 @@ import { Actions, DockLocation, Layout, Model, type Action, type Node as FlexNod
 import { IconButton, PlusIcon, SplitDownIcon, SplitRightIcon } from "@renderer/components/IconButton";
 import { resolveSessionVisualState, visualStateClassName } from "@renderer/components/sessionVisualState";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
+import { type TerminalViewState } from "@renderer/components/terminalViewState";
+import { isTabNodeVisible } from "@renderer/components/workbenchVisibility";
 import { PaneTabActions, PaneTabLabel } from "@renderer/components/workbenchTabActions";
 import { type AppSettings, type SessionState, type TerminalInstance, type WorkbenchDocument, type WorkbenchLayoutModel, WorkbenchLayoutModelSchema, type Workspace } from "@shared/schema";
 
@@ -15,6 +17,9 @@ type Props = {
   settings: AppSettings;
   isVisible: boolean;
   getSessionBacklog: (sessionId: string) => string;
+  getTerminalViewState: (sessionId: string) => TerminalViewState | null;
+  attachSessionBacklog: (sessionId: string) => Promise<string>;
+  onTerminalViewStateChange: (sessionId: string, state: TerminalViewState) => void;
   canCreatePane: boolean;
   canSplitPane: boolean;
   onLayoutChange: (layoutModel: WorkbenchLayoutModel) => void;
@@ -46,6 +51,9 @@ export function WorkbenchView({
   settings,
   isVisible,
   getSessionBacklog,
+  getTerminalViewState,
+  attachSessionBacklog,
+  onTerminalViewStateChange,
   canCreatePane,
   canSplitPane,
   onLayoutChange,
@@ -233,8 +241,11 @@ export function WorkbenchView({
         instance={instance}
         session={sessions[instance.sessionId] ?? null}
         settings={settings}
-        isVisible={isVisible && workbench.activePaneId === instance.paneId}
+        isVisible={isVisible && isTabNodeVisible(node)}
         sessionBacklog={getSessionBacklog(instance.sessionId)}
+        terminalViewState={getTerminalViewState(instance.sessionId)}
+        attachSessionBacklog={attachSessionBacklog}
+        onTerminalViewStateChange={onTerminalViewStateChange}
       />
     );
   }

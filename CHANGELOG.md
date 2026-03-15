@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-03-15
+
+> **Code Stats** | Total: 30023 lines | Delta: +1300 (-239) = **+1061 net** | Change: **+3.67%** vs v0.7.18
+
+### Added
+- Added session attach/backlog recovery plumbing across the supervisor, main-process IPC bridge, and renderer terminal views so live runtime panes can rebind to existing PTYs instead of relying on fresh session output.
+- Added terminal lifecycle, redraw-nudge, session-start barrier, supervisor snapshot, WSL launch pipeline, and workbench visibility regression coverage for the startup and layout races uncovered in packaged Windows runs.
+- Added skill scan caching and shared request-id helpers to reduce redundant environment scans and make terminal/session tracing easier to correlate across renderer, main, and supervisor logs.
+
+### Changed
+- Deferred Skills chat autostart so chat sessions now start only when the Skills pane is actually opened, while keeping pane preference updates optimistic and stable across renderer remounts.
+- Reworked WSL terminal launch command generation and supervisor dev bootstrap resolution so Windows-packaged and WSL-mediated launches share one consistent startup path.
+
+### Fixed
+- Fixed startup terminal restore races where packaged Windows builds could reopen live sessions into a `terminal ready` placeholder, then fall through to a blank pane until the user dragged the layout and triggered a resize-driven redraw.
+- Fixed main-process session discovery so renderer boot no longer races an empty `list-sessions` cache before the supervisor's first snapshot arrives.
+- Fixed terminal view persistence across pane collapse, split-layout changes, and silent ready windows so visible content, fallback state, and redraw behavior now stay consistent without requiring manual relayout.
+
 ## [0.7.18] - 2026-03-15
 
 > **Code Stats** | Total: 28951 lines | Delta: +96 (-1) = **+95 net** | Change: **+0.33%** vs v0.7.17

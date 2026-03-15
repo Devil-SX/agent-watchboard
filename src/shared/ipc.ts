@@ -9,6 +9,7 @@ import type {
   DoctorDiagnosticsDocument,
   DoctorLocation,
   DiagnosticsInfo,
+  SessionAttachResult,
   SessionState,
   SshEnvironment,
   SkillEntry,
@@ -44,6 +45,10 @@ export type SshTestResult = {
   message: string;
 };
 
+export type SkillListOptions = {
+  forceRefresh?: boolean;
+};
+
 export type WatchboardApi = {
   listWorkspaces: () => Promise<WorkspaceList>;
   getWorkbench: () => Promise<WorkbenchDocument>;
@@ -52,10 +57,11 @@ export type WatchboardApi = {
   saveSettings: (settings: AppSettings, sshSecrets?: Record<string, SshSecretInput>) => Promise<AppSettings>;
   saveWorkspace: (workspace: Workspace) => Promise<WorkspaceList>;
   deleteWorkspace: (workspaceId: string) => Promise<WorkspaceList>;
-  startSession: (instance: TerminalInstance) => Promise<SessionState>;
-  stopSession: (sessionId: string) => Promise<void>;
+  startSession: (instance: TerminalInstance, requestId?: string) => Promise<SessionState>;
+  attachSession: (sessionId: string, requestId?: string) => Promise<SessionAttachResult>;
+  stopSession: (sessionId: string, requestId?: string) => Promise<void>;
   writeToSession: (sessionId: string, data: string, sentAtUnixMs?: number) => void;
-  resizeSession: (sessionId: string, cols: number, rows: number) => void;
+  resizeSession: (sessionId: string, cols: number, rows: number, requestId?: string) => void;
   debugLog: (message: string, details?: unknown) => Promise<void>;
   reportPerfEvent: (event: PerfEvent) => Promise<void>;
   listSessions: () => Promise<SessionState[]>;
@@ -67,7 +73,7 @@ export type WatchboardApi = {
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
   onSessionState: (listener: (session: SessionState) => void) => () => void;
   onBoardUpdate: (listener: (document: BoardDocument) => void) => () => void;
-  listSkills: (location: AgentPathLocation) => Promise<SkillEntry[]>;
+  listSkills: (location: AgentPathLocation, options?: SkillListOptions) => Promise<SkillEntry[]>;
   readSkillContent: (skillPath: string) => Promise<string>;
   listAgentConfigs: (location: AgentPathLocation) => Promise<AgentConfigEntry[]>;
   readAgentConfig: (configId: string, location: AgentPathLocation) => Promise<AgentConfigDocument>;

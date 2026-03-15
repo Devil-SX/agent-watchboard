@@ -8,6 +8,9 @@ import { SkillListItemContent } from "@renderer/components/SkillListItemContent"
 import { SkillMarkdownDocument } from "@renderer/components/SkillMarkdownDocument";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
 import { type SkillsChatAgent } from "@renderer/components/skillsChatSession";
+import { type TerminalViewState } from "@renderer/components/terminalViewState";
+import { areSkillsPaneStatesEqual } from "@renderer/components/settingsDraft";
+import { recordSkillsPaneAutosaveAttempt } from "@renderer/components/skillsPaneSafety";
 import {
   type AgentPathLocation,
   type AppSettings,
@@ -28,6 +31,9 @@ type Props = {
   chatInstance: TerminalInstance | null;
   chatError: string;
   getSessionBacklog: (sessionId: string) => string;
+  getTerminalViewState: (sessionId: string) => TerminalViewState | null;
+  attachSessionBacklog: (sessionId: string) => Promise<string>;
+  onTerminalViewStateChange: (sessionId: string, state: TerminalViewState) => void;
   onViewStateChange: (state: SkillsPaneState) => void;
 };
 
@@ -39,6 +45,9 @@ export function SkillsPanel({
   chatInstance,
   chatError,
   getSessionBacklog,
+  getTerminalViewState,
+  attachSessionBacklog,
+  onTerminalViewStateChange,
   onViewStateChange
 }: Props): ReactElement {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
@@ -51,33 +60,87 @@ export function SkillsPanel({
   const [claudeSubtypeFilter, setClaudeSubtypeFilter] = useState<ClaudeSubtypeFilter>(viewState.claudeSubtypeFilter);
   const [isChatOpen, setIsChatOpen] = useState(viewState.isChatOpen);
   const [chatAgent, setChatAgent] = useState<SkillsChatAgent>(viewState.chatAgent);
+  const [loadError, setLoadError] = useState("");
+  const [contentError, setContentError] = useState("");
+  const [syncWarning, setSyncWarning] = useState("");
   const persistReadyRef = useRef(false);
+  const isApplyingViewStateRef = useRef(false);
+  const persistTimerRef = useRef<number | null>(null);
+  const autosaveTimestampsRef = useRef<number[]>([]);
+  const listRequestIdRef = useRef(0);
+  const contentRequestIdRef = useRef(0);
   const isWindows = diagnosticsProp?.platform === "win32";
 
+  const currentPaneState: SkillsPaneState = {
+    location,
+    familyFilter,
+    claudeSubtypeFilter,
+    selectedSkillMdPath: selectedSkillPath,
+    isChatOpen,
+    chatAgent
+  };
+
   useEffect(() => {
+    isApplyingViewStateRef.current = true;
     setLocation(viewState.location);
     setFamilyFilter(viewState.familyFilter);
     setClaudeSubtypeFilter(viewState.claudeSubtypeFilter);
     setSelectedSkillPath(viewState.selectedSkillMdPath);
     setIsChatOpen(viewState.isChatOpen);
     setChatAgent(viewState.chatAgent);
+    setSyncWarning("");
   }, [viewState]);
 
   useEffect(() => {
+    const requestId = ++listRequestIdRef.current;
     setLoading(true);
-    void window.watchboard.listSkills(location).then((entries) => {
-      setSkills(entries);
-      setLoading(false);
-    });
+    setLoadError("");
+    void window.watchboard
+      .listSkills(location, { forceRefresh: reloadVersion > 0 })
+      .then((entries) => {
+        if (listRequestIdRef.current !== requestId) {
+          return;
+        }
+        setSkills(entries);
+      })
+      .catch((error: unknown) => {
+        if (listRequestIdRef.current !== requestId) {
+          return;
+        }
+        setLoadError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (listRequestIdRef.current !== requestId) {
+          return;
+        }
+        setLoading(false);
+      });
   }, [location, reloadVersion]);
 
   useEffect(() => {
     const selectedSkill = skills.find((entry) => entry.skillMdPath === selectedSkillPath) ?? null;
     if (!selectedSkill) {
       setContent("");
+      setContentError("");
       return;
     }
-    void window.watchboard.readSkillContent(selectedSkill.skillMdPath).then(setContent);
+    const requestId = ++contentRequestIdRef.current;
+    setContentError("");
+    void window.watchboard
+      .readSkillContent(selectedSkill.skillMdPath)
+      .then((nextContent) => {
+        if (contentRequestIdRef.current !== requestId) {
+          return;
+        }
+        setContent(nextContent);
+      })
+      .catch((error: unknown) => {
+        if (contentRequestIdRef.current !== requestId) {
+          return;
+        }
+        setContent("");
+        setContentError(error instanceof Error ? error.message : String(error));
+      });
   }, [selectedSkillPath, skills]);
 
   const codexCount = skills.filter((s) => s.source === "codex").length;
@@ -115,15 +178,59 @@ export function SkillsPanel({
       persistReadyRef.current = true;
       return;
     }
-    onViewStateChange({
-      location,
-      familyFilter,
-      claudeSubtypeFilter,
-      selectedSkillMdPath: selectedSkillPath,
-      isChatOpen,
-      chatAgent
-    });
-  }, [chatAgent, claudeSubtypeFilter, familyFilter, isChatOpen, location, onViewStateChange, selectedSkillPath]);
+    if (areSkillsPaneStatesEqual(currentPaneState, viewState)) {
+      if (isApplyingViewStateRef.current) {
+        isApplyingViewStateRef.current = false;
+      }
+      return;
+    }
+    if (isApplyingViewStateRef.current) {
+      return;
+    }
+    if (syncWarning) {
+      return;
+    }
+    if (persistTimerRef.current !== null) {
+      window.clearTimeout(persistTimerRef.current);
+    }
+    persistTimerRef.current = window.setTimeout(() => {
+      const autosaveResult = recordSkillsPaneAutosaveAttempt(autosaveTimestampsRef.current);
+      autosaveTimestampsRef.current = autosaveResult.nextAttemptTimestamps;
+      if (autosaveResult.shouldPause) {
+        setSyncWarning("Skills pane auto-sync paused after repeated rapid updates. Refresh the page state before continuing.");
+        void window.watchboard.debugLog("skills-pane-autosave-paused", {
+          paneState: currentPaneState,
+          eventCount: autosaveResult.nextAttemptTimestamps.length
+        });
+        return;
+      }
+      void onViewStateChange(currentPaneState);
+    }, 200);
+    return () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+    };
+  }, [
+    chatAgent,
+    claudeSubtypeFilter,
+    familyFilter,
+    isChatOpen,
+    location,
+    onViewStateChange,
+    selectedSkillPath,
+    syncWarning,
+    viewState
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+      }
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -197,6 +304,8 @@ export function SkillsPanel({
           ) : null}
         </div>
       </header>
+      {loadError ? <div className="toolbar-error">{loadError}</div> : null}
+      {syncWarning ? <div className="toolbar-error">{syncWarning}</div> : null}
 
       <div className={isChatOpen ? "skills-panel-body has-chat" : "skills-panel-body"}>
         <div className="skills-list" role="list">
@@ -251,7 +360,16 @@ export function SkillsPanel({
                 {selectedSkill.resolvedPath !== selectedSkill.entryPath ? <span className="entry-meta-label">Resolved</span> : null}
                 {selectedSkill.resolvedPath !== selectedSkill.entryPath ? <code>{selectedSkill.resolvedPath}</code> : null}
               </div>
-              {content ? <SkillMarkdownDocument content={content} /> : <pre className="skills-content-body">(empty)</pre>}
+              {contentError ? (
+                <div className="panel-empty panel-empty-large">
+                  <p>Failed to load skill content.</p>
+                  <span>{contentError}</span>
+                </div>
+              ) : content ? (
+                <SkillMarkdownDocument content={content} />
+              ) : (
+                <pre className="skills-content-body">(empty)</pre>
+              )}
             </>
           ) : skills.length === 0 ? (
             <div className="panel-empty panel-empty-large">
@@ -288,6 +406,9 @@ export function SkillsPanel({
                 settings={settings}
                 isVisible
                 sessionBacklog={getSessionBacklog(chatInstance.sessionId)}
+                terminalViewState={getTerminalViewState(chatInstance.sessionId)}
+                attachSessionBacklog={attachSessionBacklog}
+                onTerminalViewStateChange={onTerminalViewStateChange}
               />
             </div>
           </div>

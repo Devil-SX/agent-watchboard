@@ -60,11 +60,15 @@ test("writeBoardDocument snapshots previous board contents and trims old backups
 
   assert.equal(backups.length, 10);
 
-  const oldestBackupContent = await readFile(join(dir, backups[0] ?? ""), "utf8");
-  const newestBackupContent = await readFile(join(dir, backups.at(-1) ?? ""), "utf8");
+  const backupContents = await Promise.all(backups.map((name) => readFile(join(dir, name), "utf8")));
+  const snapshot = backupContents.join("\n");
 
-  assert.match(oldestBackupContent, /Section 1|Section 2|Section 3/);
-  assert.match(newestBackupContent, /Section 10/);
+  assert.doesNotMatch(snapshot, /"name": "Existing"/);
+  assert.doesNotMatch(snapshot, /"name": "Section 0"/);
+
+  for (let index = 1; index <= 10; index += 1) {
+    assert.match(snapshot, new RegExp(`"name": "Section ${index}"`));
+  }
 });
 
 test("updateItemStatus supports todo doing done transitions", () => {

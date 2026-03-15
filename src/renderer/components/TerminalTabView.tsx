@@ -5,6 +5,15 @@ import { Terminal } from "@xterm/xterm";
 
 import { reportRendererPerf } from "@renderer/perf";
 import {
+  hasMeaningfulTerminalSizeChange,
+  isTerminalHostMeasurable,
+  resolveTerminalRedrawNudgeGeometry,
+  shouldCommitTerminalResize,
+  TERMINAL_RESIZE_SETTLE_MS,
+  type TerminalGeometry,
+  type TerminalHostSize
+} from "@renderer/components/terminalResizePolicy";
+import {
   containsPrintableTerminalContent,
   getTerminalFallbackText,
   SILENT_SESSION_READY_TIMEOUT_MS,
@@ -12,6 +21,8 @@ import {
   shouldAutoHideWaitingFallback,
   type TerminalFallbackPhase
 } from "@renderer/components/terminalFallback";
+import { resolveTerminalSessionLifecycle } from "@renderer/components/terminalSessionLifecycle";
+import { createTerminalViewState, type TerminalViewState } from "@renderer/components/terminalViewState";
 import { type AppSettings, type SessionState, type TerminalInstance } from "@shared/schema";
 
 type Props = {
@@ -20,24 +31,38 @@ type Props = {
   settings: AppSettings;
   isVisible: boolean;
   sessionBacklog?: string;
+  terminalViewState?: TerminalViewState | null;
+  attachSessionBacklog: (sessionId: string) => Promise<string>;
+  onTerminalViewStateChange: (sessionId: string, state: TerminalViewState) => void;
 };
 
-export function TerminalTabView({ instance, session, settings, isVisible, sessionBacklog = "" }: Props): ReactElement {
-  const terminal = instance.terminalProfileSnapshot;
+export function TerminalTabView({
+  instance,
+  session,
+  settings,
+  isVisible,
+  sessionBacklog = "",
+  terminalViewState = null,
+  attachSessionBacklog,
+  onTerminalViewStateChange
+}: Props): ReactElement {
   const sessionId = instance.sessionId;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const updateVisibleContentRef = useRef<((nextValue: boolean) => void) | null>(null);
-  const performFitRef = useRef<((reason: string, shouldResize: boolean) => void) | null>(null);
-  const scheduleFitRef = useRef<((reason: string, shouldResize?: boolean) => void) | null>(null);
+  const performFitRef = useRef<((reason: string) => boolean) | null>(null);
+  const scheduleFitRef = useRef<((reason: string) => void) | null>(null);
+  const scheduleCommittedResizeRef = useRef<((reason: string, delayMs?: number) => void) | null>(null);
+  const requestTerminalRedrawRef = useRef<((reason: string) => boolean) | null>(null);
   const fitFrameRef = useRef<number | null>(null);
-  const fitShouldResizeRef = useRef(false);
   const fitReasonsRef = useRef<string[]>([]);
+  const resizeSettleTimerRef = useRef<number | null>(null);
   const dataFrameRef = useRef<number | null>(null);
   const silentReadyTimerRef = useRef<number | null>(null);
   const dataBufferRef = useRef("");
-  const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const lastCommittedGeometryRef = useRef<TerminalGeometry | null>(null);
+  const lastObservedHostSizeRef = useRef<TerminalHostSize | null>(null);
   const hasVisibleContentRef = useRef(false);
   const sessionStartMeasureRef = useRef<number | null>(null);
   const latencySampleRef = useRef<{ count: number; total: number; max: number }>({
@@ -45,13 +70,30 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
     total: 0,
     max: 0
   });
+  const lastStartedAtRef = useRef<string | null>(null);
+  const sessionBacklogRef = useRef(sessionBacklog);
+  const redrawNudgeAttemptedRef = useRef(false);
+  const fallbackPhaseRef = useRef<TerminalFallbackPhase>(terminalViewState?.fallbackPhase ?? "waiting");
   const [localError, setLocalError] = useState<string>("");
-  const [fallbackPhase, setFallbackPhase] = useState<TerminalFallbackPhase>("waiting");
-  const [hasVisibleContent, setHasVisibleContent] = useState(false);
+  const [fallbackPhase, setFallbackPhase] = useState<TerminalFallbackPhase>(terminalViewState?.fallbackPhase ?? "waiting");
+  const [hasVisibleContent, setHasVisibleContent] = useState(terminalViewState?.hasVisibleContent ?? false);
+  sessionBacklogRef.current = sessionBacklog;
+  hasVisibleContentRef.current = terminalViewState?.hasVisibleContent ?? hasVisibleContentRef.current;
+  fallbackPhaseRef.current = fallbackPhase;
 
   const focusTerminal = (): void => {
     terminalRef.current?.focus();
   };
+
+  useEffect(() => {
+    if (!terminalViewState) {
+      return;
+    }
+    hasVisibleContentRef.current = terminalViewState.hasVisibleContent;
+    fallbackPhaseRef.current = terminalViewState.fallbackPhase;
+    setHasVisibleContent(terminalViewState.hasVisibleContent);
+    setFallbackPhase(terminalViewState.fallbackPhase);
+  }, [terminalViewState]);
 
   useEffect(() => {
     if (!hostRef.current) {
@@ -94,7 +136,19 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
     const fitAddon = new FitAddon();
     xterm.loadAddon(fitAddon);
     xterm.open(host);
-    setFallbackPhase("waiting");
+
+    const readHostSize = (): TerminalHostSize => ({
+      width: host.clientWidth,
+      height: host.clientHeight
+    });
+
+    const updateFallbackPhase = (nextPhase: TerminalFallbackPhase): void => {
+      if (fallbackPhaseRef.current === nextPhase) {
+        return;
+      }
+      fallbackPhaseRef.current = nextPhase;
+      setFallbackPhase(nextPhase);
+    };
 
     const updateVisibleContent = (nextValue: boolean): void => {
       if (hasVisibleContentRef.current === nextValue) {
@@ -103,7 +157,7 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
       hasVisibleContentRef.current = nextValue;
       setHasVisibleContent(nextValue);
       if (nextValue) {
-        setFallbackPhase("idle");
+        updateFallbackPhase("idle");
         void window.watchboard.debugLog("terminal-fallback-hidden", {
           sessionId,
           reason: "visible-content"
@@ -119,46 +173,93 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
         sessionStartMeasureRef.current = null;
       }
     };
-    updateVisibleContentRef.current = updateVisibleContent;
-    const sendResizeIfNeeded = (force = false): void => {
-      const nextSize = { cols: xterm.cols, rows: xterm.rows };
-      const lastSize = lastResizeRef.current;
-      if (!force && lastSize && lastSize.cols === nextSize.cols && lastSize.rows === nextSize.rows) {
+
+    const sendCommittedResizeIfNeeded = (reason: string): void => {
+      const nextGeometry = { cols: xterm.cols, rows: xterm.rows };
+      if (!shouldCommitTerminalResize(lastCommittedGeometryRef.current, nextGeometry)) {
+        reportRendererPerf({
+          category: "terminal",
+          name: "resize-commit-skipped",
+          durationMs: 0,
+          sessionId,
+          extra: {
+            reason,
+            cols: nextGeometry.cols,
+            rows: nextGeometry.rows
+          }
+        });
         return;
       }
-      lastResizeRef.current = nextSize;
-      void window.watchboard.resizeSession(sessionId, nextSize.cols, nextSize.rows);
+      lastCommittedGeometryRef.current = nextGeometry;
+      reportRendererPerf({
+        category: "terminal",
+        name: "resize-settle",
+        durationMs: 0,
+        sessionId,
+        extra: {
+          reason,
+          cols: nextGeometry.cols,
+          rows: nextGeometry.rows
+        }
+      });
+      void window.watchboard.resizeSession(sessionId, nextGeometry.cols, nextGeometry.rows);
     };
-    const performFit = (reason: string, shouldResize: boolean): void => {
+
+    const performFit = (reason: string): boolean => {
+      const hostSize = readHostSize();
+      if (!host.isConnected || !isTerminalHostMeasurable(hostSize)) {
+        reportRendererPerf({
+          category: "terminal",
+          name: "resize-commit-skipped",
+          durationMs: 0,
+          sessionId,
+          extra: {
+            reason,
+            width: hostSize.width,
+            height: hostSize.height
+          }
+        });
+        return false;
+      }
       const fitStartedAt = performance.now();
       fitAddon.fit();
       reportRendererPerf({
         category: "terminal",
-        name: "fit",
+        name: reason.startsWith("commit:") ? "fit-commit" : "fit-local",
         durationMs: performance.now() - fitStartedAt,
         sessionId,
         extra: {
           reason
         }
       });
-      if (shouldResize) {
-        sendResizeIfNeeded();
-      }
+      return true;
     };
-    const scheduleFit = (reason: string, shouldResize = true): void => {
+
+    const scheduleCommittedResize = (reason: string, delayMs = TERMINAL_RESIZE_SETTLE_MS): void => {
+      if (resizeSettleTimerRef.current !== null) {
+        window.clearTimeout(resizeSettleTimerRef.current);
+      }
+      resizeSettleTimerRef.current = window.setTimeout(() => {
+        resizeSettleTimerRef.current = null;
+        if (!performFit(`commit:${reason}`)) {
+          return;
+        }
+        sendCommittedResizeIfNeeded(reason);
+      }, delayMs);
+    };
+
+    const scheduleFit = (reason: string): void => {
       fitReasonsRef.current.push(reason);
-      fitShouldResizeRef.current = fitShouldResizeRef.current || shouldResize;
       if (fitFrameRef.current !== null) {
         return;
       }
       fitFrameRef.current = requestAnimationFrame(() => {
         fitFrameRef.current = null;
         const reasons = fitReasonsRef.current.splice(0, fitReasonsRef.current.length);
-        const nextShouldResize = fitShouldResizeRef.current;
-        fitShouldResizeRef.current = false;
-        performFit(reasons.join(","), nextShouldResize);
+        void performFit(reasons.join(","));
       });
     };
+
     const flushTerminalOutput = (): void => {
       dataFrameRef.current = null;
       const chunk = dataBufferRef.current;
@@ -179,6 +280,7 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
         });
       });
     };
+
     const scheduleOutputFlush = (): void => {
       if (dataFrameRef.current !== null) {
         return;
@@ -187,6 +289,7 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
         flushTerminalOutput();
       });
     };
+
     const flushLatencySample = (): void => {
       const sample = latencySampleRef.current;
       if (sample.count === 0) {
@@ -204,17 +307,62 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
       });
       latencySampleRef.current = { count: 0, total: 0, max: 0 };
     };
+
+    updateVisibleContentRef.current = updateVisibleContent;
     performFitRef.current = performFit;
     scheduleFitRef.current = scheduleFit;
+    scheduleCommittedResizeRef.current = scheduleCommittedResize;
+
+    const requestTerminalRedraw = (reason: string): boolean => {
+      if (redrawNudgeAttemptedRef.current) {
+        return false;
+      }
+      const baseGeometry = lastCommittedGeometryRef.current ?? { cols: xterm.cols, rows: xterm.rows };
+      const nudge = resolveTerminalRedrawNudgeGeometry(baseGeometry);
+      if (!nudge) {
+        return false;
+      }
+      redrawNudgeAttemptedRef.current = true;
+      reportRendererPerf({
+        category: "terminal",
+        name: "redraw-nudge",
+        durationMs: 0,
+        sessionId,
+        extra: {
+          reason,
+          fromCols: nudge.restored.cols,
+          toCols: nudge.transient.cols,
+          rows: nudge.restored.rows
+        }
+      });
+      void window.watchboard.resizeSession(sessionId, nudge.transient.cols, nudge.transient.rows);
+      window.setTimeout(() => {
+        void window.watchboard.resizeSession(sessionId, nudge.restored.cols, nudge.restored.rows);
+      }, 60);
+      return true;
+    };
+    requestTerminalRedrawRef.current = requestTerminalRedraw;
+
     void waitForHostReady(host)
       .then(() => {
-        performFit("host-ready", false);
+        const hostSize = readHostSize();
+        lastObservedHostSizeRef.current = hostSize;
+        if (!performFit("host-ready")) {
+          return;
+        }
+        scheduleCommittedResize("host-ready", 0);
+        return waitForNextPaint();
+      })
+      .then(() => {
+        if (xterm.element) {
+          xterm.refresh(0, xterm.rows - 1);
+        }
       })
       .catch(() => undefined);
 
-    const initialBacklog = normalizeTerminalOutput(sessionBacklog);
+    const initialBacklog = normalizeTerminalOutput(sessionBacklogRef.current);
     if (initialBacklog) {
-      setFallbackPhase("hydrating");
+      updateFallbackPhase("hydrating");
       xterm.write(initialBacklog, () => {
         updateVisibleContent(true);
         reportRendererPerf({
@@ -227,6 +375,32 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
           }
         });
       });
+    } else if (session && session.status !== "stopped") {
+      void attachSessionBacklog(sessionId)
+        .then((attachedBacklog) => {
+          if (sessionBacklogRef.current || !attachedBacklog) {
+            return;
+          }
+          const normalizedBacklog = normalizeTerminalOutput(attachedBacklog);
+          if (!normalizedBacklog) {
+            return;
+          }
+          sessionBacklogRef.current = attachedBacklog;
+          updateFallbackPhase("hydrating");
+          xterm.write(normalizedBacklog, () => {
+            updateVisibleContent(true);
+            reportRendererPerf({
+              category: "terminal",
+              name: "session-backlog-restored",
+              durationMs: 0,
+              sessionId,
+              extra: {
+                chars: normalizedBacklog.length
+              }
+            });
+          });
+        })
+        .catch(() => undefined);
     }
 
     const handleTerminalData = (event: Event): void => {
@@ -260,16 +434,19 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
     window.addEventListener("watchboard:terminal-data", handleTerminalData);
 
     const observer = new ResizeObserver(() => {
+      const nextHostSize = readHostSize();
+      const shouldFit = hasMeaningfulTerminalSizeChange(lastObservedHostSizeRef.current, nextHostSize);
+      lastObservedHostSizeRef.current = nextHostSize;
+      if (!shouldFit) {
+        return;
+      }
       scheduleFit("resize-observer");
+      scheduleCommittedResize("resize-observer");
     });
     observer.observe(host);
 
     terminalRef.current = xterm;
     fitAddonRef.current = fitAddon;
-
-    if (session && session.status !== "stopped") {
-      sendResizeIfNeeded(true);
-    }
 
     return () => {
       flushLatencySample();
@@ -280,49 +457,31 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
       if (fitFrameRef.current !== null) {
         cancelAnimationFrame(fitFrameRef.current);
       }
+      if (resizeSettleTimerRef.current !== null) {
+        window.clearTimeout(resizeSettleTimerRef.current);
+      }
       if (dataFrameRef.current !== null) {
         cancelAnimationFrame(dataFrameRef.current);
       }
       dataBufferRef.current = "";
-      lastResizeRef.current = null;
+      lastCommittedGeometryRef.current = null;
+      lastObservedHostSizeRef.current = null;
       updateVisibleContentRef.current = null;
       performFitRef.current = null;
       scheduleFitRef.current = null;
+      scheduleCommittedResizeRef.current = null;
+      requestTerminalRedrawRef.current = null;
+      lastStartedAtRef.current = null;
       hasVisibleContentRef.current = false;
+      redrawNudgeAttemptedRef.current = false;
       sessionStartMeasureRef.current = null;
-      setFallbackPhase("waiting");
-      setHasVisibleContent(false);
       observer.disconnect();
       window.removeEventListener("watchboard:terminal-data", handleTerminalData);
       terminalRef.current = null;
       fitAddonRef.current = null;
       xterm.dispose();
     };
-  }, [sessionId]);
-
-  useEffect(() => {
-    const xterm = terminalRef.current;
-    if (!xterm || !session || session.status === "stopped") {
-      return;
-    }
-    const nextSize = { cols: xterm.cols, rows: xterm.rows };
-    const lastSize = lastResizeRef.current;
-    if (!lastSize || lastSize.cols !== nextSize.cols || lastSize.rows !== nextSize.rows) {
-      lastResizeRef.current = nextSize;
-      void window.watchboard.resizeSession(sessionId, nextSize.cols, nextSize.rows);
-    }
-  }, [session?.status, sessionId]);
-
-  useEffect(() => {
-    const xterm = terminalRef.current;
-    const fitAddon = fitAddonRef.current;
-    if (!xterm || !fitAddon) {
-      return;
-    }
-    xterm.options.fontFamily = settings.terminalFontFamily;
-    xterm.options.fontSize = settings.terminalFontSize;
-    scheduleFitRef.current?.("font-settings");
-  }, [sessionBacklog, sessionId, settings.terminalFontFamily, settings.terminalFontSize]);
+  }, [sessionId, settings.terminalFontFamily, settings.terminalFontSize]);
 
   useEffect(() => {
     const xterm = terminalRef.current;
@@ -332,6 +491,7 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
     }
     void waitForNextPaint().then(() => {
       scheduleFitRef.current?.("tab-visible");
+      scheduleCommittedResizeRef.current?.("tab-visible", 0);
       focusTerminal();
     });
   }, [isVisible, sessionId]);
@@ -339,21 +499,70 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
   useEffect(() => {
     const xterm = terminalRef.current;
     const fitAddon = fitAddonRef.current;
-    if (!xterm || !fitAddon || !session || session.status === "stopped") {
+    if (!xterm || !fitAddon) {
       return;
     }
-    if (sessionStartMeasureRef.current !== null) {
+    const decision = resolveTerminalSessionLifecycle(lastStartedAtRef.current, session);
+    lastStartedAtRef.current = decision.nextStartedAt;
+    if (!decision.shouldTrack) {
       return;
     }
-    hasVisibleContentRef.current = false;
-    setHasVisibleContent(false);
-    setFallbackPhase("waiting");
     setLocalError("");
-    xterm.reset();
-    lastResizeRef.current = null;
-    performFitRef.current?.("session-start", true);
-    sessionStartMeasureRef.current = performance.now();
+    lastCommittedGeometryRef.current = null;
+    if (decision.shouldReset) {
+      hasVisibleContentRef.current = false;
+      setHasVisibleContent(false);
+      fallbackPhaseRef.current = "waiting";
+      setFallbackPhase("waiting");
+      redrawNudgeAttemptedRef.current = false;
+      xterm.reset();
+    }
+    scheduleFitRef.current?.(decision.shouldReset ? "session-restart" : "session-attach");
+    scheduleCommittedResizeRef.current?.(decision.shouldReset ? "session-restart" : "session-attach", 0);
+    if (!hasVisibleContentRef.current) {
+      fallbackPhaseRef.current = "waiting";
+      setFallbackPhase("waiting");
+      sessionStartMeasureRef.current = performance.now();
+      return;
+    }
+    sessionStartMeasureRef.current = null;
   }, [session?.startedAt, session?.status, sessionId]);
+
+  useEffect(() => {
+    if (!session || session.status === "stopped" || sessionBacklogRef.current) {
+      return;
+    }
+    const xterm = terminalRef.current;
+    if (!xterm) {
+      return;
+    }
+    void attachSessionBacklog(sessionId)
+      .then((attachedBacklog) => {
+        if (sessionBacklogRef.current || !attachedBacklog) {
+          return;
+        }
+        const normalizedBacklog = normalizeTerminalOutput(attachedBacklog);
+        if (!normalizedBacklog) {
+          return;
+        }
+        sessionBacklogRef.current = attachedBacklog;
+        fallbackPhaseRef.current = "hydrating";
+        setFallbackPhase("hydrating");
+        xterm.write(normalizedBacklog, () => {
+          updateVisibleContentRef.current?.(true);
+          reportRendererPerf({
+            category: "terminal",
+            name: "session-backlog-restored",
+            durationMs: 0,
+            sessionId,
+            extra: {
+              chars: normalizedBacklog.length
+            }
+          });
+        });
+      })
+      .catch(() => undefined);
+  }, [attachSessionBacklog, session, sessionId]);
 
   useEffect(() => {
     if (silentReadyTimerRef.current !== null) {
@@ -372,8 +581,7 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
       if (!shouldAutoHideWaitingFallback(fallbackPhase, hasVisibleContent, localError, session.status, elapsedMs)) {
         return;
       }
-      setFallbackPhase("idle");
-      sessionStartMeasureRef.current = null;
+      const didRequestRedraw = requestTerminalRedrawRef.current?.("silent-ready-timeout") ?? false;
       reportRendererPerf({
         category: "interaction",
         name: "session-start-silent-ready",
@@ -382,7 +590,7 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
       });
       void window.watchboard.debugLog("terminal-fallback-hidden", {
         sessionId,
-        reason: "silent-ready-timeout",
+        reason: didRequestRedraw ? "silent-ready-redraw-nudge" : "silent-ready-timeout",
         timeoutMs: SILENT_SESSION_READY_TIMEOUT_MS
       });
     }, SILENT_SESSION_READY_TIMEOUT_MS);
@@ -393,6 +601,13 @@ export function TerminalTabView({ instance, session, settings, isVisible, sessio
       }
     };
   }, [fallbackPhase, hasVisibleContent, localError, session, sessionId]);
+
+  useEffect(() => {
+    onTerminalViewStateChange(
+      sessionId,
+      createTerminalViewState(session?.startedAt ?? null, hasVisibleContent, fallbackPhase)
+    );
+  }, [fallbackPhase, hasVisibleContent, onTerminalViewStateChange, session?.startedAt, sessionId]);
 
   const showFallback = shouldShowTerminalFallback(fallbackPhase, hasVisibleContent, localError);
   const fallbackText = getTerminalFallbackText(fallbackPhase);

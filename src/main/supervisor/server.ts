@@ -5,10 +5,12 @@ import chokidar, { type FSWatcher } from "chokidar";
 import pty from "node-pty";
 import { WebSocketServer, type WebSocket } from "ws";
 
+import { buildWslLaunchCommand } from "@main/wslTerminalLaunch";
 import { FileLogger } from "@shared/fileLogger";
 import {
   DEFAULT_SUPERVISOR_PORT,
   DEFAULT_SUPERVISOR_STATE_PATH,
+  type SessionAttachResult,
   SessionState,
   SessionStatus,
   SupervisorCommand,
@@ -35,10 +37,12 @@ type SessionRecord = {
   outputChunks: number;
   outputBytes: number;
   outputPerfWindowStartedAt: number;
+  backlog: string;
 };
 
 const ACTIVE_THRESHOLD_MS = 15_000;
 const IDLE_THRESHOLD_MS = 5 * 60_000;
+const MAX_SESSION_BACKLOG_CHARS = 200_000;
 
 export function applyPtyActivityStatus(state: SessionState): boolean {
   if (state.endedAt) {
@@ -149,19 +153,26 @@ class SupervisorServer {
 
   private async handleMessage(socket: WebSocket, raw: string): Promise<void> {
     const command = JSON.parse(raw) as SupervisorCommand;
-    this.logger.info("received command", { type: command.type });
+    this.logger.info("received command", {
+      type: command.type,
+      requestId: "requestId" in command ? command.requestId ?? null : null,
+      sessionId: "sessionId" in command ? command.sessionId : null
+    });
     switch (command.type) {
       case "hello":
       case "list-sessions":
         this.send(socket, { type: "snapshot", snapshot: this.createSnapshot() });
         break;
       case "start-session":
-        await this.startSession(command.sessionId, command.instanceId, command.workspaceId, command.profile);
+        await this.startSession(command.sessionId, command.instanceId, command.workspaceId, command.profile, command.requestId);
         break;
       case "attach-session": {
         const session = this.sessions.get(command.sessionId);
         if (session) {
-          this.send(socket, { type: "session-state", session: session.state });
+          this.send(socket, {
+            type: "session-attached",
+            payload: createSessionAttachResult(session.state, session.backlog)
+          });
         }
         break;
       }
@@ -195,19 +206,22 @@ class SupervisorServer {
     sessionId: string,
     instanceId: string,
     workspaceId: string,
-    profile: TerminalProfile
+    profile: TerminalProfile,
+    requestId?: string
   ): Promise<void> {
     const startedPerfAt = performance.now();
     const sessionLogPath = join(this.sessionLogDir, workspaceId, `${instanceId}.log`);
     const existing = this.sessions.get(sessionId);
     if (existing && shouldReuseLiveSession(existing.state)) {
       existing.sessionLogger.info("reusing existing live session", {
+        requestId: requestId ?? null,
         sessionId,
         instanceId,
         workspaceId,
         pid: existing.state.pid
       });
       this.logger.info("reusing existing live session", {
+        requestId: requestId ?? null,
         sessionId,
         instanceId,
         workspaceId,
@@ -234,6 +248,7 @@ class SupervisorServer {
     try {
       const spawnConfig = buildSpawnConfig(profile);
       sessionLogger.info("starting session", {
+        requestId: requestId ?? null,
         workspaceId,
         instanceId,
         terminalId: profile.id,
@@ -274,7 +289,8 @@ class SupervisorServer {
         firstOutputReported: false,
         outputChunks: 0,
         outputBytes: 0,
-        outputPerfWindowStartedAt: performance.now()
+        outputPerfWindowStartedAt: performance.now(),
+        backlog: ""
       };
       this.sessions.set(sessionId, record);
 
@@ -286,6 +302,7 @@ class SupervisorServer {
         const didPromoteState = applyPtyActivityStatus(session.state);
         session.outputChunks += 1;
         session.outputBytes += Buffer.byteLength(data, "utf8");
+        session.backlog = appendSessionBacklogChunk(session.backlog, data);
         if (!session.firstOutputReported) {
           session.firstOutputReported = true;
           this.recordPerf("terminal", "first-output", performance.now() - session.startedPerfAt, {
@@ -314,6 +331,7 @@ class SupervisorServer {
       }
 
       this.logger.info("session started", {
+        requestId: requestId ?? null,
         sessionId,
         instanceId,
         pid: ptyProcess.pid,
@@ -332,6 +350,7 @@ class SupervisorServer {
       sessionLogger.close();
       this.logger.error("session start failed", {
         sessionId,
+        requestId: requestId ?? null,
         error
       });
       this.broadcast({
@@ -483,6 +502,21 @@ class SupervisorServer {
   }
 }
 
+export function appendSessionBacklogChunk(existing: string, chunk: string): string {
+  const next = existing + chunk;
+  if (next.length <= MAX_SESSION_BACKLOG_CHARS) {
+    return next;
+  }
+  return next.slice(next.length - MAX_SESSION_BACKLOG_CHARS);
+}
+
+export function createSessionAttachResult(session: SessionState, backlog: string): SessionAttachResult {
+  return {
+    session,
+    backlog
+  };
+}
+
 function classifyStatus(state: SessionState, staleAfterMs = IDLE_THRESHOLD_MS): SessionStatus {
   if (state.endedAt) {
     return "stopped";
@@ -552,40 +586,6 @@ function buildSpawnConfig(profile: TerminalProfile): {
     cwd: resolvedCwd,
     env: { ...process.env, ...profile.env }
   };
-}
-
-function normalizeWslShellCwd(cwd: string): string {
-  if (/^[a-zA-Z]:\\/.test(cwd)) {
-    const drive = cwd[0]?.toLowerCase() ?? "c";
-    const normalized = cwd.slice(2).replaceAll("\\", "/");
-    return quoteForPosix(`/mnt/${drive}${normalized}`);
-  }
-  if (cwd === "~") {
-    return "~";
-  }
-  if (cwd.startsWith("~/")) {
-    return cwd;
-  }
-  return quoteForPosix(cwd);
-}
-
-function buildWslLaunchCommand(cwd: string, shell: string, startupCommand: string): string {
-  const targetCwd = normalizeWslShellCwd(cwd);
-  const cdCommand = `if ! cd -- ${targetCwd} 2>/dev/null; then printf '\\n[watchboard] cwd unavailable, falling back to $HOME\\n'; cd -- "$HOME"; fi`;
-  if (!startupCommand.trim()) {
-    return `${cdCommand}; exec "\${SHELL:-${shell.replaceAll('"', '\\"')}}" -il`;
-  }
-  return `${cdCommand}; ${buildWslStartupCommand(shell, startupCommand)}`;
-}
-
-function buildWslStartupCommand(shell: string, startupCommand: string): string {
-  const escapedCommand = startupCommand.replaceAll('"', '\\"');
-  const escapedShell = shell.replaceAll('"', '\\"');
-  return `${escapedCommand}; status=$?; if [ $status -ne 0 ]; then printf '\\n[watchboard] startup command failed (%s), falling back to interactive shell\\n' "$status"; exec "\${SHELL:-${escapedShell}}" -il; fi`;
-}
-
-function quoteForPosix(value: string): string {
-  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
 function parseArgs(): { port: number; snapshotPath: string; logFilePath: string; perfLogFilePath: string; sessionLogDir: string } {

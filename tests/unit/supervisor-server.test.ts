@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { applyPtyActivityStatus, isSupervisorEntrypoint, shouldReuseLiveSession } from "../../src/main/supervisor/server";
+import {
+  appendSessionBacklogChunk,
+  applyPtyActivityStatus,
+  createSessionAttachResult,
+  isSupervisorEntrypoint,
+  shouldReuseLiveSession
+} from "../../src/main/supervisor/server";
 import type { SessionState } from "../../src/shared/schema";
 
 function makeSession(status: SessionState["status"]): SessionState {
@@ -67,4 +73,20 @@ test("shouldReuseLiveSession keeps running skills sessions attached instead of r
 
 test("isSupervisorEntrypoint stays false when imported by tests", () => {
   assert.equal(isSupervisorEntrypoint(), false);
+});
+
+test("appendSessionBacklogChunk keeps the most recent terminal output within the cap", () => {
+  const oversized = "a".repeat(210_000);
+  const next = appendSessionBacklogChunk("", oversized);
+
+  assert.equal(next.length, 200_000);
+  assert.equal(next, oversized.slice(10_000));
+});
+
+test("createSessionAttachResult returns both state and backlog for renderer restore", () => {
+  const session = makeSession("running-active");
+  const payload = createSessionAttachResult(session, "PROMPT>");
+
+  assert.equal(payload.session.sessionId, session.sessionId);
+  assert.equal(payload.backlog, "PROMPT>");
 });

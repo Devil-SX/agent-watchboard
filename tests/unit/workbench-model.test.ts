@@ -86,6 +86,21 @@ test("reconcileWorkbenchLayoutChange removes visible instances that disappear fr
   assert.deepEqual(nextDocument.instances.map((instance) => instance.instanceId), [first.instanceId]);
 });
 
+test("collapse and restore keep the same terminal session identity across pane lifecycle changes", () => {
+  const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
+  const first = createTerminalInstance(workspace, []);
+  let workbench = addInstanceToWorkbench(createEmptyWorkbench(), first);
+
+  const collapsed = collapseInstance(workbench, first.instanceId);
+  const restored = attachExistingInstance(collapsed, first.instanceId, "tab", null);
+  const restoredInstance = restored.instances.find((instance) => instance.instanceId === first.instanceId);
+
+  assert.equal(collapsed.instances[0]?.sessionId, first.sessionId);
+  assert.equal(restoredInstance?.sessionId, first.sessionId);
+  assert.equal(restoredInstance?.paneId, first.paneId);
+  assert.equal(restoredInstance?.collapsed, false);
+});
+
 function createEmptyWorkbench() {
   return {
     version: 1 as const,

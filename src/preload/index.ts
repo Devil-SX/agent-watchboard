@@ -9,13 +9,14 @@ const api: WatchboardApi = {
   saveSettings: (settings, sshSecrets) => ipcRenderer.invoke("watchboard:save-settings", settings, sshSecrets),
   saveWorkspace: (workspace) => ipcRenderer.invoke("watchboard:save-workspace", workspace),
   deleteWorkspace: (workspaceId) => ipcRenderer.invoke("watchboard:delete-workspace", workspaceId),
-  startSession: (instance) => ipcRenderer.invoke("watchboard:start-session", instance),
-  stopSession: (sessionId) => ipcRenderer.invoke("watchboard:stop-session", sessionId),
+  startSession: (instance, requestId) => ipcRenderer.invoke("watchboard:start-session", instance, requestId),
+  attachSession: (sessionId, requestId) => ipcRenderer.invoke("watchboard:attach-session", sessionId, requestId),
+  stopSession: (sessionId, requestId) => ipcRenderer.invoke("watchboard:stop-session", sessionId, requestId),
   writeToSession: (sessionId, data, sentAtUnixMs) => {
     ipcRenderer.send("watchboard:write-session", sessionId, data, sentAtUnixMs);
   },
-  resizeSession: (sessionId, cols, rows) => {
-    ipcRenderer.send("watchboard:resize-session", sessionId, cols, rows);
+  resizeSession: (sessionId, cols, rows, requestId) => {
+    ipcRenderer.send("watchboard:resize-session", sessionId, cols, rows, requestId);
   },
   debugLog: (message, details) => ipcRenderer.invoke("watchboard:debug-log", message, details),
   reportPerfEvent: (event) => ipcRenderer.invoke("watchboard:perf-event", event),
@@ -52,7 +53,7 @@ const api: WatchboardApi = {
     ipcRenderer.on("board-update", wrapped);
     return () => ipcRenderer.removeListener("board-update", wrapped);
   },
-  listSkills: (location) => ipcRenderer.invoke("watchboard:list-skills", location),
+  listSkills: (location, options) => ipcRenderer.invoke("watchboard:list-skills", location, options),
   readSkillContent: (skillPath) => ipcRenderer.invoke("watchboard:read-skill-content", skillPath),
   listAgentConfigs: (location) => ipcRenderer.invoke("watchboard:list-agent-configs", location),
   readAgentConfig: (configId, location) => ipcRenderer.invoke("watchboard:read-agent-config", configId, location),

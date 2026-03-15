@@ -10,14 +10,21 @@ export class SupervisorClient {
   private socket: WebSocket | null = null;
   private readonly listeners = new Set<(event: SupervisorEvent) => void>();
 
-  async connect(port = DEFAULT_SUPERVISOR_PORT): Promise<void> {
+  async connect(port = DEFAULT_SUPERVISOR_PORT, timeoutMs = 750): Promise<void> {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       return;
     }
 
     await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(`ws://127.0.0.1:${port}`);
+      const timeout = setTimeout(() => {
+        socket.removeListener("open", handleOpen);
+        socket.removeListener("error", handleError);
+        socket.on("error", () => undefined);
+        reject(new Error(`Supervisor connection timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
       const handleOpen = () => {
+        clearTimeout(timeout);
         this.socket = socket;
         socket.on("message", (payload) => {
           const event = JSON.parse(payload.toString()) as SupervisorEvent;
@@ -29,10 +36,13 @@ export class SupervisorClient {
           this.socket = null;
         });
         socket.removeListener("error", handleError);
+        socket.removeListener("open", handleOpen);
         resolve();
       };
       const handleError = (error: Error) => {
+        clearTimeout(timeout);
         socket.removeListener("open", handleOpen);
+        socket.removeListener("error", handleError);
         reject(error);
       };
 

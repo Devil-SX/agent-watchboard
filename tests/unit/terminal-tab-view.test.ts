@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  getTerminalSessionIdentity,
   containsPrintableTerminalContent,
   getTerminalFallbackText,
   shouldAutoHideWaitingFallback,
@@ -32,6 +33,38 @@ test("shouldAutoHideWaitingFallback releases silent live sessions after timeout 
   assert.equal(shouldAutoHideWaitingFallback("waiting", false, "boom", "running-active", SILENT_SESSION_READY_TIMEOUT_MS + 1), false);
   assert.equal(shouldAutoHideWaitingFallback("hydrating", false, "", "running-active", SILENT_SESSION_READY_TIMEOUT_MS + 1), false);
   assert.equal(shouldAutoHideWaitingFallback("waiting", false, "", "running-active", SILENT_SESSION_READY_TIMEOUT_MS - 1), false);
+});
+
+test("getTerminalSessionIdentity ignores status churn and tracks only live session identity", () => {
+  const liveActive = getTerminalSessionIdentity({
+    status: "running-active",
+    startedAt: "2026-03-15T00:00:00.000Z",
+    pid: 123,
+    endedAt: null
+  });
+  const liveIdle = getTerminalSessionIdentity({
+    status: "running-idle",
+    startedAt: "2026-03-15T00:00:00.000Z",
+    pid: 123,
+    endedAt: null
+  });
+  const restarted = getTerminalSessionIdentity({
+    status: "running-active",
+    startedAt: "2026-03-15T00:01:00.000Z",
+    pid: 456,
+    endedAt: null
+  });
+  const stopped = getTerminalSessionIdentity({
+    status: "stopped",
+    startedAt: "2026-03-15T00:01:00.000Z",
+    pid: null,
+    endedAt: "2026-03-15T00:02:00.000Z"
+  });
+
+  assert.equal(liveActive, "2026-03-15T00:00:00.000Z:123");
+  assert.equal(liveIdle, liveActive);
+  assert.notEqual(restarted, liveActive);
+  assert.equal(stopped, null);
 });
 
 test("toPlainTerminalPreview strips control sequences but keeps visible content", () => {

@@ -454,6 +454,13 @@ export const SessionStateSchema = z.object({
 
 export type SessionState = z.infer<typeof SessionStateSchema>;
 
+export const SessionAttachResultSchema = z.object({
+  session: SessionStateSchema,
+  backlog: z.string().default("")
+});
+
+export type SessionAttachResult = z.infer<typeof SessionAttachResultSchema>;
+
 export const SupervisorSnapshotSchema = z.object({
   version: z.literal(1).default(1),
   updatedAt: z.string(),
@@ -487,17 +494,18 @@ export type PersistenceStoreHealth = z.infer<typeof PersistenceStoreHealthSchema
 export type SupervisorCommand =
   | { type: "hello" }
   | { type: "list-sessions" }
-  | { type: "start-session"; sessionId: string; instanceId: string; workspaceId: string; profile: TerminalProfile }
-  | { type: "attach-session"; sessionId: string }
-  | { type: "write-session"; sessionId: string; data: string; sentAtUnixMs?: number }
-  | { type: "resize-session"; sessionId: string; cols: number; rows: number }
-  | { type: "stop-session"; sessionId: string };
+  | { type: "start-session"; sessionId: string; instanceId: string; workspaceId: string; profile: TerminalProfile; requestId?: string }
+  | { type: "attach-session"; sessionId: string; requestId?: string }
+  | { type: "write-session"; sessionId: string; data: string; sentAtUnixMs?: number; requestId?: string }
+  | { type: "resize-session"; sessionId: string; cols: number; rows: number; requestId?: string }
+  | { type: "stop-session"; sessionId: string; requestId?: string };
 
 export type SupervisorEvent =
   | { type: "hello"; snapshot: SupervisorSnapshot }
   | { type: "snapshot"; snapshot: SupervisorSnapshot }
   | { type: "session-data"; sessionId: string; data: string }
   | { type: "session-state"; session: SessionState }
+  | { type: "session-attached"; payload: SessionAttachResult }
   | { type: "session-error"; sessionId: string; error: string };
 
 export type DiagnosticsInfo = {

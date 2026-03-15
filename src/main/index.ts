@@ -11,6 +11,18 @@ import log from "electron-log/main.js";
 import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
 import { runDoctorCheck } from "@main/doctor";
 import { isWatchboardHeadlessTest, shouldDisableGpuForWatchboard } from "@main/headlessTestMode";
+import { readSkillScanCache, shouldLogSlowSkillScan, writeSkillScanCache } from "@main/skillScanCache";
+import {
+  createSessionStartWaiterMap,
+  rejectPendingSessionStart,
+  settlePendingSessionStart,
+  waitForSessionStart
+} from "@main/sessionStartBarrier";
+import {
+  createSupervisorSnapshotBarrier,
+  markSupervisorSnapshotReceived,
+  waitForSupervisorSnapshot
+} from "@main/supervisorSnapshotBarrier";
 import { openDebugPath } from "@main/openDebugPath";
 import { completeTerminalPath } from "@main/pathCompletion";
 import { testSshConnection } from "@main/sshConnection";
@@ -32,6 +44,7 @@ import {
   BoardDocument,
   type AppSettings,
   type DiagnosticsInfo,
+  type SessionAttachResult,
   DEFAULT_SUPERVISOR_PORT,
   type PersistenceStoreHealth,
   SessionState,
@@ -44,6 +57,7 @@ import {
 } from "@shared/schema";
 import { createPerfEvent, type PerfEvent } from "@shared/perf";
 import { PerfRecorder } from "@shared/perfNode";
+import { createRequestId } from "@shared/requestId";
 import { resolveElectronRuntimePaths, type RuntimePaths } from "@shared/runtimePaths";
 import { SupervisorClient } from "@shared/supervisorClient";
 import { readWorkbenchDocument, readWorkbenchDocumentWithHealth, writeWorkbenchDocument } from "@shared/workbench";
@@ -58,9 +72,15 @@ let mainPerfRecorder: PerfRecorder | null = null;
 let rendererPerfRecorder: PerfRecorder | null = null;
 let persistenceHealth: PersistenceStoreHealth[] = [];
 let appResourcesCleanedUp = false;
+const skillScanCache = new Map<string, { entries: SkillEntry[]; expiresAt: number }>();
+const pendingSessionStarts = createSessionStartWaiterMap();
+const SESSION_START_TIMEOUT_MS = 12_000;
+const SUPERVISOR_SNAPSHOT_TIMEOUT_MS = 1_500;
 
 const supervisorClient = new SupervisorClient();
 const sessionStates = new Map<string, SessionState>();
+const supervisorSnapshotBarrier = createSupervisorSnapshotBarrier();
+let supervisorEventRelayAttached = false;
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 function defaultWorkspaceSeed(): { platform: NodeJS.Platform } {
@@ -227,12 +247,16 @@ async function spawnSupervisor(): Promise<void> {
   const root = app.getAppPath();
   const spawnCwd = runtimePaths.appDataDir;
   if (!app.isPackaged) {
-    const tsxPath = join(root, "node_modules", "tsx", "dist", "cli.mjs");
-    const serverPath = join(root, "src", "main", "supervisor", "server.ts");
+    const projectRoot = resolveDevProjectRoot(root);
     const child = process.platform === "win32" ? "node.exe" : "node";
+    const bundledServerPath = join(projectRoot, "dist-node", "main", "supervisor", "server.cjs");
+    const tsxPath = join(projectRoot, "node_modules", "tsx", "dist", "cli.mjs");
+    const sourceServerPath = join(projectRoot, "src", "main", "supervisor", "server.ts");
+    const entryArgs = existsSync(bundledServerPath)
+      ? [bundledServerPath]
+      : [tsxPath, sourceServerPath];
     const args = [
-      tsxPath,
-      serverPath,
+      ...entryArgs,
       "--port",
       String(DEFAULT_SUPERVISOR_PORT),
       "--state",
@@ -244,7 +268,13 @@ async function spawnSupervisor(): Promise<void> {
       "--session-log-dir",
       runtimePaths.sessionLogsDir
     ];
-    log.info("spawning supervisor (dev)", { args, root });
+    log.info("spawning supervisor (dev)", {
+      args,
+      root,
+      projectRoot,
+      bundledServerPath,
+      usingBundledServer: existsSync(bundledServerPath)
+    });
     spawn(child, args, {
       cwd: spawnCwd,
       detached: true,
@@ -285,6 +315,18 @@ async function spawnSupervisor(): Promise<void> {
   }).unref();
 }
 
+function resolveDevProjectRoot(appPath: string): string {
+  const directRoot = appPath;
+  const builtRoot = join(appPath, "..", "..");
+  if (existsSync(join(directRoot, "node_modules", "tsx", "dist", "cli.mjs"))) {
+    return directRoot;
+  }
+  if (existsSync(join(builtRoot, "node_modules", "tsx", "dist", "cli.mjs"))) {
+    return builtRoot;
+  }
+  return directRoot;
+}
+
 async function selectBoard(settings: AppSettings): Promise<BoardDocument> {
   const startedAt = performance.now();
   const activeBoardPath = getActiveBoardPath(settings);
@@ -318,16 +360,29 @@ async function selectBoard(settings: AppSettings): Promise<BoardDocument> {
 }
 
 function setupSupervisorEventRelay(): void {
+  if (supervisorEventRelayAttached) {
+    return;
+  }
+  supervisorEventRelayAttached = true;
   supervisorClient.onEvent((event) => {
     if (event.type === "hello" || event.type === "snapshot") {
+      markSupervisorSnapshotReceived(supervisorSnapshotBarrier);
+      const nextSessionIds = new Set(event.snapshot.sessions.map((session) => session.sessionId));
+      for (const sessionId of sessionStates.keys()) {
+        if (!nextSessionIds.has(sessionId)) {
+          sessionStates.delete(sessionId);
+        }
+      }
       for (const session of event.snapshot.sessions) {
         sessionStates.set(session.sessionId, session);
+        settlePendingSessionStart(pendingSessionStarts, session, logSessionStartBarrier);
       }
       emit("session-state-bulk", event.snapshot.sessions);
       return;
     }
     if (event.type === "session-state") {
       sessionStates.set(event.session.sessionId, event.session);
+      settlePendingSessionStart(pendingSessionStarts, event.session, logSessionStartBarrier);
       emit("session-state", event.session);
       return;
     }
@@ -340,6 +395,7 @@ function setupSupervisorEventRelay(): void {
       return;
     }
     if (event.type === "session-error") {
+      rejectPendingSessionStart(pendingSessionStarts, event.sessionId, new Error(event.error), logSessionStartBarrier);
       log.error("supervisor session error", { sessionId: event.sessionId, error: event.error });
       emit("session-data", {
         sessionId: event.sessionId,
@@ -448,6 +504,15 @@ function setupIpc(): void {
 
   ipcMain.handle("watchboard:list-sessions", async () => {
     supervisorClient.send({ type: "list-sessions" });
+    if (!supervisorSnapshotBarrier.hasReceivedSnapshot) {
+      try {
+        await waitForSupervisorSnapshot(supervisorSnapshotBarrier, SUPERVISOR_SNAPSHOT_TIMEOUT_MS);
+      } catch (error) {
+        log.warn("list-sessions-snapshot-timeout", {
+          message: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
     return [...sessionStates.values()];
   });
 
@@ -489,16 +554,43 @@ function setupIpc(): void {
     });
   });
 
-  ipcMain.handle("watchboard:start-session", async (_event, instance: TerminalInstance) => {
+  ipcMain.handle("watchboard:start-session", async (_event, instance: TerminalInstance, providedRequestId?: string) => {
+    const requestId = providedRequestId ?? createRequestId("start");
     const sessionId = instance.sessionId;
     const requestStartedAt = performance.now();
     const existing = sessionStates.get(sessionId);
+    log.info("start-session-handler-enter", {
+      requestId,
+      sessionId,
+      workspaceId: instance.workspaceId,
+      instanceId: instance.instanceId,
+      paneId: instance.paneId,
+      existingStatus: existing?.status ?? null
+    });
+    recordMainPerf({
+      category: "session",
+      name: "handler-enter",
+      durationMs: 0,
+      sessionId,
+      workspaceId: instance.workspaceId,
+      extra: {
+        requestId,
+        existingStatus: existing?.status ?? null
+      }
+    });
     if (existing && existing.status !== "stopped") {
+      log.info("start-session-short-circuit", {
+        requestId,
+        sessionId,
+        workspaceId: instance.workspaceId,
+        existingStatus: existing.status
+      });
       return existing;
     }
     const launchedAt = new Date().toISOString();
     supervisorClient.send({
       type: "start-session",
+      requestId,
       sessionId,
       instanceId: instance.instanceId,
       workspaceId: instance.workspaceId,
@@ -511,7 +603,8 @@ function setupIpc(): void {
       sessionId,
       extra: {
         workspaceId: instance.workspaceId,
-        target: instance.terminalProfileSnapshot.target
+        target: instance.terminalProfileSnapshot.target,
+        requestId
       }
     });
     void updateWorkspace(
@@ -530,7 +623,8 @@ function setupIpc(): void {
           durationMs: performance.now() - requestStartedAt,
           sessionId,
           extra: {
-            workspaceId: instance.workspaceId
+            workspaceId: instance.workspaceId,
+            requestId
           }
         });
       })
@@ -538,28 +632,75 @@ function setupIpc(): void {
         log.error("workspace-launch-stamp-failed", {
           workspaceId: instance.workspaceId,
           launchedAt,
+          requestId,
           message: error instanceof Error ? error.message : String(error)
         });
       });
-    return (
-      sessionStates.get(sessionId) ?? {
+    log.info("start-session-wait-begin", {
+      requestId,
+      sessionId,
+      workspaceId: instance.workspaceId,
+      pendingWaiterCount: pendingSessionStarts.get(sessionId)?.length ?? 0
+    });
+    try {
+      const session = await waitForSessionStart(
+        sessionStates,
+        pendingSessionStarts,
         sessionId,
-        instanceId: instance.instanceId,
+        SESSION_START_TIMEOUT_MS,
+        logSessionStartBarrier
+      );
+      log.info("start-session-wait-resolved", {
+        requestId,
+        sessionId,
         workspaceId: instance.workspaceId,
-        terminalId: instance.terminalId,
-        pid: null,
-        status: "running-active",
-        lastPtyActivityAt: new Date().toISOString(),
-        lastLogHeartbeatAt: existing?.lastLogHeartbeatAt ?? null,
-        startedAt: launchedAt,
-        endedAt: null,
-        logFilePath: null
-      }
-    );
+        status: session.status,
+        startedAt: session.startedAt
+      });
+      recordMainPerf({
+        category: "session",
+        name: "wait-resolved",
+        durationMs: performance.now() - requestStartedAt,
+        sessionId,
+        workspaceId: instance.workspaceId,
+        extra: {
+          requestId,
+          status: session.status
+        }
+      });
+      return session;
+    } catch (error) {
+      log.error("start-session-wait-failed", {
+        requestId,
+        sessionId,
+        workspaceId: instance.workspaceId,
+        message: error instanceof Error ? error.message : String(error)
+      });
+      recordMainPerf({
+        category: "session",
+        name: "wait-failed",
+        durationMs: performance.now() - requestStartedAt,
+        sessionId,
+        workspaceId: instance.workspaceId,
+        extra: {
+          requestId,
+          message: error instanceof Error ? error.message : String(error)
+        }
+      });
+      throw error;
+    }
   });
 
-  ipcMain.handle("watchboard:stop-session", async (_event, sessionId: string) => {
-    supervisorClient.send({ type: "stop-session", sessionId });
+  ipcMain.handle("watchboard:attach-session", async (_event, sessionId: string, requestId?: string): Promise<SessionAttachResult> => {
+    const existing = sessionStates.get(sessionId);
+    if (!existing) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+    return await waitForSessionAttach(sessionId, requestId);
+  });
+
+  ipcMain.handle("watchboard:stop-session", async (_event, sessionId: string, requestId?: string) => {
+    supervisorClient.send({ type: "stop-session", sessionId, requestId });
   });
 
   ipcMain.on("watchboard:write-session", (_event, sessionId: string, data: string, sentAtUnixMs?: number) => {
@@ -577,8 +718,8 @@ function setupIpc(): void {
     supervisorClient.send({ type: "write-session", sessionId, data, sentAtUnixMs });
   });
 
-  ipcMain.on("watchboard:resize-session", (_event, sessionId: string, cols: number, rows: number) => {
-    supervisorClient.send({ type: "resize-session", sessionId, cols, rows });
+  ipcMain.on("watchboard:resize-session", (_event, sessionId: string, cols: number, rows: number, requestId?: string) => {
+    supervisorClient.send({ type: "resize-session", sessionId, cols, rows, requestId });
   });
 
   ipcMain.handle("watchboard:debug-log", async (_event, message: string, details?: unknown) => {
@@ -597,43 +738,66 @@ function setupIpc(): void {
     return selectBoard(settings);
   });
 
-  ipcMain.handle("watchboard:list-skills", async (_event, location: AgentPathLocation): Promise<SkillEntry[]> => {
-    if (location === "wsl") {
-      if (process.platform !== "win32") {
-        return [];
+  ipcMain.handle(
+    "watchboard:list-skills",
+    async (_event, location: AgentPathLocation, options?: { forceRefresh?: boolean }): Promise<SkillEntry[]> => {
+      const cacheKey = `skills:${location}`;
+      if (!options?.forceRefresh) {
+        const cachedEntries = readSkillScanCache(skillScanCache, cacheKey);
+        if (cachedEntries) {
+          return cachedEntries;
+        }
+      } else {
+        skillScanCache.delete(cacheKey);
       }
-      try {
-        const distro = await resolveWslDistro();
-        return await listWslSkillEntries(distro);
-      } catch {
-        return [];
+
+      const startedAt = performance.now();
+      let skills: SkillEntry[] = [];
+      if (location === "wsl") {
+        if (process.platform !== "win32") {
+          return [];
+        }
+        try {
+          const distro = await resolveWslDistro();
+          skills = await listWslSkillEntries(distro);
+        } catch {
+          return [];
+        }
+      } else {
+        const home = await resolveAgentHome(location);
+        if (!home) {
+          return [];
+        }
+        const seen = new Set<string>();
+        const codexSkillsDir = join(home, ".codex", "skills");
+        skills.push(...scanSkillEntries(codexSkillsDir, "codex", location, seen));
+
+        const claudeCommandsDir = join(home, ".claude", "commands");
+        skills.push(...scanClaudeCommandEntries(claudeCommandsDir, location, seen));
+
+        const claudeSkillsDir = join(home, ".claude", "skills");
+        skills.push(...scanSkillEntries(claudeSkillsDir, "claude-skill", location, seen));
       }
+
+      skills.sort((left, right) => {
+        if (left.source !== right.source) {
+          return left.source.localeCompare(right.source);
+        }
+        return left.name.localeCompare(right.name);
+      });
+
+      const durationMs = performance.now() - startedAt;
+      if (shouldLogSlowSkillScan(durationMs)) {
+        log.warn("skills-scan-slow", {
+          location,
+          durationMs,
+          skillCount: skills.length,
+          forceRefresh: Boolean(options?.forceRefresh)
+        });
+      }
+      return writeSkillScanCache(skillScanCache, cacheKey, skills);
     }
-
-    const home = await resolveAgentHome(location);
-    if (!home) {
-      return [];
-    }
-    const skills: SkillEntry[] = [];
-    const seen = new Set<string>();
-    const codexSkillsDir = join(home, ".codex", "skills");
-    skills.push(...scanSkillEntries(codexSkillsDir, "codex", location, seen));
-
-    const claudeCommandsDir = join(home, ".claude", "commands");
-    skills.push(...scanClaudeCommandEntries(claudeCommandsDir, location, seen));
-
-    const claudeSkillsDir = join(home, ".claude", "skills");
-    skills.push(...scanSkillEntries(claudeSkillsDir, "claude-skill", location, seen));
-
-    skills.sort((left, right) => {
-      if (left.source !== right.source) {
-        return left.source.localeCompare(right.source);
-      }
-      return left.name.localeCompare(right.name);
-    });
-
-    return skills;
-  });
+  );
 
   ipcMain.handle("watchboard:read-skill-content", async (_event, skillPath: string): Promise<string> => {
     try {
@@ -693,6 +857,32 @@ function setupIpc(): void {
       await writeFile(entry.entryPath, content, "utf8");
     }
   );
+}
+
+async function waitForSessionAttach(sessionId: string, requestId?: string): Promise<SessionAttachResult> {
+  return await new Promise<SessionAttachResult>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      dispose();
+      reject(new Error(`Session attach timed out for ${sessionId}`));
+    }, 4_000);
+    const dispose = (): void => {
+      clearTimeout(timeoutId);
+      unsubscribe();
+    };
+    const unsubscribe = supervisorClient.onEvent((event) => {
+      if (event.type !== "session-attached" || event.payload.session.sessionId !== sessionId) {
+        return;
+      }
+      dispose();
+      resolve(event.payload);
+    });
+    try {
+      supervisorClient.send({ type: "attach-session", sessionId, requestId });
+    } catch (error) {
+      dispose();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
 }
 
 async function resolveAgentHome(location: AgentPathLocation): Promise<string | null> {
@@ -781,6 +971,7 @@ async function bootstrap(): Promise<void> {
   process.on("unhandledRejection", (error) => {
     log.error("unhandledRejection", error);
   });
+  setupSupervisorEventRelay();
   await ensureSupervisorReady();
   const settingsResult = await readAppSettingsWithHealth(runtimePaths.settingsStorePath).catch(() => ({
     settings: createDefaultAppSettings(),
@@ -795,7 +986,6 @@ async function bootstrap(): Promise<void> {
     workspaceIds: workspaceResult.list.workspaces.map((workspace) => workspace.id)
   });
   upsertPersistenceHealth(workbenchResult.health);
-  setupSupervisorEventRelay();
   setupIpc();
   createWindow();
 
@@ -829,4 +1019,16 @@ function recordMainPerf(event: Omit<PerfEvent, "ts" | "source">): void {
       ...event
     })
   );
+}
+
+function logSessionStartBarrier(trace: {
+  phase: string;
+  sessionId: string;
+  waiterCount?: number;
+  status?: string;
+  existingStatus?: string | null;
+  timeoutMs?: number;
+  message?: string;
+}): void {
+  log.info("session-start-barrier", trace);
 }

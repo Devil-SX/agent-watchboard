@@ -6,10 +6,13 @@ import { BoardTree } from "@renderer/components/BoardTree";
 import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
 import { DoctorModal } from "@renderer/components/DoctorModal";
 import { appendSessionBacklogChunk } from "@renderer/components/sessionBacklog";
+import { summarizeInstance, summarizeWorkbenchInstances } from "@renderer/components/sessionDebug";
 import { SettingsPanel } from "@renderer/components/SettingsPanel";
 import { SkillsPanel } from "@renderer/components/SkillsPanel";
+import { createTerminalViewState, type TerminalViewState } from "@renderer/components/terminalViewState";
 import { buildSkillsChatSessionKey, createSkillsChatInstance } from "@renderer/components/skillsChatSession";
-import { applyOptimisticSettingsPreference } from "@renderer/components/settingsDraft";
+import { shouldStartSkillsChatSession } from "@renderer/components/skillsChatStartup";
+import { applyOptimisticSettingsPreference, hasSettingsPreferenceChange } from "@renderer/components/settingsDraft";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
@@ -38,6 +41,7 @@ import {
   resolveTerminalStartupCommandWithEnvironment
 } from "@shared/schema";
 import type { SshSecretInput, SshTestResult } from "@shared/ipc";
+import { createRequestId } from "@shared/requestId";
 import {
   addInstanceToWorkbench,
   attachExistingInstance,
@@ -68,6 +72,7 @@ export function App(): ReactElement {
   const workbenchSaveSequenceRef = useRef(0);
   const tabSwitchStartedAtRef = useRef<number | null>(null);
   const sessionBacklogsRef = useRef<Record<string, string>>({});
+  const attachInflightRef = useRef<Map<string, Promise<string>>>(new Map());
   const [workspaceList, setWorkspaceList] = useState<WorkspaceList | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [draftWorkspace, setDraftWorkspace] = useState<Workspace | null>(null);
@@ -77,6 +82,7 @@ export function App(): ReactElement {
   const [settingsDraft, setSettingsDraft] = useState<AppSettings | null>(null);
   const [boardDocument, setBoardDocument] = useState<BoardDocument | null>(null);
   const [sessions, setSessions] = useState<Record<string, SessionState>>({});
+  const [terminalViewStates, setTerminalViewStates] = useState<Record<string, TerminalViewState>>({});
   const [diagnostics, setDiagnostics] = useState<DiagnosticsInfo | null>(null);
   const [error, setError] = useState<string>("");
   const [isDirty, setIsDirty] = useState(false);
@@ -101,6 +107,10 @@ export function App(): ReactElement {
     draftWorkspace && draftWorkspace.id === selectedWorkspaceId ? draftWorkspace : savedWorkspace ?? draftWorkspace;
   const activePaneInstance = workbench?.instances.find((instance) => instance.paneId === workbench.activePaneId) ?? null;
 
+  function emitRendererDebugLog(message: string, details?: unknown): void {
+    void window.watchboard.debugLog(message, details).catch(() => undefined);
+  }
+
   useEffect(() => {
     let unsubscribeData: () => void = () => {};
     let unsubscribeState: () => void = () => {};
@@ -123,6 +133,12 @@ export function App(): ReactElement {
         setSettingsDraft(nextSettings);
         persistedSettingsRef.current = nextSettings;
         setActiveTab(nextSettings.activeMainTab);
+        emitRendererDebugLog("boot-workbench-restored", {
+          activeTab: nextSettings.activeMainTab,
+          workspaceCount: workspaces.workspaces.length,
+          sessionCount: sessionList.length,
+          ...summarizeWorkbenchInstances(nextWorkbench)
+        });
         const initialWorkspace = workspaces.workspaces[0] ?? null;
         if (initialWorkspace) {
           loadWorkspaceIntoEditor(initialWorkspace, setSelectedWorkspaceId, setDraftWorkspace, setIsDirty);
@@ -160,12 +176,31 @@ export function App(): ReactElement {
         if (previous && shallowSessionEquals(previous, session)) {
           return current;
         }
-        if (session.status === "stopped") {
+        const didRestart = previous?.startedAt && previous.startedAt !== session.startedAt;
+        if (session.status === "stopped" || didRestart) {
           delete sessionBacklogsRef.current[session.sessionId];
         }
         return {
           ...current,
           [session.sessionId]: session
+        };
+      });
+      setTerminalViewStates((current) => {
+        const previous = current[session.sessionId];
+        if (session.status === "stopped") {
+          if (!previous) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[session.sessionId];
+          return next;
+        }
+        if (previous?.startedAt === session.startedAt) {
+          return current;
+        }
+        return {
+          ...current,
+          [session.sessionId]: createTerminalViewState(session.startedAt)
         };
       });
     });
@@ -198,6 +233,60 @@ export function App(): ReactElement {
 
   function getSessionBacklog(sessionId: string): string {
     return sessionBacklogsRef.current[sessionId] ?? "";
+  }
+
+  function getTerminalViewState(sessionId: string): TerminalViewState | null {
+    return terminalViewStates[sessionId] ?? null;
+  }
+
+  function updateTerminalViewState(sessionId: string, nextState: TerminalViewState): void {
+    setTerminalViewStates((current) => {
+      const previous = current[sessionId];
+      if (
+        previous?.startedAt === nextState.startedAt &&
+        previous.hasVisibleContent === nextState.hasVisibleContent &&
+        previous.fallbackPhase === nextState.fallbackPhase
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        [sessionId]: nextState
+      };
+    });
+  }
+
+  async function attachSessionBacklog(sessionId: string): Promise<string> {
+    const session = sessions[sessionId];
+    if (session?.status === "stopped") {
+      return "";
+    }
+    const cachedBacklog = sessionBacklogsRef.current[sessionId] ?? "";
+    if (cachedBacklog) {
+      return cachedBacklog;
+    }
+    const inflight = attachInflightRef.current.get(sessionId);
+    if (inflight) {
+      return await inflight;
+    }
+    const requestId = createRequestId("attach");
+    const nextPromise = window.watchboard
+      .attachSession(sessionId, requestId)
+      .then((result) => {
+        if (!sessionBacklogsRef.current[sessionId] && result.backlog) {
+          sessionBacklogsRef.current[sessionId] = result.backlog;
+        }
+        setTerminalViewStates((current) => ({
+          ...current,
+          [sessionId]: current[sessionId] ?? createTerminalViewState(result.session.startedAt)
+        }));
+        return sessionBacklogsRef.current[sessionId] ?? result.backlog;
+      })
+      .finally(() => {
+        attachInflightRef.current.delete(sessionId);
+      });
+    attachInflightRef.current.set(sessionId, nextPromise);
+    return await nextPromise;
   }
 
   useEffect(() => {
@@ -290,18 +379,31 @@ export function App(): ReactElement {
     knownInstanceIdsRef.current = nextKnownIds;
 
     for (const instance of resolveAutoStartCandidates(workbench.instances, previousKnownIds, isInitialBatch)) {
-      if (!instance.autoStart) {
-        continue;
-      }
       const session = sessions[instance.sessionId];
-      if (session && session.status !== "stopped") {
-        continue;
+      let skipReason: string | null = null;
+      if (!instance.autoStart) {
+        skipReason = "auto-start-disabled";
+      } else if (session && session.status !== "stopped") {
+        skipReason = "session-already-live";
+      } else if (autoStartedRef.current.has(instance.sessionId)) {
+        skipReason = "already-requested";
       }
-      if (autoStartedRef.current.has(instance.sessionId)) {
+      emitRendererDebugLog("auto-start-decision", {
+        isInitialBatch,
+        knownInstanceCount: previousKnownIds.size,
+        requestPlanned: !skipReason,
+        skipReason,
+        sessionStatus: session?.status ?? null,
+        ...summarizeInstance(instance)
+      });
+      if (skipReason) {
         continue;
       }
       autoStartedRef.current.add(instance.sessionId);
-      void startWorkspaceSession(instance).catch((startError) => {
+      void startWorkspaceSession(instance, {
+        requestId: createRequestId("autostart"),
+        reason: isInitialBatch ? "initial-batch" : "new-instance"
+      }).catch((startError) => {
         autoStartedRef.current.delete(instance.sessionId);
         setError(messageOf(startError));
       });
@@ -313,6 +415,7 @@ export function App(): ReactElement {
       return;
     }
     const isChatOpen = settingsDraft.skillsPane.isChatOpen;
+    const shouldAllowSkillsChatStartup = shouldStartSkillsChatSession(activeTab, isChatOpen);
     const nextKey = isChatOpen
       ? buildSkillsChatSessionKey(settingsDraft.skillsPane.chatAgent, settingsDraft.skillsPane.location, diagnostics?.platform)
       : null;
@@ -325,6 +428,10 @@ export function App(): ReactElement {
       if (previous) {
         void window.watchboard.stopSession(previous.sessionId).catch(() => undefined);
       }
+      return;
+    }
+
+    if (!shouldAllowSkillsChatStartup) {
       return;
     }
 
@@ -341,7 +448,27 @@ export function App(): ReactElement {
       setSkillsChatError("");
 
       const requestId = ++skillsChatStartRequestRef.current;
-      void window.watchboard.startSession(nextInstance).catch((error) => {
+      const startRequestId = createRequestId("skills-chat");
+      emitRendererDebugLog("session-invoke-begin", {
+        requestId: startRequestId,
+        reason: "skills-chat-open",
+        ...summarizeInstance(nextInstance)
+      });
+      void window.watchboard.startSession(nextInstance, startRequestId).then((session) => {
+        emitRendererDebugLog("session-invoke-resolved", {
+          requestId: startRequestId,
+          reason: "skills-chat-open",
+          sessionId: session.sessionId,
+          status: session.status,
+          startedAt: session.startedAt
+        });
+      }).catch((error) => {
+        emitRendererDebugLog("session-invoke-rejected", {
+          requestId: startRequestId,
+          reason: "skills-chat-open",
+          ...summarizeInstance(nextInstance),
+          message: messageOf(error)
+        });
         if (skillsChatStartRequestRef.current !== requestId) {
           return;
         }
@@ -358,14 +485,34 @@ export function App(): ReactElement {
     if (!session || session.status === "stopped") {
       const requestId = ++skillsChatStartRequestRef.current;
       setSkillsChatError("");
-      void window.watchboard.startSession(current).catch((error) => {
+      const startRequestId = createRequestId("skills-chat");
+      emitRendererDebugLog("session-invoke-begin", {
+        requestId: startRequestId,
+        reason: "skills-chat-restart",
+        ...summarizeInstance(current)
+      });
+      void window.watchboard.startSession(current, startRequestId).then((sessionState) => {
+        emitRendererDebugLog("session-invoke-resolved", {
+          requestId: startRequestId,
+          reason: "skills-chat-restart",
+          sessionId: sessionState.sessionId,
+          status: sessionState.status,
+          startedAt: sessionState.startedAt
+        });
+      }).catch((error) => {
+        emitRendererDebugLog("session-invoke-rejected", {
+          requestId: startRequestId,
+          reason: "skills-chat-restart",
+          ...summarizeInstance(current),
+          message: messageOf(error)
+        });
         if (skillsChatStartRequestRef.current !== requestId) {
           return;
         }
         setSkillsChatError(messageOf(error));
       });
     }
-  }, [diagnostics?.platform, sessions, settingsDraft, skillsChatInstance]);
+  }, [activeTab, diagnostics?.platform, sessions, settingsDraft, skillsChatInstance]);
 
   useEffect(() => {
     if (!workbench || !workbenchDirty) {
@@ -516,6 +663,9 @@ export function App(): ReactElement {
     if (!baseSettings) {
       return;
     }
+    if (!hasSettingsPreferenceChange(baseSettings, update)) {
+      return;
+    }
     const optimisticSettings = applyOptimisticSettingsPreference(baseSettings, update);
     persistedSettingsRef.current = optimisticSettings;
     setSettingsDraft(optimisticSettings);
@@ -550,8 +700,21 @@ export function App(): ReactElement {
     await persistSettingsPreference({ settingsPane: state });
   }
 
-  async function startWorkspaceSession(instance: TerminalInstance): Promise<void> {
+  async function startWorkspaceSession(
+    instance: TerminalInstance,
+    options?: {
+      requestId?: string;
+      reason?: string;
+    }
+  ): Promise<void> {
+    const requestId = options?.requestId ?? createRequestId("session");
     sessionRequestStartedAtRef.current.set(instance.sessionId, performance.now());
+    emitRendererDebugLog("session-invoke-begin", {
+      requestId,
+      reason: options?.reason ?? "workspace-session",
+      activePaneId: workbench?.activePaneId ?? null,
+      ...summarizeInstance(instance)
+    });
     reportRendererPerf({
       category: "session",
       name: "start-request",
@@ -559,14 +722,30 @@ export function App(): ReactElement {
       sessionId: instance.sessionId,
       workspaceId: instance.workspaceId,
       extra: {
-        target: instance.terminalProfileSnapshot.target
+        target: instance.terminalProfileSnapshot.target,
+        requestId,
+        reason: options?.reason ?? "workspace-session"
       }
     });
     try {
-      const session = await window.watchboard.startSession(instance);
+      const session = await window.watchboard.startSession(instance, requestId);
+      emitRendererDebugLog("session-invoke-resolved", {
+        requestId,
+        reason: options?.reason ?? "workspace-session",
+        sessionId: session.sessionId,
+        workspaceId: session.workspaceId,
+        status: session.status,
+        startedAt: session.startedAt
+      });
       markWorkspaceLaunched(instance.workspaceId, session.startedAt);
     } catch (error) {
       sessionRequestStartedAtRef.current.delete(instance.sessionId);
+      emitRendererDebugLog("session-invoke-rejected", {
+        requestId,
+        reason: options?.reason ?? "workspace-session",
+        ...summarizeInstance(instance),
+        message: messageOf(error)
+      });
       throw error;
     }
   }
@@ -1103,6 +1282,9 @@ export function App(): ReactElement {
               settings={settingsDraft}
               isVisible
               getSessionBacklog={getSessionBacklog}
+              getTerminalViewState={getTerminalViewState}
+              attachSessionBacklog={attachSessionBacklog}
+              onTerminalViewStateChange={updateTerminalViewState}
               canCreatePane={workspaceList.workspaces.length > 0}
               canSplitPane={Boolean(activePaneInstance ?? selectedWorkspace)}
               onLayoutChange={handleWorkbenchLayoutChange}
@@ -1149,6 +1331,9 @@ export function App(): ReactElement {
             chatInstance={skillsChatInstance}
             chatError={skillsChatError}
             getSessionBacklog={getSessionBacklog}
+            getTerminalViewState={getTerminalViewState}
+            attachSessionBacklog={attachSessionBacklog}
+            onTerminalViewStateChange={updateTerminalViewState}
             onViewStateChange={(state) => void handleSkillsPaneStateChange(state)}
           />
         </div>
