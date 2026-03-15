@@ -5,6 +5,7 @@ import {
   type DoctorCheckResult,
   type DoctorDiagnosticsDocument,
   DoctorDiagnosticsDocumentSchema,
+  type PersistenceStoreHealth,
   nowIso
 } from "@shared/schema";
 import { expandHomePath } from "@shared/nodePath";
@@ -18,7 +19,8 @@ export async function readDoctorDiagnostics(filePath: string): Promise<DoctorDia
     const initial = DoctorDiagnosticsDocumentSchema.parse({
       version: 1,
       updatedAt: nowIso(),
-      results: {}
+      results: {},
+      persistenceHealth: []
     });
     await writeDoctorDiagnostics(initial, resolvedPath);
     return initial;
@@ -39,5 +41,14 @@ export async function writeDoctorDiagnostics(document: DoctorDiagnosticsDocument
 export async function upsertDoctorCheckResult(result: DoctorCheckResult, filePath: string): Promise<DoctorDiagnosticsDocument> {
   const current = await readDoctorDiagnostics(filePath);
   current.results[result.key] = result;
+  return writeDoctorDiagnostics(current, filePath);
+}
+
+export async function writeDoctorPersistenceHealth(
+  health: PersistenceStoreHealth[],
+  filePath: string
+): Promise<DoctorDiagnosticsDocument> {
+  const current = await readDoctorDiagnostics(filePath);
+  current.persistenceHealth = health;
   return writeDoctorDiagnostics(current, filePath);
 }

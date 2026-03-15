@@ -24,18 +24,33 @@ test("SettingsPanel renders debug actions and runtime log paths", () => {
     supervisorStatePath: "/tmp/agent-watchboard/supervisor-state.json",
     defaultHostBoardPath: "~/.agent-watchboard/board.json",
     defaultWslBoardPath: "~/.agent-watchboard/board.json",
-    storeHealth: []
+    storeHealth: [
+      {
+        key: "settings",
+        path: "/tmp/agent-watchboard/settings.json",
+        status: "healthy",
+        recoveryMode: false,
+        backupPaths: []
+      },
+      {
+        key: "workspaces",
+        path: "/tmp/agent-watchboard/workspaces.json",
+        status: "corrupted",
+        recoveryMode: true,
+        backupPaths: ["/tmp/agent-watchboard/workspaces.json.1.bak"]
+      }
+    ]
   };
 
   const html = renderToStaticMarkup(
     <SettingsPanel
       settings={createDefaultAppSettings({
         settingsPane: {
-          activeCategory: "debug"
+          activeCategory: "storage"
         }
       })}
       diagnostics={diagnostics}
-      viewState={{ activeCategory: "debug" }}
+      viewState={{ activeCategory: "storage" }}
       isDirty={false}
       isSaving={false}
       sshSecretDrafts={{}}
@@ -53,15 +68,14 @@ test("SettingsPanel renders debug actions and runtime log paths", () => {
     />
   );
 
-  assert.match(html, /Debug Paths/);
-  assert.match(html, /Open Logs Folder/);
-  assert.match(html, /Main Log/);
-  assert.match(html, /Supervisor Log/);
-  assert.match(html, /Session Logs/);
-  assert.match(html, /Perf Main Log/);
-  assert.match(html, /Perf Renderer Log/);
-  assert.match(html, /Perf Supervisor Log/);
-  assert.match(html, /\/tmp\/agent-watchboard\/logs\/main\.log/);
+  assert.match(html, /Storage/);
+  assert.match(html, /Settings Store/);
+  assert.match(html, /Workspace Store/);
+  assert.match(html, /Workbench Store/);
+  assert.match(html, /Supervisor State/);
+  assert.match(html, /Status: healthy/);
+  assert.match(html, /Status: corrupted/);
+  assert.match(html, /Recovery mode is active/);
 });
 
 test("SettingsPanel renders SSH environment management controls", () => {

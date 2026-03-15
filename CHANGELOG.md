@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.16] - 2026-03-15
+
+> **Code Stats** | Total: 28736 lines | Delta: +146 (-50) = **+96 net** | Change: **+0.34%** vs v0.7.15
+
+### Added
+- Added Settings storage health summaries and doctor-diagnostics persistence snapshots for store recovery state so corruption, missing-store, and orphaned-reference incidents are visible without opening raw JSON files.
+
+### Fixed
+- Fixed diagnostics payload propagation so persistence store health now reaches both Settings and doctor surfaces through one shared model instead of requiring duplicated ad hoc checks.
+- Added regression coverage for doctor persistence-health snapshots and storage-panel health rendering so recovery hints remain visible even when diagnostics are partially degraded.
+
 ## [0.7.15] - 2026-03-15
 
 > **Code Stats** | Total: 28628 lines | Delta: +306 (-44) = **+262 net** | Change: **+0.92%** vs v0.7.14

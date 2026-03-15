@@ -5,6 +5,7 @@ import {
   TERMINAL_FONT_PRESETS,
   type AppSettings,
   type DiagnosticsInfo,
+  type PersistenceStoreHealth,
   type SettingsCategory,
   type SettingsPaneState,
   type SshEnvironment
@@ -411,25 +412,33 @@ export function SettingsPanel({
         {activeCategory === "storage" && diagnostics ? (
           <section className="settings-section">
             <p className="panel-eyebrow">Storage</p>
-            <div className="diagnostic-line">
-              <span>Settings Store</span>
-              <code>{diagnostics.settingsStorePath}</code>
-            </div>
+            {createStorageEntries(diagnostics).map((entry) => {
+              const health = diagnostics.storeHealth.find((item) => item.key === entry.key);
+              return (
+                <div key={entry.key} className="diagnostic-line">
+                  <span>{entry.label}</span>
+                  <div className="settings-storage-detail">
+                    <code>{entry.path}</code>
+                    <span className="settings-debug-helper">
+                      Status: {formatStoreHealthStatus(health)}
+                      {health?.backupPaths.length ? ` · Backups: ${health.backupPaths.length}` : ""}
+                      {health?.orphanedInstances?.length ? ` · Orphaned runtimes: ${health.orphanedInstances.length}` : ""}
+                    </span>
+                    {health?.recoveryMode ? (
+                      <span className="settings-debug-helper">
+                        Recovery mode is active. Preserve the current file and inspect backups before repairing it.
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
             <div className="diagnostic-line">
               <span>SSH Secrets</span>
-              <code>{diagnostics.sshSecretsPath}</code>
-            </div>
-            <div className="diagnostic-line">
-              <span>Workspace Store</span>
-              <code>{diagnostics.workspaceStorePath}</code>
-            </div>
-            <div className="diagnostic-line">
-              <span>Workbench Store</span>
-              <code>{diagnostics.workbenchStorePath}</code>
-            </div>
-            <div className="diagnostic-line">
-              <span>Supervisor State</span>
-              <code>{diagnostics.supervisorStatePath}</code>
+              <div className="settings-storage-detail">
+                <code>{diagnostics.sshSecretsPath}</code>
+                <span className="settings-debug-helper">Secrets are stored separately from `settings.json`.</span>
+              </div>
             </div>
           </section>
         ) : null}
@@ -513,6 +522,26 @@ function createDebugPathEntries(diagnostics: DiagnosticsInfo): DebugPathEntry[] 
       helperText: "Supervisor performance JSONL log."
     }
   ];
+}
+
+function createStorageEntries(diagnostics: DiagnosticsInfo): Array<{
+  key: PersistenceStoreHealth["key"];
+  label: string;
+  path: string;
+}> {
+  return [
+    { key: "settings", label: "Settings Store", path: diagnostics.settingsStorePath },
+    { key: "workspaces", label: "Workspace Store", path: diagnostics.workspaceStorePath },
+    { key: "workbench", label: "Workbench Store", path: diagnostics.workbenchStorePath },
+    { key: "supervisor-state", label: "Supervisor State", path: diagnostics.supervisorStatePath }
+  ];
+}
+
+function formatStoreHealthStatus(health: PersistenceStoreHealth | undefined): string {
+  if (!health) {
+    return "unknown";
+  }
+  return health.status;
 }
 
 const SETTINGS_CATEGORIES: SettingsCategoryMeta[] = [

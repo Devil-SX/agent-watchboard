@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildDoctorRunSpec, getDoctorTargetKey } from "../../src/main/doctor";
-import { readDoctorDiagnostics, upsertDoctorCheckResult } from "../../src/shared/doctorDiagnostics";
+import { readDoctorDiagnostics, upsertDoctorCheckResult, writeDoctorPersistenceHealth } from "../../src/shared/doctorDiagnostics";
 
 test("getDoctorTargetKey is stable for location and agent pairs", () => {
   assert.equal(getDoctorTargetKey("host", "codex"), "host:codex");
@@ -65,4 +65,26 @@ test("doctor diagnostics persistence upserts the latest result by target key", a
 
   const document = await readDoctorDiagnostics(filePath);
   assert.equal(document.results["host:codex"]?.lastMessage, "OK");
+});
+
+test("doctor diagnostics persistence stores persistence-health snapshots", async () => {
+  const root = mkdtempSync(join(tmpdir(), "watchboard-doctor-store-"));
+  const filePath = join(root, "doctor-diagnostics.json");
+
+  await writeDoctorPersistenceHealth(
+    [
+      {
+        key: "workspaces",
+        path: "/tmp/workspaces.json",
+        status: "corrupted",
+        recoveryMode: true,
+        backupPaths: ["/tmp/workspaces.json.1.bak"]
+      }
+    ],
+    filePath
+  );
+
+  const document = await readDoctorDiagnostics(filePath);
+  assert.equal(document.persistenceHealth[0]?.key, "workspaces");
+  assert.equal(document.persistenceHealth[0]?.status, "corrupted");
 });

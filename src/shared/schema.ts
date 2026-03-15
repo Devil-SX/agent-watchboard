@@ -462,24 +462,27 @@ export const SupervisorSnapshotSchema = z.object({
 
 export type SupervisorSnapshot = z.infer<typeof SupervisorSnapshotSchema>;
 
-export type PersistenceStoreStatus = "healthy" | "missing" | "corrupted" | "orphaned-reference";
+export const PersistenceStoreStatusSchema = z.enum(["healthy", "missing", "corrupted", "orphaned-reference"]);
+export type PersistenceStoreStatus = z.infer<typeof PersistenceStoreStatusSchema>;
 
-export type OrphanedWorkbenchInstanceInfo = {
-  instanceId: string;
-  workspaceId: string;
-  sessionId: string;
-  title: string;
-};
+export const OrphanedWorkbenchInstanceInfoSchema = z.object({
+  instanceId: z.string(),
+  workspaceId: z.string(),
+  sessionId: z.string(),
+  title: z.string()
+});
+export type OrphanedWorkbenchInstanceInfo = z.infer<typeof OrphanedWorkbenchInstanceInfoSchema>;
 
-export type PersistenceStoreHealth = {
-  key: "settings" | "workspaces" | "workbench" | "supervisor-state";
-  path: string;
-  status: PersistenceStoreStatus;
-  recoveryMode: boolean;
-  backupPaths: string[];
-  errorMessage?: string;
-  orphanedInstances?: OrphanedWorkbenchInstanceInfo[];
-};
+export const PersistenceStoreHealthSchema = z.object({
+  key: z.enum(["settings", "workspaces", "workbench", "supervisor-state"]),
+  path: z.string(),
+  status: PersistenceStoreStatusSchema,
+  recoveryMode: z.boolean(),
+  backupPaths: z.array(z.string()).default([]),
+  errorMessage: z.string().optional(),
+  orphanedInstances: z.array(OrphanedWorkbenchInstanceInfoSchema).optional()
+});
+export type PersistenceStoreHealth = z.infer<typeof PersistenceStoreHealthSchema>;
 
 export type SupervisorCommand =
   | { type: "hello" }
@@ -553,7 +556,8 @@ export type DoctorCheckResult = z.infer<typeof DoctorCheckResultSchema>;
 export const DoctorDiagnosticsDocumentSchema = z.object({
   version: z.literal(1).default(1),
   updatedAt: z.string(),
-  results: z.record(z.string(), DoctorCheckResultSchema).default({})
+  results: z.record(z.string(), DoctorCheckResultSchema).default({}),
+  persistenceHealth: z.array(PersistenceStoreHealthSchema).default([])
 });
 export type DoctorDiagnosticsDocument = z.infer<typeof DoctorDiagnosticsDocumentSchema>;
 

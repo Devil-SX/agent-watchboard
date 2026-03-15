@@ -17,7 +17,7 @@ import { attachSshSecretFlags, loadSshSecrets, mergeSshSecretsIntoSettings } fro
 import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery";
 import { listWslSkillEntries, readWslSkillContent } from "@main/wslSkills";
 import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
-import { readDoctorDiagnostics, upsertDoctorCheckResult } from "@shared/doctorDiagnostics";
+import { readDoctorDiagnostics, upsertDoctorCheckResult, writeDoctorPersistenceHealth } from "@shared/doctorDiagnostics";
 import { readAppSettings, readAppSettingsWithHealth, writeAppSettings } from "@shared/settings";
 import {
   AGENT_CONFIG_FILES,
@@ -177,6 +177,11 @@ function upsertPersistenceHealth(nextHealth: PersistenceStoreHealth): void {
       errorMessage: nextHealth.errorMessage
     });
   }
+  void writeDoctorPersistenceHealth(persistenceHealth, runtimePaths.doctorDiagnosticsPath).catch((error) => {
+    log.error("doctor-persistence-health-write-failed", {
+      message: error instanceof Error ? error.message : String(error)
+    });
+  });
 }
 
 async function ensureSupervisorReady(): Promise<void> {

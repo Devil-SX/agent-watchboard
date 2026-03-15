@@ -92,7 +92,8 @@ export function DoctorModal({ diagnostics, isOpen, onClose }: Props): ReactEleme
         results: {
           ...(current?.results ?? {}),
           [result.key]: result
-        }
+        },
+        persistenceHealth: current?.persistenceHealth ?? []
       }));
     } catch (runError) {
       setError(runError instanceof Error ? runError.message : String(runError));
@@ -127,6 +128,16 @@ export function DoctorModal({ diagnostics, isOpen, onClose }: Props): ReactEleme
 
         <div className="doctor-modal-body">
           <aside className="doctor-result-list">
+            {document?.persistenceHealth.length ? (
+              <div className="doctor-result-item">
+                <strong className="doctor-result-heading">Persistence Health</strong>
+                <span>
+                  {document.persistenceHealth
+                    .map((entry) => `${entry.key}: ${entry.status}${entry.recoveryMode ? " (recovery)" : ""}`)
+                    .join(" · ")}
+                </span>
+              </div>
+            ) : null}
             {orderedResults.length > 0 ? (
               orderedResults.map((result) => (
                 <button
