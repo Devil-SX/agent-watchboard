@@ -1,8 +1,11 @@
 import { test, expect, _electron, type ElectronApplication, type Page } from "@playwright/test";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 let app: ElectronApplication;
 let page: Page;
+let testHomeDir = "";
 const ELECTRON_TEST_ARGS = [
   path.resolve("out/main/index.js"),
   "--disable-gpu",
@@ -12,10 +15,13 @@ const ELECTRON_TEST_ARGS = [
 ];
 
 test.beforeAll(async () => {
+  testHomeDir = mkdtempSync(path.join(tmpdir(), "watchboard-e2e-home-"));
+  writeSkillFixture(testHomeDir, "base-skill", "Base skill", "Base skill used to seed the list");
   app = await _electron.launch({
     args: ELECTRON_TEST_ARGS,
     env: {
       ...process.env,
+      HOME: testHomeDir,
       NODE_ENV: "production",
       WATCHBOARD_DISABLE_GPU: "1",
       WATCHBOARD_HEADLESS_TEST: "1"
@@ -27,6 +33,9 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await app?.close();
+  if (testHomeDir) {
+    rmSync(testHomeDir, { recursive: true, force: true });
+  }
 });
 
 test("app window opens and renders main layout", async () => {
@@ -151,3 +160,24 @@ test("settings categories switch content from the left sidebar", async () => {
   await page.getByRole("tab", { name: /^Debug\b/ }).click();
   await expect(content).toContainText("Debug Actions");
 });
+
+test("skills pane refresh discovers skill entries added after initial load", async () => {
+  await page.getByRole("navigation").getByRole("button", { name: "skills", exact: true }).click();
+  await expect(page.locator(".skills-panel")).toBeVisible();
+  await expect(page.locator(".skills-list")).toContainText("Base skill");
+
+  writeSkillFixture(testHomeDir, "issue-created-skill", "Issue-created skill", "Added after app launch");
+  await page.getByRole("button", { name: "Refresh" }).click();
+
+  await expect(page.locator(".skills-list")).toContainText("Issue-created skill");
+});
+
+function writeSkillFixture(homeDir: string, folderName: string, title: string, description: string): void {
+  const skillDir = path.join(homeDir, ".codex", "skills", folderName);
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(
+    path.join(skillDir, "SKILL.md"),
+    `---\nname: ${title}\ndescription: ${description}\n---\n\n# ${title}\n`,
+    "utf8"
+  );
+}

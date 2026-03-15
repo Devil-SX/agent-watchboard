@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added deterministic migration and renderer coverage for legacy board items so old `description` text now lands in `history`, and board detail drawers render `history` / `next` as markdown instead of plain text.
 - Reworked Settings category navigation into a left-hand sidebar so `Board`, `Terminal`, `Environments`, `Storage`, and `Debug` switch reliably while staying visually scannable.
 - Added a headless Electron Playwright regression test for Settings category switching so WSL runs do not depend on a live GPU or display server.
+- Added an explicit Skills pane refresh action plus a headless e2e regression so newly added skill entries can appear in the left sidebar without restarting the app.
 
 ## [0.7.13] - 2026-03-14
 

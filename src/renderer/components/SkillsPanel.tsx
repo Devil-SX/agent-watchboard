@@ -45,6 +45,7 @@ export function SkillsPanel({
   const [selectedSkillPath, setSelectedSkillPath] = useState<string | null>(viewState.selectedSkillMdPath);
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
+  const [reloadVersion, setReloadVersion] = useState(0);
   const [location, setLocation] = useState<AgentPathLocation>(viewState.location);
   const [familyFilter, setFamilyFilter] = useState<SkillFamilyFilter>(viewState.familyFilter);
   const [claudeSubtypeFilter, setClaudeSubtypeFilter] = useState<ClaudeSubtypeFilter>(viewState.claudeSubtypeFilter);
@@ -59,7 +60,7 @@ export function SkillsPanel({
       setSkills(entries);
       setLoading(false);
     });
-  }, [location]);
+  }, [location, reloadVersion]);
 
   useEffect(() => {
     const selectedSkill = skills.find((entry) => entry.skillMdPath === selectedSkillPath) ?? null;
@@ -125,17 +126,6 @@ export function SkillsPanel({
     );
   }
 
-  if (skills.length === 0) {
-    return (
-      <div className="skills-panel">
-        <div className="panel-empty panel-empty-large">
-          <p>No skills found.</p>
-          <span>Place skills in ~/.codex/skills/, ~/.claude/commands/, or ~/.claude/skills/</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="skills-panel">
       <header className="skills-panel-header">
@@ -177,6 +167,9 @@ export function SkillsPanel({
               onChange={setClaudeSubtypeFilter}
             />
           ) : null}
+          <button type="button" className="secondary-button" disabled={loading} onClick={() => setReloadVersion((current) => current + 1)}>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
           <CompactToggleButton
             label="Chat"
             value={isChatOpen ? "Open" : "Off"}
@@ -212,7 +205,12 @@ export function SkillsPanel({
               </button>
             );
           })}
-          {visibleSkills.length === 0 ? (
+          {skills.length === 0 ? (
+            <div className="panel-empty skills-list-empty">
+              <p>No skills found.</p>
+              <span>Add one under ~/.codex/skills/, ~/.claude/commands/, or ~/.claude/skills/, then click Refresh.</span>
+            </div>
+          ) : visibleSkills.length === 0 ? (
             <div className="panel-empty skills-list-empty">
               <p>No skills match the current filters.</p>
             </div>
@@ -246,6 +244,11 @@ export function SkillsPanel({
               </div>
               {content ? <SkillMarkdownDocument content={content} /> : <pre className="skills-content-body">(empty)</pre>}
             </>
+          ) : skills.length === 0 ? (
+            <div className="panel-empty panel-empty-large">
+              <p>No skills loaded yet.</p>
+              <span>Use Refresh after adding a new skill entry.</span>
+            </div>
           ) : (
             <div className="panel-empty panel-empty-large">
               <p>Select a skill to view its content.</p>
