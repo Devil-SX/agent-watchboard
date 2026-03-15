@@ -19,7 +19,8 @@ export type Status = z.infer<typeof StatusSchema>;
 export const BoardItemSchema = z.object({
   id: z.string(),
   name: z.string(),
-  description: z.string().default(""),
+  history: z.string().default(""),
+  next: z.string().default(""),
   status: StatusSchema.default("todo"),
   deadlineAt: z.string().nullable().default(null),
   createdAt: z.string(),

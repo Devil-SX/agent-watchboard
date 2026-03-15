@@ -12,11 +12,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added a dedicated `Environments` Settings category for managing reusable SSH targets, secure credential flags, and preflight connection testing from the desktop UI.
 - Added main-process SSH credential storage backed by Electron secure storage with metadata flags kept in app settings and encrypted secret payloads persisted outside plain `settings.json`.
 - Added SKILL frontmatter metadata parsing for host and WSL skill discovery so `name` and `description` can be surfaced directly in the Skills pane list.
+- Added explicit task-level `history` and `next` fields to the watchboard item model so completed work and next actions can be stored separately instead of sharing one freeform description field.
 
 ### Changed
 - Reworked the existing `Storage` Settings view to focus on persisted store/state files while moving actionable runtime log inspection into the new debug-focused Settings flow.
 - Extended workspace terminal targets to support saved SSH environments so pane/workspace config can launch named remote connections instead of relying on ad hoc startup commands.
 - Reworked Skills list rows to show a primary title plus a muted truncated description line, making SKILL entries scannable without opening each markdown document.
+- Updated `todo_preview` CLI add/update/batch flows and board list serialization to use `history` / `next`, while still mapping legacy `description` input into `history` during migration paths.
 
 ### Fixed
 - Fixed runtime pane tab actions so collapse and close now render inside a dedicated fixed-priority trailing action region, keeping `-` and `×` visible in narrow split panes and preventing long titles or paths from crowding them out.
@@ -25,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Clarified and regression-tested `Working Dir` path completion so partial segment prefixes such as `a/b` continue to suggest `a/bc/` across the supported path-shape helpers.
 - Added schema, persistence, renderer, and SSH command-generation regression coverage for the new environment-management flow so credential flags and workspace launch wiring do not silently regress.
 - Added regression coverage for SKILL metadata parsing and Skills list rendering so description-backed list rows and WSL discovery payloads do not silently regress.
+- Added deterministic migration and renderer coverage for legacy board items so old `description` text now lands in `history`, and board detail drawers render `history` / `next` as markdown instead of plain text.
 
 ## [0.7.13] - 2026-03-14
 

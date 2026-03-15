@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { BoardTree } from "../../src/renderer/components/BoardTree";
+import { BoardItemMarkdownSection, BoardTree } from "../../src/renderer/components/BoardTree";
 import { createItem, createSection } from "../../src/shared/board";
 
 test("BoardTree renders left-aligned SVG status icons for todo doing done", () => {
@@ -18,9 +18,9 @@ test("BoardTree renders left-aligned SVG status icons for todo doing done", () =
           {
             ...createSection("Demo"),
             items: [
-              createItem("Seed", "", "todo"),
-              createItem("Sprout", "", "doing"),
-              createItem("Tree", "", "done")
+              createItem("Seed", "", "", "todo"),
+              createItem("Sprout", "", "", "doing"),
+              createItem("Tree", "", "", "done")
             ]
           }
         ]
@@ -37,4 +37,19 @@ test("BoardTree renders left-aligned SVG status icons for todo doing done", () =
   assert.match(html, /<svg/);
   assert.doesNotMatch(html, /board-item-badge/);
   assert.match(html, /board-deadline-filter-icon is-all/);
+});
+
+test("BoardItemMarkdownSection renders markdown content and empty fallback", () => {
+  const markdownHtml = renderToStaticMarkup(
+    <BoardItemMarkdownSection
+      content={`- done\n- next`}
+      emptyCopy="No content."
+    />
+  );
+  const emptyHtml = renderToStaticMarkup(<BoardItemMarkdownSection content="" emptyCopy="No history yet." />);
+
+  assert.match(markdownHtml, /board-markdown-body/);
+  assert.match(markdownHtml, /<li>done<\/li>/);
+  assert.match(markdownHtml, /<li>next<\/li>/);
+  assert.match(emptyHtml, /No history yet\./);
 });

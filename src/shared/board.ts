@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import {
@@ -16,7 +16,22 @@ import {
 import { expandHomePath } from "@shared/nodePath";
 
 const BOARD_BACKUP_SUFFIX = ".bak";
+const BOARD_LOCK_SUFFIX = ".lock";
 const MAX_BOARD_BACKUPS = 10;
+const BOARD_LOCK_RETRY_MS = 80;
+const BOARD_LOCK_TIMEOUT_MS = 10_000;
+const STALE_BOARD_LOCK_MS = 60_000;
+
+export type BoardOperation =
+  | { op: "add"; topic: string; name: string; history?: string; next?: string; ddl?: string | null }
+  | { op: "done"; name: string }
+  | { op: "doing"; name: string }
+  | { op: "todo"; name: string }
+  | { op: "update"; from: string; to: string; history?: string; next?: string; ddl?: string | null; clearDdl?: boolean }
+  | { op: "ddl"; name: string; date?: string | null; clear?: boolean }
+  | { op: "move"; name: string; topic: string }
+  | { op: "rename-topic"; from: string; to: string }
+  | { op: "remove"; name: string };
 
 function emptyBoardDocument(workspaceId = "default", title = "Agent Board"): BoardDocument {
   const now = nowIso();
@@ -30,32 +45,70 @@ function emptyBoardDocument(workspaceId = "default", title = "Agent Board"): Boa
 }
 
 export async function ensureBoardDocument(boardPath = DEFAULT_BOARD_PATH, workspaceId = "default"): Promise<BoardDocument> {
-  try {
-    return await readBoardDocument(boardPath);
-  } catch (error) {
-    if (!isMissingFileError(error)) {
-      throw error;
+  return withBoardFileLock(boardPath, async (resolvedPath) => {
+    try {
+      return await readBoardDocumentResolved(resolvedPath);
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
+      const initial = emptyBoardDocument(workspaceId);
+      await writeBoardDocumentResolved(resolvedPath, initial);
+      return initial;
     }
-    const initial = emptyBoardDocument(workspaceId);
-    await writeBoardDocument(boardPath, initial);
-    return initial;
-  }
+  });
 }
 
 export async function readBoardDocument(boardPath: string): Promise<BoardDocument> {
-  const content = await readFile(expandHomePath(boardPath), "utf8");
-  return normalizeBoardDocument(JSON.parse(content));
+  return readBoardDocumentResolved(expandHomePath(boardPath));
+}
+
+export async function updateBoardDocument(
+  boardPath: string,
+  mutator: (document: BoardDocument) => void | Promise<void>,
+  workspaceId = "default"
+): Promise<BoardDocument> {
+  return withBoardFileLock(boardPath, async (resolvedPath) => {
+    let document: BoardDocument;
+    try {
+      document = await readBoardDocumentResolved(resolvedPath);
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
+      document = emptyBoardDocument(workspaceId);
+    }
+    await mutator(document);
+    await writeBoardDocumentResolved(resolvedPath, document);
+    return document;
+  });
 }
 
 export async function writeBoardDocument(boardPath: string, document: BoardDocument): Promise<void> {
-  const resolvedPath = expandHomePath(boardPath);
+  await withBoardFileLock(boardPath, async (resolvedPath) => {
+    await writeBoardDocumentResolved(resolvedPath, document);
+  });
+}
+
+async function readBoardDocumentResolved(resolvedPath: string): Promise<BoardDocument> {
+  const content = await readFile(resolvedPath, "utf8");
+  return normalizeBoardDocument(JSON.parse(content));
+}
+
+async function writeBoardDocumentResolved(resolvedPath: string, document: BoardDocument): Promise<void> {
   await mkdir(dirname(resolvedPath), { recursive: true });
   await backupExistingBoard(resolvedPath);
   const normalized = normalizeBoardDocument({
     ...document,
     updatedAt: nowIso()
   });
-  await writeFile(resolvedPath, JSON.stringify(normalized, null, 2), "utf8");
+  const tempPath = `${resolvedPath}.tmp-${randomUUID()}`;
+  try {
+    await writeFile(tempPath, JSON.stringify(normalized, null, 2), "utf8");
+    await rename(tempPath, resolvedPath);
+  } finally {
+    await rm(tempPath, { force: true }).catch(() => undefined);
+  }
 }
 
 async function backupExistingBoard(boardPath: string): Promise<void> {
@@ -92,8 +145,62 @@ function makeBackupTimestamp(): string {
   return nowIso().replaceAll(":", "-").replaceAll(".", "-");
 }
 
+async function withBoardFileLock<T>(boardPath: string, action: (resolvedPath: string) => Promise<T>): Promise<T> {
+  const resolvedPath = expandHomePath(boardPath);
+  const lockPath = `${resolvedPath}${BOARD_LOCK_SUFFIX}`;
+  await mkdir(dirname(resolvedPath), { recursive: true });
+
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      const handle = await open(lockPath, "wx");
+      try {
+        await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: nowIso() }), "utf8");
+        return await action(resolvedPath);
+      } finally {
+        await handle.close().catch(() => undefined);
+        await rm(lockPath, { force: true }).catch(() => undefined);
+      }
+    } catch (error) {
+      if (!isAlreadyExistsError(error)) {
+        throw error;
+      }
+      if (await isStaleLock(lockPath)) {
+        await rm(lockPath, { force: true }).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() - startedAt >= BOARD_LOCK_TIMEOUT_MS) {
+        throw new Error(`Timed out waiting for board lock: ${lockPath}`);
+      }
+      await sleep(BOARD_LOCK_RETRY_MS);
+    }
+  }
+}
+
+async function isStaleLock(lockPath: string): Promise<boolean> {
+  try {
+    const details = await stat(lockPath);
+    return Date.now() - details.mtimeMs >= STALE_BOARD_LOCK_MS;
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 function isMissingFileError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export function createSection(name: string, description = ""): BoardSection {
@@ -105,12 +212,13 @@ export function createSection(name: string, description = ""): BoardSection {
   });
 }
 
-export function createItem(name: string, description = "", status: Status = "todo"): BoardItem {
+export function createItem(name: string, history = "", next = "", status: Status = "todo"): BoardItem {
   const createdAt = nowIso();
   return BoardItemSchema.parse({
     id: randomUUID(),
     name,
-    description,
+    history,
+    next,
     status,
     deadlineAt: null,
     createdAt,
@@ -151,7 +259,8 @@ export function addItemToSection(
   document: BoardDocument,
   sectionName: string,
   itemName: string,
-  description = "",
+  history = "",
+  next = "",
   deadlineAt?: string | null
 ): BoardDocument {
   ensureSection(document, sectionName);
@@ -163,7 +272,7 @@ export function addItemToSection(
   const existing = section.items.find((item) => item.name === itemName);
   if (!existing) {
     section.items.push({
-      ...createItem(itemName, description),
+      ...createItem(itemName, history, next),
       deadlineAt: normalizeDeadlineAt(deadlineAt)
     });
     document.updatedAt = nowIso();
@@ -186,14 +295,15 @@ export function updateNodeText(
   document: BoardDocument,
   fromName: string,
   toName: string,
-  description?: string,
+  history?: string,
+  next?: string,
   deadlineAt?: string | null
 ): BoardDocument {
   const section = document.sections.find((candidate) => candidate.name === fromName);
   if (section) {
     section.name = toName;
-    if (description !== undefined) {
-      section.description = description;
+    if (history !== undefined) {
+      section.description = history;
     }
     document.updatedAt = nowIso();
     return document;
@@ -204,8 +314,11 @@ export function updateNodeText(
     return document;
   }
   found.item.name = toName;
-  if (description !== undefined) {
-    found.item.description = description;
+  if (history !== undefined) {
+    found.item.history = history;
+  }
+  if (next !== undefined) {
+    found.item.next = next;
   }
   if (deadlineAt !== undefined) {
     found.item.deadlineAt = normalizeDeadlineAt(deadlineAt);
@@ -275,6 +388,40 @@ export function removeNode(document: BoardDocument, name: string): BoardDocument
   return document;
 }
 
+export function applyBoardOperation(document: BoardDocument, operation: BoardOperation): BoardDocument {
+  switch (operation.op) {
+    case "add":
+      return addItemToSection(document, operation.topic, operation.name, operation.history ?? "", operation.next ?? "", operation.ddl ?? null);
+    case "done":
+      return updateItemStatus(document, operation.name, "done");
+    case "doing":
+      return updateItemStatus(document, operation.name, "doing");
+    case "todo":
+      return updateItemStatus(document, operation.name, "todo");
+    case "update":
+      return updateNodeText(
+        document,
+        operation.from,
+        operation.to,
+        operation.history,
+        operation.next,
+        operation.clearDdl ? null : (operation.ddl ?? undefined)
+      );
+    case "ddl":
+      return setItemDeadline(document, operation.name, operation.clear ? null : (operation.date ?? null));
+    case "move":
+      return moveItem(document, operation.name, operation.topic);
+    case "rename-topic":
+      return renameSection(document, operation.from, operation.to);
+    case "remove":
+      return removeNode(document, operation.name);
+    default: {
+      const exhaustive: never = operation;
+      return exhaustive;
+    }
+  }
+}
+
 export function serializeBoardAsLines(document: BoardDocument): string[] {
   const lines: string[] = [];
   for (const section of document.sections) {
@@ -288,8 +435,11 @@ export function serializeBoardAsLines(document: BoardDocument): string[] {
       if (item.deadlineAt) {
         suffixParts.push(`ddl ${item.deadlineAt}`);
       }
-      if (item.description) {
-        suffixParts.push(item.description);
+      if (item.next) {
+        suffixParts.push(`next ${item.next}`);
+      }
+      if (item.history) {
+        suffixParts.push(`history ${item.history}`);
       }
       const suffix = suffixParts.length > 0 ? ` - ${suffixParts.join(" · ")}` : "";
       lines.push(`- ${marker} ${item.name}${suffix}`);
@@ -337,10 +487,12 @@ function normalizeItem(raw: unknown, fallbackTime: string): BoardItem {
   const status: Status = candidate.status === "done" ? "done" : candidate.status === "doing" ? "doing" : "todo";
   const createdAt = asString(candidate.createdAt) ?? asString(candidate.updatedAt) ?? fallbackTime;
   const completedAt = status === "done" ? asNullableString(candidate.completedAt) ?? asString(candidate.updatedAt) ?? createdAt : null;
+  const legacyDescription = asString(candidate.description) ?? "";
   return BoardItemSchema.parse({
     id: asString(candidate.id) ?? randomUUID(),
     name: asString(candidate.name) ?? "Untitled Item",
-    description: asString(candidate.description) ?? "",
+    history: asString(candidate.history) ?? legacyDescription,
+    next: asString(candidate.next) ?? "",
     status,
     deadlineAt: normalizeDeadlineAt(asNullableString(candidate.deadlineAt)),
     createdAt,

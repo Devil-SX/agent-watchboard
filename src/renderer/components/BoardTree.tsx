@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { LocationBadge } from "@renderer/components/LocationBadge";
+import { MarkdownDocument } from "@renderer/components/MarkdownDocument";
 import type { AgentPathLocation, BoardDocument, BoardItem, BoardSection } from "@shared/schema";
 
 type Props = {
@@ -270,8 +271,13 @@ export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBo
               </div>
 
               <div className="board-detail-section">
-                <span className="board-detail-label">Description</span>
-                <p>{selected.item.description || "No description."}</p>
+                <span className="board-detail-label">History</span>
+                <BoardItemMarkdownSection content={selected.item.history} emptyCopy="No history yet." />
+              </div>
+
+              <div className="board-detail-section">
+                <span className="board-detail-label">Next</span>
+                <BoardItemMarkdownSection content={selected.item.next} emptyCopy="No next step yet." />
               </div>
 
               <div className="board-detail-grid">
@@ -290,6 +296,13 @@ export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBo
       ) : null}
     </div>
   );
+}
+
+export function BoardItemMarkdownSection({ content, emptyCopy }: { content: string; emptyCopy: string }): ReactElement {
+  if (!content.trim()) {
+    return <p>{emptyCopy}</p>;
+  }
+  return <MarkdownDocument content={content} className="board-markdown-body" />;
 }
 
 const STATUS_FILTER_OPTIONS: Array<{ label: string; value: StatusFilter; content: ReactElement }> = [

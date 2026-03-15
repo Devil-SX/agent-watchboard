@@ -1,10 +1,21 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { createItem, createSection, ensureBoardDocument, serializeBoardAsLines, updateItemStatus, writeBoardDocument } from "../../src/shared/board";
+import {
+  addItemToSection,
+  applyBoardOperation,
+  createItem,
+  createSection,
+  ensureBoardDocument,
+  readBoardDocument,
+  serializeBoardAsLines,
+  updateBoardDocument,
+  updateItemStatus,
+  writeBoardDocument
+} from "../../src/shared/board";
 
 test("ensureBoardDocument only initializes a missing board file", async () => {
   const dir = await mkdtemp(join(tmpdir(), "watchboard-board-"));
@@ -65,7 +76,7 @@ test("updateItemStatus supports todo doing done transitions", () => {
     sections: [
       {
         ...createSection("Demo"),
-        items: [createItem("Task", "demo task", "todo")]
+        items: [createItem("Task", "demo task", "", "todo")]
       }
     ]
   };
@@ -93,9 +104,9 @@ test("serializeBoardAsLines renders three-state task markers", () => {
       {
         ...createSection("Demo"),
         items: [
-          createItem("Seed Task", "", "todo"),
-          createItem("Sprout Task", "", "doing"),
-          createItem("Tree Task", "", "done")
+          createItem("Seed Task", "", "", "todo"),
+          createItem("Sprout Task", "", "", "doing"),
+          createItem("Tree Task", "", "", "done")
         ]
       }
     ]
@@ -106,3 +117,119 @@ test("serializeBoardAsLines renders three-state task markers", () => {
   assert.match(lines, /\[sprout\] Sprout Task/);
   assert.match(lines, /\[tree\] Tree Task/);
 });
+
+test("updateBoardDocument serializes concurrent writes so updates are not lost", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "watchboard-board-"));
+  const boardPath = join(dir, "board.json");
+
+  await ensureBoardDocument(boardPath, "global");
+
+  await Promise.all([
+    updateBoardDocument(boardPath, async (document) => {
+      addItemToSection(document, "Circuit", "SRAM data analysis");
+      await delay(60);
+    }),
+    updateBoardDocument(boardPath, (document) => {
+      addItemToSection(document, "Circuit", "Compute unit analysis");
+    }),
+    updateBoardDocument(boardPath, (document) => {
+      addItemToSection(document, "Circuit", "Voltage droop survey");
+    })
+  ]);
+
+  const document = await readBoardDocument(boardPath);
+  const names = document.sections[0]?.items.map((item) => item.name) ?? [];
+
+  assert.deepEqual(
+    names.sort(),
+    ["Compute unit analysis", "SRAM data analysis", "Voltage droop survey"].sort()
+  );
+});
+
+test("updateBoardDocument clears stale lock files before writing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "watchboard-board-"));
+  const boardPath = join(dir, "board.json");
+  const lockPath = `${boardPath}.lock`;
+
+  await writeFile(lockPath, JSON.stringify({ pid: 123, createdAt: "2026-03-14T00:00:00.000Z" }), "utf8");
+  const staleDate = new Date(Date.now() - 120_000);
+  await utimes(lockPath, staleDate, staleDate);
+
+  await updateBoardDocument(boardPath, (document) => {
+    addItemToSection(document, "Inbox", "Recovered after stale lock");
+  });
+
+  const document = await readBoardDocument(boardPath);
+  const names = document.sections[0]?.items.map((item) => item.name) ?? [];
+  assert.deepEqual(names, ["Recovered after stale lock"]);
+});
+
+test("applyBoardOperation applies mixed batch mutations in order", () => {
+  const document = {
+    version: 1 as const,
+    workspaceId: "global",
+    title: "Agent Board",
+    updatedAt: "2026-03-14T00:00:00.000Z",
+    sections: []
+  };
+
+  applyBoardOperation(document, { op: "add", topic: "Inbox", name: "Task A", history: "first", next: "follow up" });
+  applyBoardOperation(document, { op: "doing", name: "Task A" });
+  applyBoardOperation(document, { op: "ddl", name: "Task A", date: "2026-03-20" });
+  applyBoardOperation(document, { op: "move", name: "Task A", topic: "Active" });
+  applyBoardOperation(document, { op: "rename-topic", from: "Active", to: "Working" });
+  applyBoardOperation(document, { op: "update", from: "Task A", to: "Task A+", history: "renamed", next: "ship it" });
+
+  const section = document.sections.find((item) => item.name === "Working");
+  const task = section?.items[0];
+  assert.ok(section);
+  assert.equal(task?.name, "Task A+");
+  assert.equal(task?.status, "doing");
+  assert.equal(task?.deadlineAt, "2026-03-20");
+  assert.equal(task?.history, "renamed");
+  assert.equal(task?.next, "ship it");
+});
+
+test("readBoardDocument migrates legacy item description into history", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "watchboard-board-"));
+  const boardPath = join(dir, "board.json");
+
+  await writeFile(
+    boardPath,
+    JSON.stringify({
+      version: 1,
+      workspaceId: "global",
+      title: "Agent Board",
+      updatedAt: "2026-03-15T00:00:00.000Z",
+      sections: [
+        {
+          id: "section-1",
+          name: "Inbox",
+          items: [
+            {
+              id: "item-1",
+              name: "Legacy Task",
+              description: "existing notes",
+              status: "todo",
+              createdAt: "2026-03-15T00:00:00.000Z",
+              completedAt: null
+            }
+          ]
+        }
+      ]
+    }),
+    "utf8"
+  );
+
+  const document = await readBoardDocument(boardPath);
+  const item = document.sections[0]?.items[0];
+
+  assert.equal(item?.history, "existing notes");
+  assert.equal(item?.next, "");
+});
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}

@@ -2111,6 +2111,20 @@ textarea::placeholder {
   line-height: 1.65;
 }
 
+.board-markdown-body {
+  color: #edf5f9;
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.board-markdown-body > *:first-child {
+  margin-top: 0;
+}
+
+.board-markdown-body > *:last-child {
+  margin-bottom: 0;
+}
+
 .board-detail-label {
   color: var(--text-muted);
   font-size: 0.76rem;
