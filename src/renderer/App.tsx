@@ -9,6 +9,7 @@ import { appendSessionBacklogChunk } from "@renderer/components/sessionBacklog";
 import { SettingsPanel } from "@renderer/components/SettingsPanel";
 import { SkillsPanel } from "@renderer/components/SkillsPanel";
 import { buildSkillsChatSessionKey, createSkillsChatInstance } from "@renderer/components/skillsChatSession";
+import { applyOptimisticSettingsPreference } from "@renderer/components/settingsDraft";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
@@ -517,28 +518,18 @@ export function App(): ReactElement {
     if (!baseSettings) {
       return;
     }
-    const optimisticSettings = {
-      ...baseSettings,
-      ...update,
-      updatedAt: new Date().toISOString()
-    };
+    const optimisticSettings = applyOptimisticSettingsPreference(baseSettings, update);
     persistedSettingsRef.current = optimisticSettings;
+    setSettingsDraft(optimisticSettings);
     try {
       const saved = await window.watchboard.saveSettings(optimisticSettings);
       persistedSettingsRef.current = saved;
       setSettings(saved);
-      setSettingsDraft((current) =>
-        current
-          ? {
-              ...current,
-              ...update,
-              updatedAt: saved.updatedAt
-            }
-          : saved
-      );
+      setSettingsDraft(saved);
       setError("");
     } catch (saveError) {
       persistedSettingsRef.current = settings;
+      setSettingsDraft(settings);
       setError(messageOf(saveError));
     }
   }

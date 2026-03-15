@@ -55,6 +55,15 @@ export function SkillsPanel({
   const isWindows = diagnosticsProp?.platform === "win32";
 
   useEffect(() => {
+    setLocation(viewState.location);
+    setFamilyFilter(viewState.familyFilter);
+    setClaudeSubtypeFilter(viewState.claudeSubtypeFilter);
+    setSelectedSkillPath(viewState.selectedSkillMdPath);
+    setIsChatOpen(viewState.isChatOpen);
+    setChatAgent(viewState.chatAgent);
+  }, [viewState]);
+
+  useEffect(() => {
     setLoading(true);
     void window.watchboard.listSkills(location).then((entries) => {
       setSkills(entries);
