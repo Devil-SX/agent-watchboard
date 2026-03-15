@@ -92,7 +92,7 @@ async function backupExistingJsonStore(filePath: string): Promise<void> {
     throw error;
   }
 
-  const backupPath = `${filePath}.${makeBackupTimestamp()}.${JSON_STORE_BACKUP_SUFFIX}`;
+  const backupPath = `${filePath}.${makeBackupTimestamp()}.${randomUUID()}.${JSON_STORE_BACKUP_SUFFIX}`;
   await copyFile(filePath, backupPath);
   await trimJsonStoreBackups(filePath);
 }

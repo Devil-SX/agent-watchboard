@@ -32,8 +32,13 @@ test("readWorkbenchDocument does not overwrite corrupted workbench JSON", async 
 
   const document = await readWorkbenchDocument(filePath);
   const raw = await readFile(filePath, "utf8");
+  const initial = createInitialWorkbenchDocument();
 
-  assert.deepEqual(document, createInitialWorkbenchDocument());
+  assert.equal(document.version, 1);
+  assert.equal(document.activePaneId, initial.activePaneId);
+  assert.deepEqual(document.instances, initial.instances);
+  assert.deepEqual(document.layoutModel, initial.layoutModel);
+  assert.match(document.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(raw, "{\"layoutModel\":");
 });
 
