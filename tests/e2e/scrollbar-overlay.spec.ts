@@ -3,13 +3,13 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { launchHeadlessElectronTestApp } from "./headlessElectronApp";
+import { closeHeadlessElectronTestApp, launchHeadlessElectronTestApp } from "./headlessElectronApp";
 
 let app: ElectronApplication;
 let page: Page;
 let testHomeDir = "";
 
-test.beforeAll(async () => {
+test.beforeEach(async () => {
   testHomeDir = mkdtempSync(path.join(tmpdir(), "watchboard-e2e-home-"));
   writeSkillFixture(testHomeDir, "base-skill", "Base skill", "Base skill used to seed the list");
   app = await launchHeadlessElectronTestApp({
@@ -21,20 +21,27 @@ test.beforeAll(async () => {
   await page.waitForLoadState("domcontentloaded");
 });
 
-test.afterAll(async () => {
-  await app?.close();
+test.afterEach(async () => {
+  await closeHeadlessElectronTestApp(app);
   if (testHomeDir) {
     rmSync(testHomeDir, { recursive: true, force: true });
+    testHomeDir = "";
   }
 });
 
-test("app window opens and renders main layout", async () => {
-  // Verify the sidebar and workbench panels are present
+async function waitForAppReady(): Promise<void> {
+  await expect(page.getByRole("navigation", { name: "Main sections" })).toBeVisible();
+  await page.getByRole("navigation").getByRole("button", { name: "terminal", exact: true }).click();
   await expect(page.locator(".workspace-sidebar")).toBeVisible();
   await expect(page.locator(".center-panel")).toBeVisible();
+}
+
+test("app window opens and renders main layout", async () => {
+  await waitForAppReady();
 });
 
 test("workspace sidebar has webkit scrollbar styling", async () => {
+  await waitForAppReady();
   const container = page.locator(".workspace-list");
   await expect(container).toBeVisible();
 
@@ -67,6 +74,7 @@ test("workspace sidebar has webkit scrollbar styling", async () => {
 });
 
 test("scrollbar thumb is transparent by default (invisible until hover)", async () => {
+  await waitForAppReady();
   const container = page.locator(".workspace-list");
   await expect(container).toBeVisible();
 
@@ -115,49 +123,60 @@ test("main navigation tabs are present", async () => {
 });
 
 test("can switch to skills tab", async () => {
-  await page.locator("nav button", { hasText: "skills" }).click();
+  await waitForAppReady();
+  await page.getByRole("navigation").getByRole("button", { name: "skills", exact: true }).click();
   await expect(page.locator(".skills-panel")).toBeVisible();
 });
 
 test("can switch to config tab", async () => {
-  await page.locator("nav button", { hasText: "config" }).click();
-  await expect(page.locator(".agent-config-panel")).toBeVisible();
+  await waitForAppReady();
+  await page.getByRole("navigation").getByRole("button", { name: "config", exact: true }).click();
+  await expect(page.getByText("Agent Config", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Codex Config", exact: true })).toBeVisible();
 });
 
 test("can switch back to terminal tab", async () => {
-  await page.locator("nav button", { hasText: "terminal" }).click();
+  await waitForAppReady();
+  await page.getByRole("navigation").getByRole("button", { name: "terminal", exact: true }).click();
   await expect(page.locator(".workspace-sidebar")).toBeVisible();
   await expect(page.locator(".center-panel")).toBeVisible();
 });
 
 test("settings categories switch content from the left sidebar", async () => {
+  await waitForAppReady();
   await page.getByRole("navigation").getByRole("button", { name: "settings", exact: true }).click();
   await expect(page.locator(".settings-panel")).toBeVisible();
+  await expect(page.getByText("Global Settings")).toBeVisible();
 
-  const sidebar = page.locator(".settings-category-sidebar");
+  const sidebar = page.getByRole("tablist", { name: "Settings categories" });
   await expect(sidebar).toBeVisible();
   await expect(page.getByRole("tab", { name: /^Board\b/ })).toBeVisible();
   await expect(page.getByRole("tab", { name: /^Environments\b/ })).toBeVisible();
   await expect(page.getByRole("tab", { name: /^Debug\b/ })).toBeVisible();
 
-  const content = page.locator(".settings-category-content");
+  const heading = page.getByRole("heading", { level: 2 });
   await page.getByRole("tab", { name: /^Board\b/ }).click();
-  await expect(content).toContainText("Shared Board");
+  await expect(heading).toHaveText("Shared Board");
 
   await page.getByRole("tab", { name: /^Environments\b/ }).click();
-  await expect(content).toContainText("SSH Environments");
+  await expect(heading).toHaveText("Environment Management");
+  await expect(page.getByText("SSH Environments", { exact: true })).toBeVisible();
 
   await page.getByRole("tab", { name: /^Debug\b/ }).click();
-  await expect(content).toContainText("Debug Actions");
+  await expect(heading).toHaveText("Debug Paths");
 });
 
 test("skills pane refresh discovers skill entries added after initial load", async () => {
+  await waitForAppReady();
   await page.getByRole("navigation").getByRole("button", { name: "skills", exact: true }).click();
   await expect(page.locator(".skills-panel")).toBeVisible();
   await expect(page.locator(".skills-list")).toContainText("Base skill");
+  const refreshButton = page.locator(".skills-panel-toolbar .secondary-button");
+  await expect(refreshButton).toBeVisible();
+  await expect(refreshButton).toBeEnabled();
 
   writeSkillFixture(testHomeDir, "issue-created-skill", "Issue-created skill", "Added after app launch");
-  await page.getByRole("button", { name: "Refresh" }).click();
+  await refreshButton.click();
 
   await expect(page.locator(".skills-list")).toContainText("Issue-created skill");
 });

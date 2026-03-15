@@ -33,3 +33,23 @@ export async function launchHeadlessElectronTestApp(overrides: {
     env: createHeadlessElectronTestEnv(overrides.env)
   });
 }
+
+export async function closeHeadlessElectronTestApp(app: ElectronApplication | undefined): Promise<void> {
+  if (!app) {
+    return;
+  }
+
+  try {
+    await app.evaluate(async ({ app: electronApp }) => {
+      await electronApp.quit();
+    });
+  } catch {
+    // Ignore transport errors if the app is already shutting down.
+  }
+
+  try {
+    await app.close();
+  } catch {
+    // Ignore duplicate-close races once the process is gone.
+  }
+}

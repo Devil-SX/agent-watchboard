@@ -123,6 +123,7 @@ End-to-end tests in this repository are expected to run without a graphical desk
   - `WATCHBOARD_HEADLESS_TEST=1`
   - `WATCHBOARD_DISABLE_GPU=1`
   - Chromium flags that disable GPU- and display-dependent rendering paths
+- The main process must keep test windows offscreen and must not surface a desktop-visible `BrowserWindow`.
 - New E2E suites should not call `_electron.launch(...)` directly unless they preserve the same contract.
 
 Stable invocation patterns:
@@ -130,6 +131,11 @@ Stable invocation patterns:
 - Inside this repository: `pnpm todo_preview ...`
 - Outside this repository: `pnpm --dir /home/sdu/pure_auto/agent_watchboard todo_preview ...`
 - In restricted/sandboxed runtimes where `tsx` may fail: `node /home/sdu/pure_auto/agent_watchboard/dist-node/cli/todo-preview.cjs ...`
+
+E2E gating note:
+
+- `pnpm test:e2e` is intentionally blocked on local machines so it does not accidentally start Electron E2E on a developer desktop.
+- CI runs the gated suite through `pnpm test:e2e:ci`, which requires `CI=1` or `CI=true`.
 
 ## `todo_preview` Skill Setup
 

@@ -25,7 +25,8 @@
     "lint:css": "stylelint 'src/**/*.css'",
     "test:unit": "node --import tsx --test tests/unit/**/*.test.ts tests/unit/**/*.test.tsx",
     "test": "playwright test",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/e2e-gate.mjs",
+    "test:e2e:ci": "node scripts/e2e-gate.mjs --ci",
     "test:perf:terminal": "tsx tests/perf/render-terminal-profile.ts"
   },
   "dependencies": {

@@ -48,3 +48,23 @@ test("e2e specs use the shared headless helper instead of direct _electron.launc
     assert.equal(source.includes("launchHeadlessElectronTestApp"), true, `${file} must import the shared headless helper`);
   }
 });
+
+const mainIndexSource = readFileSync(join(process.cwd(), "src", "main", "index.ts"), "utf8");
+
+test("main window keeps headless e2e runs offscreen", () => {
+  assert.equal(mainIndexSource.includes("offscreen: isHeadlessTest"), true);
+});
+
+test("main process cleans up long-lived resources before quit", () => {
+  assert.equal(mainIndexSource.includes("function cleanupAppResources()"), true);
+  assert.equal(mainIndexSource.includes("supervisorClient.disconnect();"), true);
+  assert.equal(mainIndexSource.includes("stopWatchingBoard?.();"), true);
+  assert.equal(mainIndexSource.includes('app.on("before-quit", () => {'), true);
+});
+
+test("headless electron helper includes an explicit quit path for e2e shutdown", () => {
+  const helperSource = readFileSync(join(process.cwd(), "tests", "e2e", "headlessElectronApp.ts"), "utf8");
+
+  assert.equal(helperSource.includes("export async function closeHeadlessElectronTestApp"), true);
+  assert.equal(helperSource.includes("electronApp.quit()"), true);
+});

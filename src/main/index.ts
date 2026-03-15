@@ -57,6 +57,7 @@ let runtimePaths: RuntimePaths;
 let mainPerfRecorder: PerfRecorder | null = null;
 let rendererPerfRecorder: PerfRecorder | null = null;
 let persistenceHealth: PersistenceStoreHealth[] = [];
+let appResourcesCleanedUp = false;
 
 const supervisorClient = new SupervisorClient();
 const sessionStates = new Map<string, SessionState>();
@@ -81,7 +82,9 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
       contextIsolation: true,
-      sandbox: false
+      sandbox: false,
+      // E2E should not surface a desktop window on hosts such as WSLg.
+      offscreen: isHeadlessTest
     }
   });
 
@@ -162,6 +165,21 @@ function logRendererSnapshot(label: string): void {
 
 function emit(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload);
+}
+
+function cleanupAppResources(): void {
+  if (appResourcesCleanedUp) {
+    return;
+  }
+  appResourcesCleanedUp = true;
+
+  stopWatchingBoard?.();
+  stopWatchingBoard = null;
+  supervisorClient.disconnect();
+  mainPerfRecorder?.close();
+  mainPerfRecorder = null;
+  rendererPerfRecorder?.close();
+  rendererPerfRecorder = null;
 }
 
 function upsertPersistenceHealth(nextHealth: PersistenceStoreHealth): void {
@@ -794,8 +812,13 @@ app.on("window-all-closed", () => {
   }
 });
 
+app.on("before-quit", () => {
+  cleanupAppResources();
+});
+
 void bootstrap().catch((error) => {
   log.error(error);
+  cleanupAppResources();
   app.quit();
 });
 
