@@ -9,6 +9,7 @@ import { createDefaultAppSettings, type DiagnosticsInfo } from "../../src/shared
 test("SettingsPanel renders debug actions and runtime log paths", () => {
   const diagnostics: DiagnosticsInfo = {
     platform: "linux",
+    appVersion: "0.9.0",
     appDataDir: "/tmp/agent-watchboard",
     logsDir: "/tmp/agent-watchboard/logs",
     mainLogPath: "/tmp/agent-watchboard/logs/main.log",
@@ -76,6 +77,58 @@ test("SettingsPanel renders debug actions and runtime log paths", () => {
   assert.match(html, /Status: healthy/);
   assert.match(html, /Status: corrupted/);
   assert.match(html, /Recovery mode is active/);
+});
+
+test("SettingsPanel debug section renders app version", () => {
+  const diagnostics: DiagnosticsInfo = {
+    platform: "win32",
+    appVersion: "0.9.0",
+    appDataDir: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard",
+    logsDir: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\logs",
+    mainLogPath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\logs\\main.log",
+    supervisorLogPath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\logs\\supervisor.log",
+    perfMainLogPath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\logs\\perf-main.jsonl",
+    perfRendererLogPath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\logs\\perf-renderer.jsonl",
+    perfSupervisorLogPath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\logs\\perf-supervisor.jsonl",
+    sessionLogsDir: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\logs\\sessions",
+    workspaceStorePath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\workspaces.json",
+    workbenchStorePath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\workbench.json",
+    settingsStorePath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\settings.json",
+    sshSecretsPath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\ssh-secrets.json",
+    supervisorStatePath: "C:\\Users\\tester\\AppData\\Roaming\\agent-watchboard\\supervisor-state.json",
+    defaultHostBoardPath: "~/.agent-watchboard/board.json",
+    defaultWslBoardPath: "~/.agent-watchboard/board.json",
+    storeHealth: []
+  };
+
+  const html = renderToStaticMarkup(
+    <SettingsPanel
+      settings={createDefaultAppSettings({
+        settingsPane: {
+          activeCategory: "debug"
+        }
+      })}
+      diagnostics={diagnostics}
+      viewState={{ activeCategory: "debug" }}
+      isDirty={false}
+      isSaving={false}
+      sshSecretDrafts={{}}
+      sshTestStates={{}}
+      onChange={() => undefined}
+      onAddSshEnvironment={() => undefined}
+      onUpdateSshEnvironment={() => undefined}
+      onDeleteSshEnvironment={() => undefined}
+      onSshSecretChange={() => undefined}
+      onTestSshEnvironment={() => undefined}
+      onViewStateChange={() => undefined}
+      onOpenDebugPath={async () => undefined}
+      onSave={() => undefined}
+      onReset={() => undefined}
+    />
+  );
+
+  assert.match(html, /App Version/);
+  assert.match(html, /0\.9\.0/);
 });
 
 test("SettingsPanel renders SSH environment management controls", () => {

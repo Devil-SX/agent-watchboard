@@ -9,12 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Added a jsdom-backed terminal DOM harness plus fake xterm runtime helpers so renderer lifecycle, resize, backlog replay, and attach-failure paths can be verified without Electron E2E.
 - Added terminal recovery policy coverage, including mutation-style fault-injection cases for empty/control-only backlog, silent-ready recovery eligibility, and redraw retry suppression.
+- Added an application version readout to `Settings -> Debug` so packaged builds can expose their runtime build identity without leaking user-specific executable paths.
+- Added headless Electron coverage that requires the top-level `analysis` navigation tab to remain visible and enter the analysis empty-state guidance flow.
 
 ### Changed
 - Extracted terminal runtime construction and silent-backlog recovery decisions into focused renderer helpers so startup recovery behavior can be tested without binding unit tests to the real xterm modules.
 
 ### Fixed
 - Fixed terminal startup recovery so `terminal ready` panes keep their fallback visible until printable content arrives, while still issuing one safe redraw nudge for the blank-on-start race instead of silently collapsing into an empty terminal.
+- Fixed Windows `dist:win` packaging fallback so a stale `release/win-unpacked` directory can no longer mask a failed `electron-builder` run and be synced as if it were a fresh build.
 
 ## [0.9.0] - 2026-03-16
 

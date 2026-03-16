@@ -526,6 +526,7 @@ function setupIpc(): void {
 
   ipcMain.handle("watchboard:get-diagnostics", async (): Promise<DiagnosticsInfo> => ({
     platform: process.platform,
+    appVersion: app.getVersion(),
     appDataDir: runtimePaths.appDataDir,
     logsDir: runtimePaths.logsDir,
     mainLogPath: runtimePaths.mainLogPath,

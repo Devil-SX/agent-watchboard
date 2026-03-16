@@ -463,6 +463,18 @@ export function SettingsPanel({
             </div>
 
             <div className="settings-debug-list">
+              <div className="settings-debug-row">
+                <div className="settings-debug-details">
+                  <span className="settings-debug-label">App Version</span>
+                  <code>{diagnostics.appVersion}</code>
+                  <span className="settings-debug-helper">
+                    Compare this against the expected release or local build before chasing runtime mismatches.
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-debug-list">
               {debugEntries.map((entry) => (
                 <div key={entry.label} className="settings-debug-row">
                   <div className="settings-debug-details">

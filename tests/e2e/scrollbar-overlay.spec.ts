@@ -119,6 +119,7 @@ test("main navigation tabs are present", async () => {
   await expect(nav.locator("button", { hasText: "terminal" })).toBeVisible();
   await expect(nav.locator("button", { hasText: "skills" })).toBeVisible();
   await expect(nav.locator("button", { hasText: "config" })).toBeVisible();
+  await expect(nav.locator("button", { hasText: "analysis" })).toBeVisible();
   await expect(nav.locator("button", { hasText: "settings" })).toBeVisible();
 });
 
@@ -133,6 +134,14 @@ test("can switch to config tab", async () => {
   await page.getByRole("navigation").getByRole("button", { name: "config", exact: true }).click();
   await expect(page.getByText("Agent Config", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Codex Config", exact: true })).toBeVisible();
+});
+
+test("can switch to analysis tab and see analysis panel guidance", async () => {
+  await waitForAppReady();
+  await page.getByRole("navigation").getByRole("button", { name: "analysis", exact: true }).click();
+  await expect(page.locator(".analysis-panel")).toBeVisible();
+  await expect(page.getByText("Profiler database not found")).toBeVisible();
+  await expect(page.getByText(/Expected at .*profiler\.db/i)).toBeVisible();
 });
 
 test("can switch back to terminal tab", async () => {

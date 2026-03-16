@@ -593,6 +593,7 @@ export type SupervisorEvent =
 
 export type DiagnosticsInfo = {
   platform: NodeJS.Platform;
+  appVersion: string;
   appDataDir: string;
   logsDir: string;
   mainLogPath: string;
