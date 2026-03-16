@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 
-import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
-
 import { reportRendererPerf } from "@renderer/perf";
 import {
   hasMeaningfulTerminalSizeChange,
@@ -18,9 +15,14 @@ import {
   getTerminalFallbackText,
   SILENT_SESSION_READY_TIMEOUT_MS,
   shouldShowTerminalFallback,
-  shouldAutoHideWaitingFallback,
   type TerminalFallbackPhase
 } from "@renderer/components/terminalFallback";
+import {
+  normalizeTerminalOutput,
+  resolveSilentTerminalRecoveryDecision,
+  resolveTerminalBacklogReplayDecision
+} from "@renderer/components/terminalRecoveryPolicy";
+import { createTerminalRuntime } from "@renderer/components/terminalRuntime";
 import { resolveTerminalSessionLifecycle } from "@renderer/components/terminalSessionLifecycle";
 import { createTerminalViewState, type TerminalViewState } from "@renderer/components/terminalViewState";
 import { type AppSettings, type SessionState, type TerminalInstance } from "@shared/schema";
@@ -48,8 +50,8 @@ export function TerminalTabView({
 }: Props): ReactElement {
   const sessionId = instance.sessionId;
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const terminalRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
+  const terminalRef = useRef<ReturnType<typeof createTerminalRuntime>["terminal"] | null>(null);
+  const fitAddonRef = useRef<ReturnType<typeof createTerminalRuntime>["fitAddon"] | null>(null);
   const updateVisibleContentRef = useRef<((nextValue: boolean) => void) | null>(null);
   const performFitRef = useRef<((reason: string) => boolean) | null>(null);
   const scheduleFitRef = useRef<((reason: string) => void) | null>(null);
@@ -101,7 +103,7 @@ export function TerminalTabView({
     }
     const host = hostRef.current;
 
-    const xterm = new Terminal({
+    const { terminal: xterm, fitAddon } = createTerminalRuntime({
       cursorBlink: true,
       fontFamily: settings.terminalFontFamily,
       fontSize: settings.terminalFontSize,
@@ -133,7 +135,6 @@ export function TerminalTabView({
         brightWhite: "#ffffff"
       }
     });
-    const fitAddon = new FitAddon();
     xterm.loadAddon(fitAddon);
     xterm.open(host);
 
@@ -314,12 +315,16 @@ export function TerminalTabView({
     scheduleCommittedResizeRef.current = scheduleCommittedResize;
 
     const requestTerminalRedraw = (reason: string): boolean => {
-      if (redrawNudgeAttemptedRef.current) {
-        return false;
-      }
-      const baseGeometry = lastCommittedGeometryRef.current ?? { cols: xterm.cols, rows: xterm.rows };
-      const nudge = resolveTerminalRedrawNudgeGeometry(baseGeometry);
-      if (!nudge) {
+      const decision = resolveSilentTerminalRecoveryDecision({
+        phase: "waiting",
+        hasVisibleContent: false,
+        localError: "",
+        sessionStatus: session?.status,
+        elapsedMs: SILENT_SESSION_READY_TIMEOUT_MS,
+        redrawAlreadyAttempted: redrawNudgeAttemptedRef.current,
+        geometry: lastCommittedGeometryRef.current ?? { cols: xterm.cols, rows: xterm.rows }
+      });
+      if (decision.kind !== "redraw-nudge") {
         return false;
       }
       redrawNudgeAttemptedRef.current = true;
@@ -330,14 +335,14 @@ export function TerminalTabView({
         sessionId,
         extra: {
           reason,
-          fromCols: nudge.restored.cols,
-          toCols: nudge.transient.cols,
-          rows: nudge.restored.rows
+          fromCols: decision.restored.cols,
+          toCols: decision.transient.cols,
+          rows: decision.restored.rows
         }
       });
-      void window.watchboard.resizeSession(sessionId, nudge.transient.cols, nudge.transient.rows);
+      void window.watchboard.resizeSession(sessionId, decision.transient.cols, decision.transient.rows);
       window.setTimeout(() => {
-        void window.watchboard.resizeSession(sessionId, nudge.restored.cols, nudge.restored.rows);
+        void window.watchboard.resizeSession(sessionId, decision.restored.cols, decision.restored.rows);
       }, 60);
       return true;
     };
@@ -360,10 +365,10 @@ export function TerminalTabView({
       })
       .catch(() => undefined);
 
-    const initialBacklog = normalizeTerminalOutput(sessionBacklogRef.current);
-    if (initialBacklog) {
+    const initialBacklogDecision = resolveTerminalBacklogReplayDecision(sessionBacklogRef.current);
+    if (initialBacklogDecision.kind === "hydrate") {
       updateFallbackPhase("hydrating");
-      xterm.write(initialBacklog, () => {
+      xterm.write(initialBacklogDecision.normalizedBacklog, () => {
         updateVisibleContent(true);
         reportRendererPerf({
           category: "terminal",
@@ -371,7 +376,7 @@ export function TerminalTabView({
           durationMs: 0,
           sessionId,
           extra: {
-            chars: initialBacklog.length
+            chars: initialBacklogDecision.normalizedBacklog.length
           }
         });
       });
@@ -381,13 +386,13 @@ export function TerminalTabView({
           if (sessionBacklogRef.current || !attachedBacklog) {
             return;
           }
-          const normalizedBacklog = normalizeTerminalOutput(attachedBacklog);
-          if (!normalizedBacklog) {
+          const replayDecision = resolveTerminalBacklogReplayDecision(attachedBacklog);
+          if (replayDecision.kind !== "hydrate") {
             return;
           }
           sessionBacklogRef.current = attachedBacklog;
           updateFallbackPhase("hydrating");
-          xterm.write(normalizedBacklog, () => {
+          xterm.write(replayDecision.normalizedBacklog, () => {
             updateVisibleContent(true);
             reportRendererPerf({
               category: "terminal",
@@ -395,7 +400,7 @@ export function TerminalTabView({
               durationMs: 0,
               sessionId,
               extra: {
-                chars: normalizedBacklog.length
+                chars: replayDecision.normalizedBacklog.length
               }
             });
           });
@@ -541,14 +546,14 @@ export function TerminalTabView({
         if (sessionBacklogRef.current || !attachedBacklog) {
           return;
         }
-        const normalizedBacklog = normalizeTerminalOutput(attachedBacklog);
-        if (!normalizedBacklog) {
+        const replayDecision = resolveTerminalBacklogReplayDecision(attachedBacklog);
+        if (replayDecision.kind !== "hydrate") {
           return;
         }
         sessionBacklogRef.current = attachedBacklog;
         fallbackPhaseRef.current = "hydrating";
         setFallbackPhase("hydrating");
-        xterm.write(normalizedBacklog, () => {
+        xterm.write(replayDecision.normalizedBacklog, () => {
           updateVisibleContentRef.current?.(true);
           reportRendererPerf({
             category: "terminal",
@@ -556,7 +561,7 @@ export function TerminalTabView({
             durationMs: 0,
             sessionId,
             extra: {
-              chars: normalizedBacklog.length
+              chars: replayDecision.normalizedBacklog.length
             }
           });
         });
@@ -578,10 +583,19 @@ export function TerminalTabView({
     const startedAt = sessionStartMeasureRef.current ?? performance.now();
     silentReadyTimerRef.current = window.setTimeout(() => {
       const elapsedMs = performance.now() - startedAt;
-      if (!shouldAutoHideWaitingFallback(fallbackPhase, hasVisibleContent, localError, session.status, elapsedMs)) {
-        return;
-      }
-      const didRequestRedraw = requestTerminalRedrawRef.current?.("silent-ready-timeout") ?? false;
+      const recoveryDecision = resolveSilentTerminalRecoveryDecision({
+        phase: fallbackPhase,
+        hasVisibleContent,
+        localError,
+        sessionStatus: session.status,
+        elapsedMs,
+        redrawAlreadyAttempted: redrawNudgeAttemptedRef.current,
+        geometry: lastCommittedGeometryRef.current ?? (terminalRef.current ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows } : null)
+      });
+      const didRequestRedraw =
+        recoveryDecision.kind === "redraw-nudge"
+          ? (requestTerminalRedrawRef.current?.("silent-ready-timeout") ?? false)
+          : false;
       reportRendererPerf({
         category: "interaction",
         name: "session-start-silent-ready",
@@ -590,7 +604,7 @@ export function TerminalTabView({
       });
       void window.watchboard.debugLog("terminal-fallback-hidden", {
         sessionId,
-        reason: didRequestRedraw ? "silent-ready-redraw-nudge" : "silent-ready-timeout",
+        reason: didRequestRedraw ? recoveryDecision.reason : "silent-ready-timeout",
         timeoutMs: SILENT_SESSION_READY_TIMEOUT_MS
       });
     }, SILENT_SESSION_READY_TIMEOUT_MS);
@@ -650,14 +664,4 @@ async function waitForHostReady(host: HTMLDivElement | null): Promise<void> {
     }
     await waitForNextPaint();
   }
-}
-
-function normalizeTerminalOutput(data: string): string {
-  return data
-    .replace(/\u001b\[\?2026[hl]/g, "")
-    .replace(/\u001b\[\>7u/g, "")
-    .replace(/\u001b\[\?u/g, "")
-    .replace(/\u001b\[\?1004[hl]/g, "")
-    .replace(/\u001b\[\?2004[hl]/g, "")
-    .replace(/\u001b\]0;[^\u0007]*(?:\u0007|\u001b\\)/g, "");
 }

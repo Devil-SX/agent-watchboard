@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Added a jsdom-backed terminal DOM harness plus fake xterm runtime helpers so renderer lifecycle, resize, backlog replay, and attach-failure paths can be verified without Electron E2E.
+- Added terminal recovery policy coverage, including mutation-style fault-injection cases for empty/control-only backlog, silent-ready recovery eligibility, and redraw retry suppression.
+
+### Changed
+- Extracted terminal runtime construction and silent-backlog recovery decisions into focused renderer helpers so startup recovery behavior can be tested without binding unit tests to the real xterm modules.
+
+### Fixed
+- Fixed terminal startup recovery so `terminal ready` panes keep their fallback visible until printable content arrives, while still issuing one safe redraw nudge for the blank-on-start race instead of silently collapsing into an empty terminal.
+
 ## [0.9.0] - 2026-03-16
 
 > **Code Stats** | Total: 32246 lines | Delta: +1284 (-212) = **+1072 net** | Change: **+7.40%** vs v0.8.0

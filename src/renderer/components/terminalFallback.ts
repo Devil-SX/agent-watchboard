@@ -68,3 +68,15 @@ export function createTerminalPreviewSnippet(data: string, maxLines = 8, maxChar
 export function containsPrintableTerminalContent(data: string): boolean {
   return toPlainTerminalPreview(data).trim().length > 0;
 }
+
+export function getTerminalSessionIdentity(
+  session:
+    | Pick<SessionState, "status" | "startedAt" | "pid" | "endedAt">
+    | null
+    | undefined
+): string | null {
+  if (!session || session.status === "stopped" || session.endedAt || session.pid === null) {
+    return null;
+  }
+  return `${session.startedAt}:${session.pid}`;
+}
