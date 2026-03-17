@@ -470,12 +470,15 @@ export function TerminalTabView({
       }
       if (fitFrameRef.current !== null) {
         cancelAnimationFrame(fitFrameRef.current);
+        fitFrameRef.current = null;
       }
       if (resizeSettleTimerRef.current !== null) {
         window.clearTimeout(resizeSettleTimerRef.current);
+        resizeSettleTimerRef.current = null;
       }
       if (dataFrameRef.current !== null) {
         cancelAnimationFrame(dataFrameRef.current);
+        dataFrameRef.current = null;
       }
       dataBufferRef.current = "";
       lastCommittedGeometryRef.current = null;

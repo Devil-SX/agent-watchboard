@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-03-17
+
+> **Code Stats** | Total: 35679 lines | Delta: +83 (-1) = **+82 net** | Change: **+0.23%** vs v0.9.6
+
+### Added
+- Added a DOM-harness regression that switches sessions while terminal output and fit work are still queued, proving stale cancelled frame refs cannot block the next terminal instance from rendering fresh output.
+
+### Fixed
+- Fixed terminal setup cleanup so cancelled `fitFrameRef`, `resizeSettleTimerRef`, and `dataFrameRef` handles are nulled alongside being cancelled, preventing stale non-null refs from leaking across session/view reinitialization.
+
 ## [0.9.6] - 2026-03-17
 
 > **Code Stats** | Total: 35597 lines | Delta: +69 (-2) = **+67 net** | Change: **+0.19%** vs v0.9.5

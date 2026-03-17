@@ -485,3 +485,72 @@ test("TerminalTabView live session-data ignores control-only chunks and marks vi
     await view.cleanup();
   }
 });
+
+test("TerminalTabView resets cancelled frame refs before a new session starts streaming output", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    attachResult: "",
+    session: createSession("2026-03-15T00:00:00.000Z", "running-active")
+  });
+  try {
+    await view.flushBoot();
+
+    await act(async () => {
+      globalThis.window.dispatchEvent(
+        new globalThis.CustomEvent("watchboard:terminal-data", {
+          detail: {
+            sessionId: "session-1",
+            data: "stale pending output\r\n",
+            emittedAt: Date.now()
+          }
+        })
+      );
+    });
+
+    const nextInstance = {
+      ...createInstance(),
+      instanceId: "instance-2",
+      paneId: "pane-2",
+      sessionId: "session-2",
+      title: "Runtime #2"
+    };
+    const nextSession = {
+      ...createSession("2026-03-15T00:05:00.000Z", "running-active"),
+      sessionId: "session-2",
+      instanceId: "instance-2"
+    };
+
+    await act(async () => {
+      view.root.render(
+        <TerminalTabView
+          instance={nextInstance as never}
+          session={nextSession as never}
+          settings={createSettings() as never}
+          isVisible={true}
+          sessionBacklog=""
+          terminalViewState={null}
+          attachSessionBacklog={async () => ""}
+          onTerminalViewStateChange={() => undefined}
+        />
+      );
+    });
+
+    await view.flushBoot();
+
+    await act(async () => {
+      globalThis.window.dispatchEvent(
+        new globalThis.CustomEvent("watchboard:terminal-data", {
+          detail: {
+            sessionId: "session-2",
+            data: "fresh output\r\n",
+            emittedAt: Date.now()
+          }
+        })
+      );
+      view.harness.flushRaf();
+    });
+
+    assert.equal(view.getTerminal().writes.includes("fresh output\r\n"), true);
+  } finally {
+    await view.cleanup();
+  }
+});
