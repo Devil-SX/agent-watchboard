@@ -38,6 +38,7 @@ import {
 } from "@main/supervisorSnapshotBarrier";
 import { openDebugPath } from "@main/openDebugPath";
 import { completeTerminalPath } from "@main/pathCompletion";
+import { resolveSessionAttachOutcome } from "@main/sessionAttach";
 import { testSshConnection } from "@main/sshConnection";
 import { attachSshSecretFlags, loadSshSecrets, mergeSshSecretsIntoSettings } from "@main/sshSecrets";
 import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery";
@@ -954,11 +955,16 @@ async function waitForSessionAttach(sessionId: string, requestId?: string): Prom
       unsubscribe();
     };
     const unsubscribe = supervisorClient.onEvent((event) => {
-      if (event.type !== "session-attached" || event.payload.session.sessionId !== sessionId) {
+      const outcome = resolveSessionAttachOutcome(sessionId, event);
+      if (!outcome) {
         return;
       }
       dispose();
-      resolve(event.payload);
+      if (outcome.kind === "resolve") {
+        resolve(outcome.payload);
+        return;
+      }
+      reject(new Error(outcome.error));
     });
     try {
       supervisorClient.send({ type: "attach-session", sessionId, requestId });

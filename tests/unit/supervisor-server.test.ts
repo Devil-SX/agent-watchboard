@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import {
   appendSessionBacklogChunk,
   applyPtyActivityStatus,
+  createAttachSessionEvent,
   createSessionAttachResult,
   isSupervisorEntrypoint,
+  observeSupervisorMessageTask,
   parseSupervisorCommandPayload,
   shouldReuseLiveSession
 } from "../../src/main/supervisor/server";
@@ -117,4 +119,37 @@ test("parseSupervisorCommandPayload parses valid commands unchanged", () => {
   );
 
   assert.deepEqual(command, { type: "list-sessions", requestId: "req-1" });
+});
+
+test("createAttachSessionEvent reports missing sessions as session-error instead of hanging silently", () => {
+  assert.deepEqual(createAttachSessionEvent("missing-session", null), {
+    type: "session-error",
+    sessionId: "missing-session",
+    error: "Session missing-session not found"
+  });
+});
+
+test("createAttachSessionEvent keeps successful attach payloads unchanged", () => {
+  const session = makeSession("running-active");
+  const payload = createSessionAttachResult(session, "PROMPT>");
+
+  assert.deepEqual(createAttachSessionEvent(session.sessionId, payload), {
+    type: "session-attached",
+    payload
+  });
+});
+
+test("observeSupervisorMessageTask logs rejected fire-and-forget handlers", async () => {
+  const errors: Array<{ message: string; details?: unknown }> = [];
+
+  observeSupervisorMessageTask(Promise.reject(new Error("spawn failed")), {
+    error(message, details) {
+      errors.push({ message, details });
+    }
+  });
+
+  await Promise.resolve();
+
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0]?.message, "message-handler-error");
 });

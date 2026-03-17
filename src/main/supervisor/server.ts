@@ -48,6 +48,10 @@ type SupervisorMessageLogger = {
   warn(message: string, details?: unknown): void;
 };
 
+type SupervisorErrorLogger = {
+  error(message: string, details?: unknown): void;
+};
+
 export function applyPtyActivityStatus(state: SessionState): boolean {
   if (state.endedAt) {
     return false;
@@ -80,6 +84,28 @@ export function parseSupervisorCommandPayload(
     });
     return null;
   }
+}
+
+export function createAttachSessionEvent(sessionId: string, attachResult: SessionAttachResult | null): SupervisorEvent {
+  if (attachResult) {
+    return {
+      type: "session-attached",
+      payload: attachResult
+    };
+  }
+  return {
+    type: "session-error",
+    sessionId,
+    error: `Session ${sessionId} not found`
+  };
+}
+
+export function observeSupervisorMessageTask(task: Promise<void>, logger: SupervisorErrorLogger): void {
+  void task.catch((error) => {
+    logger.error("message-handler-error", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  });
 }
 
 class SupervisorServer {
@@ -117,7 +143,7 @@ class SupervisorServer {
     this.server.on("connection", (socket) => {
       this.clients.add(socket);
       socket.on("message", (payload) => {
-        void this.handleMessage(socket, payload.toString());
+        observeSupervisorMessageTask(this.handleMessage(socket, payload.toString()), this.logger);
       });
       socket.on("close", () => {
         this.clients.delete(socket);
@@ -190,12 +216,10 @@ class SupervisorServer {
         break;
       case "attach-session": {
         const session = this.sessions.get(command.sessionId);
-        if (session) {
-          this.send(socket, {
-            type: "session-attached",
-            payload: createSessionAttachResult(session.state, session.backlog)
-          });
-        }
+        this.send(
+          socket,
+          createAttachSessionEvent(command.sessionId, session ? createSessionAttachResult(session.state, session.backlog) : null)
+        );
         break;
       }
       case "write-session":

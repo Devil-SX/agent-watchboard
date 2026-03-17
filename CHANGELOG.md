@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-03-17
+
+> **Code Stats** | Total: 35952 lines | Delta: +185 (-10) = **+175 net** | Change: **+0.49%** vs v0.9.8
+
+### Added
+- Added supervisor attach/rejection helpers plus focused regression coverage for missing-session attach responses and fire-and-forget message-handler rejection logging.
+
+### Fixed
+- Fixed supervisor `attach-session` handling so missing sessions emit a `session-error` response immediately instead of leaving the client to time out.
+- Fixed main-process attach waits so matching `session-error` events reject promptly rather than being ignored until the timeout expires.
+- Fixed fire-and-forget supervisor message dispatch so rejected `handleMessage()` tasks are caught and logged instead of surfacing as unhandled promise rejections.
+
 ## [0.9.8] - 2026-03-17
 
 > **Code Stats** | Total: 35777 lines | Delta: +99 (-1) = **+98 net** | Change: **+0.27%** vs v0.9.7
