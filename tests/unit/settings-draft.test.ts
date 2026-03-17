@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   applyOptimisticSettingsPreference,
+  areAgentConfigPaneStatesEqual,
+  areAnalysisPaneStatesEqual,
   areSkillsPaneStatesEqual,
+  areSettingsPaneStatesEqual,
   hasSettingsPreferenceChange
 } from "../../src/renderer/components/settingsDraft";
 import { createDefaultAppSettings } from "../../src/shared/schema";
@@ -90,5 +93,61 @@ test("hasSettingsPreferenceChange detects chat prompt edits for config pane", ()
       }
     }),
     true
+  );
+});
+
+test("pane equality helpers treat cloned config, analysis, and settings state as unchanged", () => {
+  const baseSettings = createDefaultAppSettings();
+
+  assert.equal(
+    areAgentConfigPaneStatesEqual(
+      { ...baseSettings.agentConfigPane, chatPrompts: { ...baseSettings.agentConfigPane.chatPrompts } },
+      { ...baseSettings.agentConfigPane, chatPrompts: { ...baseSettings.agentConfigPane.chatPrompts } }
+    ),
+    true
+  );
+  assert.equal(
+    areAnalysisPaneStatesEqual(
+      { ...baseSettings.analysisPane },
+      { ...baseSettings.analysisPane }
+    ),
+    true
+  );
+  assert.equal(
+    areSettingsPaneStatesEqual(
+      { ...baseSettings.settingsPane },
+      { ...baseSettings.settingsPane }
+    ),
+    true
+  );
+});
+
+test("hasSettingsPreferenceChange skips no-op updates for config, analysis, and settings panes", () => {
+  const baseSettings = createDefaultAppSettings();
+
+  assert.equal(
+    hasSettingsPreferenceChange(baseSettings, {
+      agentConfigPane: {
+        ...baseSettings.agentConfigPane,
+        chatPrompts: { ...baseSettings.agentConfigPane.chatPrompts }
+      }
+    }),
+    false
+  );
+  assert.equal(
+    hasSettingsPreferenceChange(baseSettings, {
+      analysisPane: {
+        ...baseSettings.analysisPane
+      }
+    }),
+    false
+  );
+  assert.equal(
+    hasSettingsPreferenceChange(baseSettings, {
+      settingsPane: {
+        ...baseSettings.settingsPane
+      }
+    }),
+    false
   );
 });

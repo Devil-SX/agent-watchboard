@@ -22,14 +22,36 @@ export function applyOptimisticSettingsPreference<
   };
 }
 
+const SKILLS_PANE_KEYS = [
+  "location",
+  "familyFilter",
+  "claudeSubtypeFilter",
+  "selectedSkillMdPath",
+  "isChatOpen",
+  "chatAgent"
+] as const satisfies readonly (keyof AppSettings["skillsPane"])[];
+
+const AGENT_CONFIG_PANE_KEYS = [
+  "location",
+  "familyFilter",
+  "activeConfigId",
+  "isChatOpen",
+  "chatAgent"
+] as const satisfies readonly (keyof AppSettings["agentConfigPane"])[];
+
+const SETTINGS_PANE_KEYS = ["activeCategory"] as const satisfies readonly (keyof AppSettings["settingsPane"])[];
+
+const ANALYSIS_PANE_KEYS = [
+  "location",
+  "activeSection",
+  "selectedSessionId",
+  "queryText",
+  "executedQueryText"
+] as const satisfies readonly (keyof AppSettings["analysisPane"])[];
+
 export function areSkillsPaneStatesEqual(baseSettings: AppSettings["skillsPane"], nextSettings: AppSettings["skillsPane"]): boolean {
   return (
-    baseSettings.location === nextSettings.location &&
-    baseSettings.familyFilter === nextSettings.familyFilter &&
-    baseSettings.claudeSubtypeFilter === nextSettings.claudeSubtypeFilter &&
-    baseSettings.selectedSkillMdPath === nextSettings.selectedSkillMdPath &&
-    baseSettings.isChatOpen === nextSettings.isChatOpen &&
-    baseSettings.chatAgent === nextSettings.chatAgent &&
+    arePaneStateFieldsEqual(baseSettings, nextSettings, SKILLS_PANE_KEYS) &&
     areChatPromptSetsEqual(baseSettings.chatPrompts, nextSettings.chatPrompts)
   );
 }
@@ -39,27 +61,17 @@ export function areAgentConfigPaneStatesEqual(
   nextSettings: AppSettings["agentConfigPane"]
 ): boolean {
   return (
-    baseSettings.location === nextSettings.location &&
-    baseSettings.familyFilter === nextSettings.familyFilter &&
-    baseSettings.activeConfigId === nextSettings.activeConfigId &&
-    baseSettings.isChatOpen === nextSettings.isChatOpen &&
-    baseSettings.chatAgent === nextSettings.chatAgent &&
+    arePaneStateFieldsEqual(baseSettings, nextSettings, AGENT_CONFIG_PANE_KEYS) &&
     areChatPromptSetsEqual(baseSettings.chatPrompts, nextSettings.chatPrompts)
   );
 }
 
 export function areSettingsPaneStatesEqual(baseSettings: AppSettings["settingsPane"], nextSettings: AppSettings["settingsPane"]): boolean {
-  return baseSettings.activeCategory === nextSettings.activeCategory;
+  return arePaneStateFieldsEqual(baseSettings, nextSettings, SETTINGS_PANE_KEYS);
 }
 
 export function areAnalysisPaneStatesEqual(baseSettings: AppSettings["analysisPane"], nextSettings: AppSettings["analysisPane"]): boolean {
-  return (
-    baseSettings.location === nextSettings.location &&
-    baseSettings.activeSection === nextSettings.activeSection &&
-    baseSettings.selectedSessionId === nextSettings.selectedSessionId &&
-    baseSettings.queryText === nextSettings.queryText &&
-    baseSettings.executedQueryText === nextSettings.executedQueryText
-  );
+  return arePaneStateFieldsEqual(baseSettings, nextSettings, ANALYSIS_PANE_KEYS);
 }
 
 function areChatPromptSetsEqual(
@@ -72,6 +84,14 @@ function areChatPromptSetsEqual(
     baseSettings.claude.mode === nextSettings.claude.mode &&
     baseSettings.claude.text === nextSettings.claude.text
   );
+}
+
+function arePaneStateFieldsEqual<T extends object, K extends keyof T>(
+  baseSettings: T,
+  nextSettings: T,
+  keys: readonly K[]
+): boolean {
+  return keys.every((key) => baseSettings[key] === nextSettings[key]);
 }
 
 export function hasSettingsPreferenceChange(baseSettings: AppSettings, update: SettingsPreferenceUpdate): boolean {

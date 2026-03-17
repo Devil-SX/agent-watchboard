@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.16] - 2026-03-17
+
+> **Code Stats** | Total: 36530 lines | Delta: +109 (-20) = **+89 net** | Change: **+0.24%** vs v0.9.15
+
+### Added
+- Added settings-draft regression coverage that verifies config, analysis, and settings pane clones remain no-op updates, alongside the existing skills-pane coverage.
+
+### Changed
+- Refactored pane-state equality helpers to use typed field lists for skills, config, analysis, and settings panes, reducing maintenance drift when pane state schemas evolve.
+
 ## [0.9.15] - 2026-03-17
 
 > **Code Stats** | Total: 36441 lines | Delta: +12 (-12) = **+0 net** | Change: **+0.00%** vs v0.9.14
