@@ -41,6 +41,7 @@ import { completeTerminalPath } from "@main/pathCompletion";
 import { testSshConnection } from "@main/sshConnection";
 import { attachSshSecretFlags, loadSshSecrets, mergeSshSecretsIntoSettings } from "@main/sshSecrets";
 import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery";
+import { sendSupervisorCommandOrThrow, sendSupervisorCommandSafely } from "@main/supervisorSendGuard";
 import { listWslSkillEntries, readWslSkillContent } from "@main/wslSkills";
 import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
 import { readDoctorDiagnostics, upsertDoctorCheckResult, writeDoctorPersistenceHealth } from "@shared/doctorDiagnostics";
@@ -517,7 +518,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:list-sessions", async () => {
-    supervisorClient.send({ type: "list-sessions" });
+    sendSupervisorCommandOrThrow(supervisorClient, log, { type: "list-sessions" }, { channel: "watchboard:list-sessions" });
     if (!supervisorSnapshotBarrier.hasReceivedSnapshot) {
       try {
         await waitForSupervisorSnapshot(supervisorSnapshotBarrier, SUPERVISOR_SNAPSHOT_TIMEOUT_MS);
@@ -603,14 +604,27 @@ function setupIpc(): void {
       return existing;
     }
     const launchedAt = new Date().toISOString();
-    supervisorClient.send({
-      type: "start-session",
-      requestId,
-      sessionId,
-      instanceId: instance.instanceId,
-      workspaceId: instance.workspaceId,
-      profile: instance.terminalProfileSnapshot
-    });
+    sendSupervisorCommandOrThrow(
+      supervisorClient,
+      log,
+      {
+        type: "start-session",
+        requestId,
+        sessionId,
+        instanceId: instance.instanceId,
+        workspaceId: instance.workspaceId,
+        profile: instance.terminalProfileSnapshot
+      },
+      {
+        channel: "watchboard:start-session",
+        sessionId,
+        requestId,
+        details: {
+          workspaceId: instance.workspaceId,
+          instanceId: instance.instanceId
+        }
+      }
+    );
     recordMainPerf({
       category: "session",
       name: "dispatch",
@@ -715,7 +729,12 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:stop-session", async (_event, sessionId: string, requestId?: string) => {
-    supervisorClient.send({ type: "stop-session", sessionId, requestId });
+    sendSupervisorCommandOrThrow(
+      supervisorClient,
+      log,
+      { type: "stop-session", sessionId, requestId },
+      { channel: "watchboard:stop-session", sessionId, requestId }
+    );
   });
 
   ipcMain.on("watchboard:write-session", (_event, sessionId: string, data: string, sentAtUnixMs?: number) => {
@@ -730,11 +749,27 @@ function setupIpc(): void {
         }
       });
     }
-    supervisorClient.send({ type: "write-session", sessionId, data, sentAtUnixMs });
+    sendSupervisorCommandSafely(
+      supervisorClient,
+      log,
+      { type: "write-session", sessionId, data, sentAtUnixMs },
+      {
+        channel: "watchboard:write-session",
+        sessionId,
+        details: {
+          bytes: Buffer.byteLength(data, "utf8")
+        }
+      }
+    );
   });
 
   ipcMain.on("watchboard:resize-session", (_event, sessionId: string, cols: number, rows: number, requestId?: string) => {
-    supervisorClient.send({ type: "resize-session", sessionId, cols, rows, requestId });
+    sendSupervisorCommandSafely(
+      supervisorClient,
+      log,
+      { type: "resize-session", sessionId, cols, rows, requestId },
+      { channel: "watchboard:resize-session", sessionId, requestId, details: { cols, rows } }
+    );
   });
 
   ipcMain.handle("watchboard:debug-log", async (_event, message: string, details?: unknown) => {

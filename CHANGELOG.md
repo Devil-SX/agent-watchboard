@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-03-17
+
+> **Code Stats** | Total: 35235 lines | Delta: +213 (-13) = **+200 net** | Change: **+0.57%** vs v0.9.1
+
+### Fixed
+- Fixed main-process supervisor IPC dispatch so `list-sessions`, `start-session`, and `stop-session` now fail with contextual errors instead of raw send throws, while `write-session` and `resize-session` degrade to logged warnings instead of crashing the Electron process when the supervisor socket disappears.
+
 ## [0.9.1] - 2026-03-17
 
 > **Code Stats** | Total: 35035 lines | Delta: +2948 (-159) = **+2789 net** | Change: **+8.65%** vs v0.9.0
