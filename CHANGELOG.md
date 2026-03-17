@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-03-17
+
+> **Code Stats** | Total: 35413 lines | Delta: +140 (-8) = **+132 net** | Change: **+0.37%** vs v0.9.3
+
+### Fixed
+- Fixed board mutation guards so same-section moves no longer reorder items or bump `updatedAt`, and section/item renames now reject in-section name collisions instead of silently creating duplicate board nodes.
+
 ## [0.9.3] - 2026-03-17
 
 > **Code Stats** | Total: 35281 lines | Delta: +48 (-2) = **+46 net** | Change: **+0.13%** vs v0.9.2

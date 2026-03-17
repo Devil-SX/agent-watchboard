@@ -301,6 +301,9 @@ export function updateNodeText(
 ): BoardDocument {
   const section = document.sections.find((candidate) => candidate.name === fromName);
   if (section) {
+    if (toName !== fromName && document.sections.some((candidate) => candidate !== section && candidate.name === toName)) {
+      return document;
+    }
     section.name = toName;
     if (history !== undefined) {
       section.description = history;
@@ -311,6 +314,9 @@ export function updateNodeText(
 
   const found = findItemByName(document, fromName);
   if (!found) {
+    return document;
+  }
+  if (toName !== fromName && found.section.items.some((candidate) => candidate !== found.item && candidate.name === toName)) {
     return document;
   }
   found.item.name = toName;
@@ -342,20 +348,25 @@ export function renameSection(document: BoardDocument, fromName: string, toName:
   if (!section) {
     return document;
   }
+  if (toName !== fromName && document.sections.some((candidate) => candidate !== section && candidate.name === toName)) {
+    return document;
+  }
   section.name = toName;
   document.updatedAt = nowIso();
   return document;
 }
 
 export function moveItem(document: BoardDocument, itemName: string, targetSectionName: string): BoardDocument {
-  let item: BoardItem | null = null;
-  for (const section of document.sections) {
-    const index = section.items.findIndex((candidate) => candidate.name === itemName);
-    if (index >= 0) {
-      item = section.items.splice(index, 1)[0] ?? null;
-      break;
-    }
+  const found = findItemByName(document, itemName);
+  if (!found) {
+    return document;
   }
+  if (found.section.name === targetSectionName) {
+    return document;
+  }
+
+  const index = found.section.items.findIndex((candidate) => candidate === found.item);
+  const item = index >= 0 ? found.section.items.splice(index, 1)[0] ?? null : null;
   if (!item) {
     return document;
   }
