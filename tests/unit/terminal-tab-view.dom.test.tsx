@@ -221,6 +221,11 @@ async function renderTerminal(options?: {
       });
     },
     stabilizeGeometry,
+    unmount: async () => {
+      await act(async () => {
+        root.unmount();
+      });
+    },
     cleanup: async () => {
       await act(async () => {
         root.unmount();
@@ -399,6 +404,31 @@ test("TerminalTabView attach failure does not crash and still reaches redraw rec
     assert.equal(view.getPerfEvents().some((event) => event.name === "session-start-silent-ready"), true);
   } finally {
     await view.cleanup();
+  }
+});
+
+test("TerminalTabView clears pending redraw restore timer on unmount", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    attachResult: "",
+    session: createSession("2026-03-15T00:00:00.000Z", "running-idle")
+  });
+  try {
+    await view.flushBoot();
+    await view.stabilizeGeometry();
+    await view.flushTimeout(3000);
+
+    const resizeCallsBeforeUnmount = view.getResizeCalls().length;
+
+    await view.unmount();
+    await act(async () => {
+      view.harness.advanceTimers(60);
+      view.harness.flushRaf();
+    });
+
+    assert.equal(view.getResizeCalls().length, resizeCallsBeforeUnmount);
+  } finally {
+    configureTerminalRuntimeForTests(null);
+    view.harness.cleanup();
   }
 });
 

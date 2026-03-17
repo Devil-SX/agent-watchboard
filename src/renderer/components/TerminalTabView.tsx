@@ -62,6 +62,7 @@ export function TerminalTabView({
   const resizeSettleTimerRef = useRef<number | null>(null);
   const dataFrameRef = useRef<number | null>(null);
   const silentReadyTimerRef = useRef<number | null>(null);
+  const redrawRestoreTimerRef = useRef<number | null>(null);
   const dataBufferRef = useRef("");
   const lastCommittedGeometryRef = useRef<TerminalGeometry | null>(null);
   const lastObservedHostSizeRef = useRef<TerminalHostSize | null>(null);
@@ -341,7 +342,11 @@ export function TerminalTabView({
         }
       });
       void window.watchboard.resizeSession(sessionId, decision.transient.cols, decision.transient.rows);
-      window.setTimeout(() => {
+      if (redrawRestoreTimerRef.current !== null) {
+        window.clearTimeout(redrawRestoreTimerRef.current);
+      }
+      redrawRestoreTimerRef.current = window.setTimeout(() => {
+        redrawRestoreTimerRef.current = null;
         void window.watchboard.resizeSession(sessionId, decision.restored.cols, decision.restored.rows);
       }, 60);
       return true;
@@ -458,6 +463,10 @@ export function TerminalTabView({
       if (silentReadyTimerRef.current !== null) {
         window.clearTimeout(silentReadyTimerRef.current);
         silentReadyTimerRef.current = null;
+      }
+      if (redrawRestoreTimerRef.current !== null) {
+        window.clearTimeout(redrawRestoreTimerRef.current);
+        redrawRestoreTimerRef.current = null;
       }
       if (fitFrameRef.current !== null) {
         cancelAnimationFrame(fitFrameRef.current);

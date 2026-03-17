@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-03-17
+
+> **Code Stats** | Total: 35281 lines | Delta: +48 (-2) = **+46 net** | Change: **+0.13%** vs v0.9.2
+
+### Fixed
+- Fixed the terminal redraw-nudge restore timer lifecycle so pending 60ms resize restores are tracked, replaced safely, and cancelled on unmount instead of firing stale `resizeSession` calls after the terminal view has already been torn down.
+
 ## [0.9.2] - 2026-03-17
 
 > **Code Stats** | Total: 35235 lines | Delta: +213 (-13) = **+200 net** | Change: **+0.57%** vs v0.9.1
