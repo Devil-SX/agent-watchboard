@@ -44,6 +44,10 @@ const ACTIVE_THRESHOLD_MS = 15_000;
 const IDLE_THRESHOLD_MS = 5 * 60_000;
 const MAX_SESSION_BACKLOG_CHARS = 200_000;
 
+type SupervisorMessageLogger = {
+  warn(message: string, details?: unknown): void;
+};
+
 export function applyPtyActivityStatus(state: SessionState): boolean {
   if (state.endedAt) {
     return false;
@@ -61,6 +65,21 @@ export function applyPtyActivityStatus(state: SessionState): boolean {
 
 export function shouldReuseLiveSession(state: SessionState): boolean {
   return !state.endedAt && state.status !== "stopped";
+}
+
+export function parseSupervisorCommandPayload(
+  raw: string,
+  logger: SupervisorMessageLogger
+): SupervisorCommand | null {
+  try {
+    return JSON.parse(raw) as SupervisorCommand;
+  } catch (error) {
+    logger.warn("invalid-command-payload", {
+      error: error instanceof Error ? error.message : String(error),
+      raw: raw.slice(0, 200)
+    });
+    return null;
+  }
 }
 
 class SupervisorServer {
@@ -152,7 +171,10 @@ class SupervisorServer {
   }
 
   private async handleMessage(socket: WebSocket, raw: string): Promise<void> {
-    const command = JSON.parse(raw) as SupervisorCommand;
+    const command = parseSupervisorCommandPayload(raw, this.logger);
+    if (!command) {
+      return;
+    }
     this.logger.info("received command", {
       type: command.type,
       requestId: "requestId" in command ? command.requestId ?? null : null,

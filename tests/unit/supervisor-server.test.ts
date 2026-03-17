@@ -6,6 +6,7 @@ import {
   applyPtyActivityStatus,
   createSessionAttachResult,
   isSupervisorEntrypoint,
+  parseSupervisorCommandPayload,
   shouldReuseLiveSession
 } from "../../src/main/supervisor/server";
 import type { SessionState } from "../../src/shared/schema";
@@ -89,4 +90,31 @@ test("createSessionAttachResult returns both state and backlog for renderer rest
 
   assert.equal(payload.session.sessionId, session.sessionId);
   assert.equal(payload.backlog, "PROMPT>");
+});
+
+test("parseSupervisorCommandPayload returns null and warns on malformed JSON", () => {
+  const warnings: Array<{ message: string; details?: unknown }> = [];
+
+  const result = parseSupervisorCommandPayload("{invalid", {
+    warn(message, details) {
+      warnings.push({ message, details });
+    }
+  });
+
+  assert.equal(result, null);
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0]?.message, "invalid-command-payload");
+});
+
+test("parseSupervisorCommandPayload parses valid commands unchanged", () => {
+  const command = parseSupervisorCommandPayload(
+    JSON.stringify({ type: "list-sessions", requestId: "req-1" }),
+    {
+      warn() {
+        throw new Error("warn should not be called");
+      }
+    }
+  );
+
+  assert.deepEqual(command, { type: "list-sessions", requestId: "req-1" });
 });

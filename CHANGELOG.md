@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-03-17
+
+> **Code Stats** | Total: 35035 lines | Delta: +2948 (-159) = **+2789 net** | Change: **+8.65%** vs v0.9.0
+
 ### Added
 - Added a jsdom-backed terminal DOM harness plus fake xterm runtime helpers so renderer lifecycle, resize, backlog replay, and attach-failure paths can be verified without Electron E2E.
 - Added terminal recovery policy coverage, including mutation-style fault-injection cases for empty/control-only backlog, silent-ready recovery eligibility, and redraw retry suppression.
@@ -26,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed terminal startup recovery so `terminal ready` panes keep their fallback visible until printable content arrives, while still issuing one safe redraw nudge for the blank-on-start race instead of silently collapsing into an empty terminal.
 - Fixed Windows `dist:win` packaging fallback so a stale `release/win-unpacked` directory can no longer mask a failed `electron-builder` run and be synced as if it were a fresh build.
 - Fixed WSL calls failing with hardcoded `-d Ubuntu-22.04` when WSL interop is unstable by making the distro parameter optional in `resolveWslHome`, `listWslSkillEntries`, `readWslSkillContent`, and doctor diagnostics — all now omit `-d` when no distro is configured, letting Windows use the default distribution.
+- Fixed supervisor websocket message handling so malformed JSON payloads no longer crash the server/client path, listener exceptions no longer block later deliveries, and timed-out connection attempts terminate their orphaned sockets instead of leaking handles.
 
 ## [0.9.0] - 2026-03-16
 

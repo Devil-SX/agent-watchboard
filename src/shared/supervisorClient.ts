@@ -6,9 +6,57 @@ import {
   SupervisorEvent
 } from "@shared/schema";
 
+export type SupervisorClientLogger = {
+  warn(message: string, details?: unknown): void;
+  error(message: string, details?: unknown): void;
+};
+
+const defaultSupervisorClientLogger: SupervisorClientLogger = {
+  warn(message, details) {
+    console.warn(`[supervisor-client] ${message}`, details);
+  },
+  error(message, details) {
+    console.error(`[supervisor-client] ${message}`, details);
+  }
+};
+
+export function parseSupervisorEventPayload(
+  raw: string,
+  logger: SupervisorClientLogger = defaultSupervisorClientLogger
+): SupervisorEvent | null {
+  try {
+    return JSON.parse(raw) as SupervisorEvent;
+  } catch (error) {
+    logger.warn("invalid-event-payload", {
+      error: error instanceof Error ? error.message : String(error),
+      raw: raw.slice(0, 200)
+    });
+    return null;
+  }
+}
+
+export function notifySupervisorEventListeners(
+  listeners: Iterable<(event: SupervisorEvent) => void>,
+  event: SupervisorEvent,
+  logger: SupervisorClientLogger = defaultSupervisorClientLogger
+): void {
+  for (const listener of listeners) {
+    try {
+      listener(event);
+    } catch (error) {
+      logger.error("event-listener-failed", {
+        error: error instanceof Error ? error.message : String(error),
+        eventType: event.type
+      });
+    }
+  }
+}
+
 export class SupervisorClient {
   private socket: WebSocket | null = null;
   private readonly listeners = new Set<(event: SupervisorEvent) => void>();
+
+  constructor(private readonly logger: SupervisorClientLogger = defaultSupervisorClientLogger) {}
 
   async connect(port = DEFAULT_SUPERVISOR_PORT, timeoutMs = 750): Promise<void> {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
@@ -21,16 +69,19 @@ export class SupervisorClient {
         socket.removeListener("open", handleOpen);
         socket.removeListener("error", handleError);
         socket.on("error", () => undefined);
+        // Timeouts can still race a late connect; terminate so we do not leak an orphaned socket.
+        socket.terminate();
         reject(new Error(`Supervisor connection timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       const handleOpen = () => {
         clearTimeout(timeout);
         this.socket = socket;
         socket.on("message", (payload) => {
-          const event = JSON.parse(payload.toString()) as SupervisorEvent;
-          for (const listener of this.listeners) {
-            listener(event);
+          const event = parseSupervisorEventPayload(payload.toString(), this.logger);
+          if (!event) {
+            return;
           }
+          notifySupervisorEventListeners(this.listeners, event, this.logger);
         });
         socket.on("close", () => {
           this.socket = null;
@@ -43,6 +94,7 @@ export class SupervisorClient {
         clearTimeout(timeout);
         socket.removeListener("open", handleOpen);
         socket.removeListener("error", handleError);
+        socket.terminate();
         reject(error);
       };
 
