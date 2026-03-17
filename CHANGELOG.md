@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.11] - 2026-03-17
+
+> **Code Stats** | Total: 36143 lines | Delta: +145 (-4) = **+141 net** | Change: **+0.39%** vs v0.9.10
+
+### Added
+- Added a jsdom regression for Doctor modal reopen races so stale diagnostics loads cannot repopulate the dialog after it has been closed and reopened.
+
+### Fixed
+- Fixed `DoctorModal` diagnostics loading so pending IPC responses are ignored after close/unmount, preventing stale async results from overwriting the active modal state.
+
 ## [0.9.10] - 2026-03-17
 
 > **Code Stats** | Total: 36002 lines | Delta: +80 (-24) = **+56 net** | Change: **+0.16%** vs v0.9.9

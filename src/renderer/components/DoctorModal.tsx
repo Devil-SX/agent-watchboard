@@ -51,10 +51,25 @@ export function DoctorModal({ diagnostics, isOpen, onClose }: Props): ReactEleme
     if (!isOpen) {
       return;
     }
+    let cancelled = false;
     setError("");
-    void window.watchboard.getDoctorDiagnostics().then(setDocument).catch((loadError) => {
-      setError(loadError instanceof Error ? loadError.message : String(loadError));
-    });
+    void window.watchboard
+      .getDoctorDiagnostics()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setDocument(result);
+      })
+      .catch((loadError) => {
+        if (cancelled) {
+          return;
+        }
+        setError(loadError instanceof Error ? loadError.message : String(loadError));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   useEffect(() => {
