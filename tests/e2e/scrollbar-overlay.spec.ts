@@ -105,6 +105,7 @@ test("scrollbar thumb is transparent by default (invisible until hover)", async 
     }
     return null;
   });
+  expect(thumbBg, "scrollbar-thumb CSS rule should exist").not.toBeNull();
   expect(thumbBg).toContain("transparent");
 
   // Clean up

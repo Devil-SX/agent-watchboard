@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.12] - 2026-03-17
+
+> **Code Stats** | Total: 36151 lines | Delta: +9 (-1) = **+8 net** | Change: **+0.02%** vs v0.9.11
+
+### Fixed
+- Fixed the scrollbar overlay E2E assertion so missing `::-webkit-scrollbar-thumb` rules now fail with a clear null-guard diagnostic instead of an opaque `toContain()` error on `null`.
+
 ## [0.9.11] - 2026-03-17
 
 > **Code Stats** | Total: 36143 lines | Delta: +145 (-4) = **+141 net** | Change: **+0.39%** vs v0.9.10

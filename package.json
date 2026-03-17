@@ -1,6 +1,6 @@
 {
   "name": "agent-watchboard",
-  "version": "0.9.11",
+  "version": "0.9.12",
   "private": true,
   "type": "module",
   "description": "Desktop watchboard for orchestrating multiple code agents with PTY-backed terminals and JSON todo boards.",
