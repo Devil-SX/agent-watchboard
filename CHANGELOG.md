@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-03-17
+
+> **Code Stats** | Total: 36002 lines | Delta: +80 (-24) = **+56 net** | Change: **+0.16%** vs v0.9.9
+
+### Added
+- Added analysis/database regression coverage that preserves empty-string session metadata from SQLite rows and a settings/schema regression that keeps fresh analysis-pane defaults aligned with migration defaults.
+
+### Changed
+- Extracted the analysis pane's default SQL into a shared schema constant so fresh settings creation and partial-field schema migration cannot drift apart.
+
+### Fixed
+- Fixed analysis session summary normalization so nullable string fields only coerce `null` and `undefined`, preserving valid falsy database values such as `\"\"` and `0`.
+
 ## [0.9.9] - 2026-03-17
 
 > **Code Stats** | Total: 35952 lines | Delta: +185 (-10) = **+175 net** | Change: **+0.49%** vs v0.9.8

@@ -214,17 +214,21 @@ function normalizeQueryValue(value: unknown): AnalysisQueryValue {
 function normalizeSessionSummaryRow(row: Record<string, unknown>): AnalysisSessionSummary {
   return {
     sessionId: String(row.sessionId ?? ""),
-    logicalSessionId: row.logicalSessionId ? String(row.logicalSessionId) : null,
-    ecosystem: row.ecosystem ? String(row.ecosystem) : null,
-    projectPath: row.projectPath ? String(row.projectPath) : null,
+    logicalSessionId: normalizeNullableString(row.logicalSessionId),
+    ecosystem: normalizeNullableString(row.ecosystem),
+    projectPath: normalizeNullableString(row.projectPath),
     totalTokens: Number(row.totalTokens ?? 0),
     totalToolCalls: Number(row.totalToolCalls ?? 0),
-    parsedAt: row.parsedAt ? String(row.parsedAt) : null,
-    updatedAt: row.updatedAt ? String(row.updatedAt) : null,
+    parsedAt: normalizeNullableString(row.parsedAt),
+    updatedAt: normalizeNullableString(row.updatedAt),
     durationSeconds: row.durationSeconds === null || row.durationSeconds === undefined ? null : Number(row.durationSeconds),
     automationRatio: row.automationRatio === null || row.automationRatio === undefined ? null : Number(row.automationRatio),
-    bottleneck: row.bottleneck ? String(row.bottleneck) : null
+    bottleneck: normalizeNullableString(row.bottleneck)
   };
+}
+
+function normalizeNullableString(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
 }
 
 function parseStatisticsJson(raw: string): Record<string, unknown> | null {

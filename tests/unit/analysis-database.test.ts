@@ -53,7 +53,40 @@ test("listAnalysisSessionsAtPath and getAnalysisSessionDetailAtPath expose persi
   assert.equal((detail?.statistics as { total_messages?: number })?.total_messages, 12);
 });
 
-async function createProfilerFixture(): Promise<string> {
+test("analysis session summary normalization preserves empty strings and zero values", async () => {
+  const dbPath = await createProfilerFixture({
+    sessionId: "session-empty",
+    logicalSessionId: "",
+    ecosystem: "",
+    projectPath: "",
+    durationSeconds: 0,
+    automationRatio: 0,
+    bottleneck: ""
+  });
+
+  const sessions = listAnalysisSessionsAtPath(dbPath, 10);
+  const detail = getAnalysisSessionDetailAtPath(dbPath, "session-empty");
+
+  assert.equal(sessions[0]?.logicalSessionId, "");
+  assert.equal(sessions[0]?.ecosystem, "");
+  assert.equal(sessions[0]?.projectPath, "");
+  assert.equal(sessions[0]?.durationSeconds, 0);
+  assert.equal(sessions[0]?.automationRatio, 0);
+  assert.equal(sessions[0]?.bottleneck, "");
+  assert.equal(detail?.summary.ecosystem, "");
+  assert.equal(detail?.summary.projectPath, "");
+  assert.equal(detail?.summary.bottleneck, "");
+});
+
+async function createProfilerFixture(overrides: Partial<{
+  sessionId: string;
+  logicalSessionId: string | null;
+  ecosystem: string | null;
+  projectPath: string | null;
+  durationSeconds: number | null;
+  automationRatio: number | null;
+  bottleneck: string | null;
+}> = {}): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "watchboard-analysis-db-"));
   const dbPath = join(dir, "profiler.db");
   const db = new DatabaseSync(dbPath);
@@ -94,21 +127,21 @@ async function createProfilerFixture(): Promise<string> {
       parsed_at, updated_at, created_at, duration_seconds, automation_ratio, bottleneck
     ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    "session-1",
-    "logical-1",
-    "codex",
-    "/tmp/demo",
+    overrides.sessionId ?? "session-1",
+    overrides.logicalSessionId ?? "logical-1",
+    overrides.ecosystem ?? "codex",
+    overrides.projectPath ?? "/tmp/demo",
     1024,
     7,
     "2026-03-16T00:00:00.000Z",
     "2026-03-16T00:05:00.000Z",
     "2026-03-16T00:00:00.000Z",
-    300,
-    1.75,
-    "Tool"
+    overrides.durationSeconds ?? 300,
+    overrides.automationRatio ?? 1.75,
+    overrides.bottleneck ?? "Tool"
   );
   db.prepare("insert into session_statistics (session_id, statistics_json) values (?, ?)").run(
-    "session-1",
+    overrides.sessionId ?? "session-1",
     JSON.stringify({ total_messages: 12, compact_events: [] })
   );
   db.close();

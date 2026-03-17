@@ -138,16 +138,14 @@ export const AgentConfigPaneStateSchema = z.object({
 export type AgentConfigPaneState = z.infer<typeof AgentConfigPaneStateSchema>;
 export const AnalysisPaneSectionSchema = z.enum(["overview", "sessions", "query"]);
 export type AnalysisPaneSection = z.infer<typeof AnalysisPaneSectionSchema>;
+export const DEFAULT_ANALYSIS_QUERY =
+  "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;";
 export const AnalysisPaneStateSchema = z.object({
   location: z.enum(["host", "wsl"]).default("host"),
   activeSection: AnalysisPaneSectionSchema.default("overview"),
   selectedSessionId: z.string().nullable().default(null),
-  queryText: z.string().default(
-    "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;"
-  ),
-  executedQueryText: z.string().default(
-    "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;"
-  )
+  queryText: z.string().default(DEFAULT_ANALYSIS_QUERY),
+  executedQueryText: z.string().default(DEFAULT_ANALYSIS_QUERY)
 });
 export type AnalysisPaneState = z.infer<typeof AnalysisPaneStateSchema>;
 export const SettingsCategorySchema = z.enum(["board", "terminal", "environments", "storage", "debug"]);
@@ -226,8 +224,8 @@ export const AppSettingsSchema = z.object({
     location: "host",
     activeSection: "overview",
     selectedSessionId: null,
-    queryText: "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;",
-    executedQueryText: "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;"
+    queryText: DEFAULT_ANALYSIS_QUERY,
+    executedQueryText: DEFAULT_ANALYSIS_QUERY
   }),
   settingsPane: SettingsPaneStateSchema.default({
     activeCategory: "board"

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { readAppSettings, writeAppSettings } from "../../src/shared/settings";
+import { DEFAULT_ANALYSIS_QUERY, createDefaultAppSettings } from "../../src/shared/schema";
 
 test("readAppSettings migrates a legacy single boardPath into the selected env slot", async () => {
   const dir = await mkdtemp(join(tmpdir(), "watchboard-settings-"));
@@ -198,4 +199,11 @@ test("writeAppSettings serializes concurrent writes to the same file", async () 
 
   const raw = JSON.parse(await readFile(settingsPath, "utf8")) as Record<string, unknown>;
   assert.ok(["skills", "config", "settings"].includes(String(raw.activeMainTab)));
+});
+
+test("analysis pane defaults stay aligned between schema migration and fresh settings creation", () => {
+  const defaults = createDefaultAppSettings();
+
+  assert.equal(defaults.analysisPane.queryText, DEFAULT_ANALYSIS_QUERY);
+  assert.equal(defaults.analysisPane.executedQueryText, DEFAULT_ANALYSIS_QUERY);
 });
