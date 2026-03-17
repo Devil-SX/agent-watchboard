@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.13] - 2026-03-17
+
+> **Code Stats** | Total: 36231 lines | Delta: +107 (-27) = **+80 net** | Change: **+0.22%** vs v0.9.12
+
+### Added
+- Added session-start barrier regression coverage for concurrent same-session waiters, shared rejection fan-out, and late timeout/duplicate-settlement no-op behavior after a waiter has already resolved.
+
 ## [0.9.12] - 2026-03-17
 
 > **Code Stats** | Total: 36151 lines | Delta: +9 (-1) = **+8 net** | Change: **+0.02%** vs v0.9.11
