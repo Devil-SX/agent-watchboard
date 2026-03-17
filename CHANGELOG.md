@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-03-17
+
+> **Code Stats** | Total: 35530 lines | Delta: +142 (-25) = **+117 net** | Change: **+0.33%** vs v0.9.4
+
+### Added
+- Added regression coverage for WSL nested skill discovery, skill scan cache eviction/direct-clone behavior, and `parseSkillFrontmatter` edge cases including missing closing delimiters, BOM-prefixed files, quoted values, and valueless metadata.
+
+### Changed
+- Simplified the `list-skills` WSL path so the main-process IPC handler now relies on `listWslSkillEntries()` as the single warning-producing boundary instead of keeping a dead outer catch and duplicate warning-classification logic.
+
+### Fixed
+- Fixed WSL skill scanning so nested `SKILL.md` files under directories that already contain a parent `SKILL.md` remain discoverable instead of being silently skipped.
+- Fixed skill scan cache writes so expired entries are evicted opportunistically and fresh writes return the stored clone directly instead of paying for a redundant second clone.
+- Fixed skill frontmatter parsing so valid `name` and `description` metadata are preserved even when the closing `---` delimiter is missing.
+
 ## [0.9.4] - 2026-03-17
 
 > **Code Stats** | Total: 35413 lines | Delta: +140 (-8) = **+132 net** | Change: **+0.37%** vs v0.9.3

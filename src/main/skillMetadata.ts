@@ -39,7 +39,7 @@ export function parseSkillFrontmatter(content: string): SkillFrontmatter {
     }
   }
 
-  return {};
+  return metadata;
 }
 
 function normalizeFrontmatterValue(value: string): string {

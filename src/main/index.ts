@@ -77,7 +77,7 @@ import { SupervisorClient } from "@shared/supervisorClient";
 import { readWorkbenchDocument, readWorkbenchDocumentWithHealth, writeWorkbenchDocument } from "@shared/workbench";
 import { deleteWorkspace, readWorkspaceList, readWorkspaceListWithHealth, upsertWorkspace } from "@shared/workspaces";
 import { updateWorkspace } from "@shared/workspaces";
-import { type SkillListResult, type SkillListWarningCode } from "@shared/ipc";
+import { type SkillListResult } from "@shared/ipc";
 
 let mainWindow: BrowserWindow | null = null;
 let stopWatchingBoard: (() => void) | null = null;
@@ -811,15 +811,7 @@ function setupIpc(): void {
         if (process.platform !== "win32") {
           return result;
         }
-        try {
-          result = await listWslSkillEntries();
-        } catch (error) {
-          result = {
-            entries: [],
-            warning: `WSL skill scan failed: ${error instanceof Error ? error.message : String(error)}`,
-            warningCode: classifySkillScanFailure(error)
-          };
-        }
+        result = await listWslSkillEntries();
       } else {
         const home = await resolveAgentHome(location);
         if (!home) {
@@ -992,11 +984,6 @@ async function resolveAgentHome(location: AgentPathLocation): Promise<string | n
   } catch {
     return null;
   }
-}
-
-function classifySkillScanFailure(error: unknown): SkillListWarningCode {
-  const message = error instanceof Error ? error.message : String(error);
-  return /timed out|timeout/i.test(message) ? "scan-timeout" : "scan-error";
 }
 
 async function buildAgentConfigEntry(configId: AgentConfigFileId, location: AgentPathLocation): Promise<AgentConfigEntry> {

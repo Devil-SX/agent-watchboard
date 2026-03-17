@@ -22,6 +22,46 @@ description: Build and sync Agent Watchboard to C:\\Tools\\win-unpacked on Windo
   });
 });
 
+test("parseSkillFrontmatter keeps parsed metadata when the closing delimiter is missing", () => {
+  const metadata = parseSkillFrontmatter(`---
+name: my-tool
+description: useful tool
+`);
+
+  assert.deepEqual(metadata, {
+    name: "my-tool",
+    description: "useful tool"
+  });
+});
+
+test("parseSkillFrontmatter handles BOM, quoted values, comments, and unknown keys", () => {
+  const metadata = parseSkillFrontmatter(`\uFEFF---
+# comment
+name: "quoted name"
+description: 'quoted description'
+author: ignored
+---
+`);
+
+  assert.deepEqual(metadata, {
+    name: "quoted name",
+    description: "quoted description"
+  });
+});
+
+test("parseSkillFrontmatter returns empty metadata for empty, invalid, or valueless frontmatter", () => {
+  assert.deepEqual(parseSkillFrontmatter("---\n---"), {});
+  assert.deepEqual(parseSkillFrontmatter("no frontmatter here"), {});
+  assert.deepEqual(
+    parseSkillFrontmatter(`---
+name:
+description:
+---
+`),
+    {}
+  );
+});
+
 test("scanSkillEntries discovers nested skills through symlinked directories", () => {
   const root = mkdtempSync(join(tmpdir(), "watchboard-skill-scan-"));
   const codexRoot = join(root, ".codex", "skills");

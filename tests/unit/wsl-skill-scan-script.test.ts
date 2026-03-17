@@ -128,6 +128,25 @@ test("wsl skill scan script: frontmatter parsing", { skip: !python3Available && 
   }
 });
 
+test("wsl skill scan script: nested skills remain discoverable under a parent skill directory", { skip: !python3Available && "python3 not available" }, () => {
+  const home = makeTempDir();
+  try {
+    const parentDir = join(home, ".codex", "skills", "parent-skill");
+    const childDir = join(parentDir, "child-skill");
+    mkdirSync(childDir, { recursive: true });
+    writeFileSync(join(parentDir, "SKILL.md"), "---\nname: parent-skill\n---\n");
+    writeFileSync(join(childDir, "SKILL.md"), "---\nname: child-skill\n---\n");
+
+    const stdout = runScript(home);
+    const { rows } = parseOutput(stdout);
+
+    assert.equal(rows.some((row) => row.name === "parent-skill"), true);
+    assert.equal(rows.some((row) => row.name === "child-skill"), true);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("wsl skill scan script: safety limit - entry count", { skip: !python3Available && "python3 not available" }, () => {
   const home = makeTempDir();
   try {

@@ -28,12 +28,17 @@ export function writeSkillScanCache(
   now = Date.now(),
   ttlMs = SKILL_SCAN_CACHE_TTL_MS
 ): SkillListResult {
+  for (const [entryKey, entry] of cache) {
+    if (entry.expiresAt <= now) {
+      cache.delete(entryKey);
+    }
+  }
   const clonedResult = cloneSkillListResult(result);
   cache.set(key, {
     result: clonedResult,
     expiresAt: now + ttlMs
   });
-  return cloneSkillListResult(clonedResult);
+  return clonedResult;
 }
 
 export function shouldLogSlowSkillScan(durationMs: number, thresholdMs = SLOW_SKILL_SCAN_THRESHOLD_MS): boolean {

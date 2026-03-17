@@ -47,6 +47,36 @@ test("readSkillScanCache misses expired entries", () => {
   assert.equal(readSkillScanCache(cache, "skills:host", 151), null);
 });
 
+test("writeSkillScanCache evicts expired entries before storing a fresh result", () => {
+  const cache = new Map();
+  writeSkillScanCache(
+    cache,
+    "skills:expired",
+    {
+      entries: [sampleEntry],
+      warning: null,
+      warningCode: null
+    },
+    100,
+    10
+  );
+
+  writeSkillScanCache(
+    cache,
+    "skills:fresh",
+    {
+      entries: [sampleEntry],
+      warning: null,
+      warningCode: null
+    },
+    200,
+    100
+  );
+
+  assert.equal(cache.has("skills:expired"), false);
+  assert.equal(cache.has("skills:fresh"), true);
+});
+
 test("shouldLogSlowSkillScan reports slow scans at or above threshold", () => {
   assert.equal(shouldLogSlowSkillScan(249, 250), false);
   assert.equal(shouldLogSlowSkillScan(250, 250), true);
