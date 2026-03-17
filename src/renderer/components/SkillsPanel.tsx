@@ -5,6 +5,8 @@ import { ChatPromptEditor } from "@renderer/components/ChatPromptEditor";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
+import { hasSkillsPaneScanStateChanged } from "@renderer/components/skillsPaneScanDiff";
+import { type SkillsPaneScanState } from "@renderer/components/skillsPaneScanState";
 import { SkillListItemContent } from "@renderer/components/SkillListItemContent";
 import { SkillMarkdownDocument } from "@renderer/components/SkillMarkdownDocument";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
@@ -36,6 +38,7 @@ type Props = {
   attachSessionBacklog: (sessionId: string) => Promise<string>;
   onTerminalViewStateChange: (sessionId: string, state: TerminalViewState) => void;
   onViewStateChange: (state: SkillsPaneState) => void;
+  onScanStateChange: (state: SkillsPaneScanState) => void;
 };
 
 export function SkillsPanel({
@@ -49,7 +52,8 @@ export function SkillsPanel({
   getTerminalViewState,
   attachSessionBacklog,
   onTerminalViewStateChange,
-  onViewStateChange
+  onViewStateChange,
+  onScanStateChange
 }: Props): ReactElement {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [selectedSkillPath, setSelectedSkillPath] = useState<string | null>(viewState.selectedSkillMdPath);
@@ -63,6 +67,7 @@ export function SkillsPanel({
   const [chatAgent, setChatAgent] = useState<SkillsChatAgent>(viewState.chatAgent);
   const [chatPrompts, setChatPrompts] = useState(viewState.chatPrompts);
   const [loadError, setLoadError] = useState("");
+  const [loadWarning, setLoadWarning] = useState("");
   const [contentError, setContentError] = useState("");
   const [syncWarning, setSyncWarning] = useState("");
   const persistReadyRef = useRef(false);
@@ -71,6 +76,23 @@ export function SkillsPanel({
   const autosaveTimestampsRef = useRef<number[]>([]);
   const listRequestIdRef = useRef(0);
   const contentRequestIdRef = useRef(0);
+  const prevScanStateRef = useRef<SkillsPaneScanState>({
+    location,
+    isLoading: false,
+    error: "",
+    warning: "",
+    warningCode: null
+  });
+  const onScanStateChangeRef = useRef(onScanStateChange);
+  onScanStateChangeRef.current = onScanStateChange;
+
+  function emitScanState(next: SkillsPaneScanState): void {
+    if (hasSkillsPaneScanStateChanged(prevScanStateRef.current, next)) {
+      prevScanStateRef.current = next;
+      onScanStateChangeRef.current(next);
+    }
+  }
+
   const isWindows = diagnosticsProp?.platform === "win32";
 
   const currentPaneState: SkillsPaneState = {
@@ -99,19 +121,43 @@ export function SkillsPanel({
     const requestId = ++listRequestIdRef.current;
     setLoading(true);
     setLoadError("");
+    setLoadWarning("");
+    emitScanState({
+      location,
+      isLoading: true,
+      error: "",
+      warning: "",
+      warningCode: null
+    });
     void window.watchboard
       .listSkills(location, { forceRefresh: reloadVersion > 0 })
-      .then((entries) => {
+      .then((result) => {
         if (listRequestIdRef.current !== requestId) {
           return;
         }
-        setSkills(entries);
+        setSkills(result.entries);
+        setLoadWarning(result.warning ?? "");
+        emitScanState({
+          location,
+          isLoading: false,
+          error: "",
+          warning: result.warning ?? "",
+          warningCode: result.warningCode
+        });
       })
       .catch((error: unknown) => {
         if (listRequestIdRef.current !== requestId) {
           return;
         }
-        setLoadError(error instanceof Error ? error.message : String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        setLoadError(message);
+        emitScanState({
+          location,
+          isLoading: false,
+          error: message,
+          warning: "",
+          warningCode: null
+        });
       })
       .finally(() => {
         if (listRequestIdRef.current !== requestId) {
@@ -310,6 +356,7 @@ export function SkillsPanel({
         </div>
       </header>
       {loadError ? <div className="toolbar-error">{loadError}</div> : null}
+      {loadWarning ? <div className="toolbar-error">{loadWarning}</div> : null}
       {syncWarning ? <div className="toolbar-error">{syncWarning}</div> : null}
 
       <div className={isChatOpen ? "skills-panel-body has-chat" : "skills-panel-body"}>

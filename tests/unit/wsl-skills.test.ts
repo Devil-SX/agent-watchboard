@@ -11,7 +11,8 @@ test("parseWslSkillScanOutput keeps WSL symlinked skills while preserving entry 
     "office\tOffice skill\tclaude-skill\t/home/sdu/.claude/skills/office/SKILL.md\t/home/sdu/.claude/skills/office/SKILL.md\t0\t/home/sdu/.claude/skills/office/SKILL.md"
   ].join("\n");
 
-  const entries = parseWslSkillScanOutput(output, "wsl");
+  const result = parseWslSkillScanOutput(output, "wsl");
+  const entries = result.entries;
 
   assert.equal(entries.length, 3);
   assert.deepEqual(
@@ -23,6 +24,7 @@ test("parseWslSkillScanOutput keeps WSL symlinked skills while preserving entry 
     ]
   );
   assert.equal(entries[0]?.location, "wsl");
+  assert.equal(result.warningCode, null);
 });
 
 test("parseWslSkillScanOutput keeps separate codex and claude entries when entry paths differ but resolvedPath matches", () => {
@@ -48,7 +50,8 @@ test("parseWslSkillScanOutput keeps separate codex and claude entries when entry
     })
   ].join("\n");
 
-  const entries = parseWslSkillScanOutput(output, "wsl");
+  const result = parseWslSkillScanOutput(output, "wsl");
+  const entries = result.entries;
 
   assert.equal(entries.length, 2);
   assert.deepEqual(
@@ -58,4 +61,31 @@ test("parseWslSkillScanOutput keeps separate codex and claude entries when entry
       ["codex", "Shared skill description", "/home/sdu/.codex/skills/shared-skill/SKILL.md", sharedResolved]
     ]
   );
+});
+
+test("parseWslSkillScanOutput surfaces safety-limit warnings from scanner metadata", () => {
+  const output = [
+    JSON.stringify({
+      name: "safe-skill",
+      description: "A skill that was still discovered before truncation",
+      source: "codex",
+      entryPath: "/home/sdu/.codex/skills/safe-skill/SKILL.md",
+      resolvedPath: "/home/sdu/.codex/skills/safe-skill/SKILL.md",
+      isSymlink: false,
+      skillMdPath: "/home/sdu/.codex/skills/safe-skill/SKILL.md"
+    }),
+    JSON.stringify({
+      __watchboardMeta: {
+        visitedDirCount: 401,
+        truncated: true,
+        truncatedReason: "dir-limit"
+      }
+    })
+  ].join("\n");
+
+  const result = parseWslSkillScanOutput(output, "wsl");
+
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.warningCode, "scan-safety-limit");
+  assert.match(result.warning ?? "", /401 directories/);
 });

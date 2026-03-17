@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { readSkillScanCache, shouldLogSlowSkillScan, writeSkillScanCache } from "../../src/main/skillScanCache";
+import type { SkillListResult } from "../../src/shared/ipc";
 import type { SkillEntry } from "../../src/shared/schema";
 
 const sampleEntry: SkillEntry = {
@@ -17,16 +18,31 @@ const sampleEntry: SkillEntry = {
 
 test("readSkillScanCache returns a cloned cached value before expiry", () => {
   const cache = new Map();
-  writeSkillScanCache(cache, "skills:host", [sampleEntry], 100, 1_500);
+  const sampleResult: SkillListResult = {
+    entries: [sampleEntry],
+    warning: null,
+    warningCode: null
+  };
+  writeSkillScanCache(cache, "skills:host", sampleResult, 100, 1_500);
 
   const cached = readSkillScanCache(cache, "skills:host", 200);
-  assert.deepEqual(cached, [sampleEntry]);
-  assert.notEqual(cached, cache.get("skills:host")?.entries);
+  assert.deepEqual(cached, sampleResult);
+  assert.notEqual(cached?.entries, cache.get("skills:host")?.result.entries);
 });
 
 test("readSkillScanCache misses expired entries", () => {
   const cache = new Map();
-  writeSkillScanCache(cache, "skills:host", [sampleEntry], 100, 50);
+  writeSkillScanCache(
+    cache,
+    "skills:host",
+    {
+      entries: [sampleEntry],
+      warning: null,
+      warningCode: null
+    },
+    100,
+    50
+  );
 
   assert.equal(readSkillScanCache(cache, "skills:host", 151), null);
 });

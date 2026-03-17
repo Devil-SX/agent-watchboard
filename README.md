@@ -104,6 +104,7 @@ Notes:
 
 - Linux packages are written under `release/` as `AppImage`.
 - `pnpm dist:win` writes a runnable `release/win-unpacked/` folder that is useful for Windows-side testing from a non-Windows host.
+- On WSL/Linux hosts, `pnpm dist:win` intentionally skips native dependency rebuild and Windows executable resource edits. This keeps `node-pty` on its bundled Windows prebuilds and avoids requiring `wine` for the unpacked test bundle.
 - `pnpm dist:win:portable` produces a Windows portable `.exe` when the host environment has the required Windows packaging tooling such as `wine`.
 
 ## CLI

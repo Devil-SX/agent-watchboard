@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import type { SkillListResult, SkillListWarningCode } from "@shared/ipc";
 import type { AgentPathLocation, SkillEntry } from "@shared/schema";
 
 const execFileAsync = promisify(execFile);
+export const WSL_SKILL_SCAN_MAX_VISITED_DIRS = 400;
+export const WSL_SKILL_SCAN_MAX_ENTRIES = 200;
 
 type WslSkillRow = {
   name: string;
@@ -15,29 +18,44 @@ type WslSkillRow = {
   skillMdPath: string;
 };
 
-export async function listWslSkillEntries(distro: string): Promise<SkillEntry[]> {
-  const { stdout } = await execFileAsync(
-    "wsl.exe",
-    [
-      "-d",
-      distro,
-      "--",
-      "python3",
-      "-c",
-      buildWslSkillScanScript()
-    ],
-    {
-      windowsHide: true,
-      encoding: "utf8",
-      maxBuffer: 8 * 1024 * 1024,
-      timeout: 10000
-    }
-  );
-  return parseWslSkillScanOutput(stdout, "wsl");
+type WslSkillScanMeta = {
+  visitedDirCount: number;
+  truncated: boolean;
+  truncatedReason: "dir-limit" | "entry-limit" | null;
+};
+
+export async function listWslSkillEntries(distro?: string): Promise<SkillListResult> {
+  try {
+    const distroArgs = distro ? ["-d", distro] : [];
+    const { stdout } = await execFileAsync(
+      "wsl.exe",
+      [
+        ...distroArgs,
+        "--",
+        "python3",
+        "-c",
+        buildWslSkillScanScript()
+      ],
+      {
+        windowsHide: true,
+        encoding: "utf8",
+        maxBuffer: 8 * 1024 * 1024,
+        timeout: 10000
+      }
+    );
+    return parseWslSkillScanOutput(stdout, "wsl");
+  } catch (error) {
+    return {
+      entries: [],
+      warning: buildWslScanFailureWarning(error),
+      warningCode: classifyWslScanFailure(error)
+    };
+  }
 }
 
-export async function readWslSkillContent(distro: string, skillPath: string): Promise<string> {
-  const { stdout } = await execFileAsync("wsl.exe", ["-d", distro, "--", "cat", skillPath], {
+export async function readWslSkillContent(distro: string | undefined, skillPath: string): Promise<string> {
+  const distroArgs = distro ? ["-d", distro] : [];
+  const { stdout } = await execFileAsync("wsl.exe", [...distroArgs, "--", "cat", skillPath], {
     windowsHide: true,
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
@@ -46,15 +64,21 @@ export async function readWslSkillContent(distro: string, skillPath: string): Pr
   return stdout;
 }
 
-export function parseWslSkillScanOutput(output: string, location: AgentPathLocation): SkillEntry[] {
+export function parseWslSkillScanOutput(output: string, location: AgentPathLocation): SkillListResult {
   const skills: SkillEntry[] = [];
   const seen = new Set<string>();
+  let meta: WslSkillScanMeta | null = null;
   const rows = output
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
 
   for (const row of rows) {
+    const parsedMeta = tryParseMetaRow(row);
+    if (parsedMeta) {
+      meta = parsedMeta;
+      continue;
+    }
     const parsed = parseWslSkillRow(row);
     if (!parsed) {
       continue;
@@ -82,7 +106,11 @@ export function parseWslSkillScanOutput(output: string, location: AgentPathLocat
     }
     return left.name.localeCompare(right.name);
   });
-  return skills;
+  return {
+    entries: skills,
+    warning: buildWslScanWarning(meta),
+    warningCode: buildWslScanWarningCode(meta)
+  };
 }
 
 function parseWslSkillRow(row: string): WslSkillRow | null {
@@ -163,10 +191,64 @@ function tryParseJsonRow(row: string): WslSkillRow | null {
   }
 }
 
-function buildWslSkillScanScript(): string {
+function tryParseMetaRow(row: string): WslSkillScanMeta | null {
+  try {
+    const parsed = JSON.parse(row) as {
+      __watchboardMeta?: {
+        visitedDirCount?: number;
+        truncated?: boolean;
+        truncatedReason?: "dir-limit" | "entry-limit" | null;
+      };
+    };
+    if (!parsed.__watchboardMeta) {
+      return null;
+    }
+    return {
+      visitedDirCount: Number(parsed.__watchboardMeta.visitedDirCount ?? 0),
+      truncated: Boolean(parsed.__watchboardMeta.truncated),
+      truncatedReason: parsed.__watchboardMeta.truncatedReason ?? null
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildWslScanWarning(meta: WslSkillScanMeta | null): string | null {
+  if (!meta?.truncated) {
+    return null;
+  }
+  const reason = meta.truncatedReason === "entry-limit" ? "skill entry limit" : "directory traversal limit";
+  return `WSL skill scan stopped early after visiting ${meta.visitedDirCount} directories to protect the system (${reason}). Refine the skills roots or trim large symlinked trees, then refresh.`;
+}
+
+function buildWslScanWarningCode(meta: WslSkillScanMeta | null): SkillListWarningCode | null {
+  return meta?.truncated ? "scan-safety-limit" : null;
+}
+
+function classifyWslScanFailure(error: unknown): SkillListWarningCode {
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed out|timeout/i.test(message) ? "scan-timeout" : "scan-error";
+}
+
+function buildWslScanFailureWarning(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/timed out|timeout/i.test(message)) {
+    return "WSL skill scan timed out before it could finish. The scan was stopped to protect the system.";
+  }
+  return `WSL skill scan failed: ${message}`;
+}
+
+export function buildWslSkillScanScript(): string {
   return [
     "import json",
     "import os",
+    "",
+    `MAX_VISITED_DIRS = ${WSL_SKILL_SCAN_MAX_VISITED_DIRS}`,
+    `MAX_ENTRIES = ${WSL_SKILL_SCAN_MAX_ENTRIES}`,
+    "visited_dir_count = 0",
+    "entry_count = 0",
+    "truncated = False",
+    "truncated_reason = None",
     "",
     "def parse_frontmatter(path):",
     "    try:",
@@ -189,31 +271,82 @@ function buildWslSkillScanScript(): string {
     "            metadata[key.strip()] = value",
     "    return metadata",
     "",
+    "def mark_truncated(reason):",
+    "    global truncated, truncated_reason",
+    "    if truncated:",
+    "        return",
+    "    truncated = True",
+    "    truncated_reason = reason",
+    "",
+    "def emit_row(row):",
+    "    global entry_count",
+    "    if entry_count >= MAX_ENTRIES:",
+    "        mark_truncated('entry-limit')",
+    "        return False",
+    "    print(json.dumps(row, ensure_ascii=False))",
+    "    entry_count += 1",
+    "    return True",
+    "",
     "def emit_skill_tree(root, source):",
     "    if not os.path.isdir(root):",
     "        return",
-    "    for current, _dirs, files in os.walk(root, followlinks=True):",
-    "        if 'SKILL.md' not in files:",
+    "    global visited_dir_count",
+    "    stack = [root]",
+    "    visited = set()",
+    "    while stack and not truncated:",
+    "        current = stack.pop()",
+    "        try:",
+    "            if not os.path.isdir(current):",
+    "                continue",
+    "            resolved_current = os.path.realpath(current)",
+    "        except OSError:",
     "            continue",
-    "        path = os.path.join(current, 'SKILL.md')",
-    "        resolved = os.path.realpath(path)",
-    "        rel = os.path.relpath(current, root)",
-    "        metadata = parse_frontmatter(path)",
-    "        row = {",
-    "            'name': metadata.get('name') or ('.' if rel == '.' else rel.replace('\\\\\\\\', '/')),",
-    "            'description': metadata.get('description', ''),",
-    "            'source': source,",
-    "            'entryPath': path,",
-    "            'resolvedPath': resolved,",
-    "            'isSymlink': path != resolved,",
-    "            'skillMdPath': path,",
-    "        }",
-    "        print(json.dumps(row, ensure_ascii=False))",
+    "        if resolved_current in visited:",
+    "            continue",
+    "        visited.add(resolved_current)",
+    "        visited_dir_count += 1",
+    "        if visited_dir_count > MAX_VISITED_DIRS:",
+    "            mark_truncated('dir-limit')",
+    "            break",
+    "        try:",
+    "            names = sorted(os.listdir(current))",
+    "        except OSError:",
+    "            continue",
+    "        if 'SKILL.md' in names:",
+    "            path = os.path.join(current, 'SKILL.md')",
+    "            try:",
+    "                if not os.path.isfile(path):",
+    "                    continue",
+    "            except OSError:",
+    "                continue",
+    "            resolved = os.path.realpath(path)",
+    "            rel = os.path.relpath(current, root)",
+    "            metadata = parse_frontmatter(path)",
+    "            row = {",
+    "                'name': metadata.get('name') or ('.' if rel == '.' else rel.replace('\\\\\\\\', '/')),",
+    "                'description': metadata.get('description', ''),",
+    "                'source': source,",
+    "                'entryPath': path,",
+    "                'resolvedPath': resolved,",
+    "                'isSymlink': path != resolved,",
+    "                'skillMdPath': path,",
+    "            }",
+    "            emit_row(row)",
+    "            continue",
+    "        for name in reversed(names):",
+    "            entry = os.path.join(current, name)",
+    "            try:",
+    "                if os.path.isdir(entry):",
+    "                    stack.append(entry)",
+    "            except OSError:",
+    "                continue",
     "",
     "def emit_command_tree(root):",
     "    if not os.path.isdir(root):",
     "        return",
     "    for name in sorted(os.listdir(root)):",
+    "        if truncated:",
+    "            break",
     "        if not name.endswith('.md'):",
     "            continue",
     "        path = os.path.join(root, name)",
@@ -229,11 +362,16 @@ function buildWslSkillScanScript(): string {
     "            'isSymlink': path != resolved,",
     "            'skillMdPath': path,",
     "        }",
-    "        print(json.dumps(row, ensure_ascii=False))",
+    "        emit_row(row)",
     "",
     "home = os.path.expanduser('~')",
     "emit_skill_tree(os.path.join(home, '.codex', 'skills'), 'codex')",
     "emit_command_tree(os.path.join(home, '.claude', 'commands'))",
-    "emit_skill_tree(os.path.join(home, '.claude', 'skills'), 'claude-skill')"
+    "emit_skill_tree(os.path.join(home, '.claude', 'skills'), 'claude-skill')",
+    "print(json.dumps({'__watchboardMeta': {",
+    "    'visitedDirCount': visited_dir_count,",
+    "    'truncated': truncated,",
+    "    'truncatedReason': truncated_reason,",
+    "}}, ensure_ascii=False))"
   ].join("\n");
 }

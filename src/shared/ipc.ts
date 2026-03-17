@@ -49,6 +49,14 @@ export type SkillListOptions = {
   forceRefresh?: boolean;
 };
 
+export type SkillListWarningCode = "scan-safety-limit" | "scan-timeout" | "scan-error";
+
+export type SkillListResult = {
+  entries: SkillEntry[];
+  warning: string | null;
+  warningCode: SkillListWarningCode | null;
+};
+
 export type WatchboardApi = {
   listWorkspaces: () => Promise<WorkspaceList>;
   getWorkbench: () => Promise<WorkbenchDocument>;
@@ -73,7 +81,7 @@ export type WatchboardApi = {
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
   onSessionState: (listener: (session: SessionState) => void) => () => void;
   onBoardUpdate: (listener: (document: BoardDocument) => void) => () => void;
-  listSkills: (location: AgentPathLocation, options?: SkillListOptions) => Promise<SkillEntry[]>;
+  listSkills: (location: AgentPathLocation, options?: SkillListOptions) => Promise<SkillListResult>;
   readSkillContent: (skillPath: string) => Promise<string>;
   listAgentConfigs: (location: AgentPathLocation) => Promise<AgentConfigEntry[]>;
   readAgentConfig: (configId: string, location: AgentPathLocation) => Promise<AgentConfigDocument>;

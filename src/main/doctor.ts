@@ -66,7 +66,8 @@ export async function buildDoctorRunSpec(
     throw new Error("WSL diagnostics are only available on Windows hosts.");
   }
 
-  const distro = await resolveWslDistro();
+  const distro = await resolveWslDistro().catch(() => undefined);
+  const distroArgs = distro ? ["-d", distro] : [];
   const wslHome = await resolveWslHome(distro);
   const quotedPrompt = shellSingleQuote(DOCTOR_PROMPT);
 
@@ -85,17 +86,17 @@ export async function buildDoctorRunSpec(
     ].join("; ");
     return {
       command: "wsl.exe",
-      args: ["-d", distro, "bash", "-lc", script],
+      args: [...distroArgs, "bash", "-lc", script],
       cwd: options.hostHome,
-      commandSummary: `wsl.exe -d ${distro} bash -lc "codex exec --skip-git-repo-check --sandbox read-only --color never --output-last-message <tmp> ${DOCTOR_PROMPT}"`,
+      commandSummary: `wsl.exe${distro ? ` -d ${distro}` : ""} bash -lc "codex exec --skip-git-repo-check --sandbox read-only --color never --output-last-message <tmp> ${DOCTOR_PROMPT}"`,
     };
   }
 
   return {
     command: "wsl.exe",
-    args: ["-d", distro, "bash", "-lc", `cd ${shellSingleQuote(wslHome)} && claude -p --output-format text --permission-mode bypassPermissions ${quotedPrompt}`],
+    args: [...distroArgs, "bash", "-lc", `cd ${shellSingleQuote(wslHome)} && claude -p --output-format text --permission-mode bypassPermissions ${quotedPrompt}`],
     cwd: options.hostHome,
-    commandSummary: `wsl.exe -d ${distro} bash -lc "claude -p --output-format text --permission-mode bypassPermissions ${DOCTOR_PROMPT}"`
+    commandSummary: `wsl.exe${distro ? ` -d ${distro}` : ""} bash -lc "claude -p --output-format text --permission-mode bypassPermissions ${DOCTOR_PROMPT}"`
   };
 }
 

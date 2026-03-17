@@ -11,7 +11,12 @@ import log from "electron-log/main.js";
 import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
 import { runDoctorCheck } from "@main/doctor";
 import { isWatchboardHeadlessTest, shouldDisableGpuForWatchboard } from "@main/headlessTestMode";
-import { readSkillScanCache, shouldLogSlowSkillScan, writeSkillScanCache } from "@main/skillScanCache";
+import {
+  DEGRADED_SKILL_SCAN_CACHE_TTL_MS,
+  readSkillScanCache,
+  shouldLogSlowSkillScan,
+  writeSkillScanCache
+} from "@main/skillScanCache";
 import {
   buildAnalysisDatabasePath,
   createMissingAnalysisDatabaseInfo,
@@ -71,6 +76,7 @@ import { SupervisorClient } from "@shared/supervisorClient";
 import { readWorkbenchDocument, readWorkbenchDocumentWithHealth, writeWorkbenchDocument } from "@shared/workbench";
 import { deleteWorkspace, readWorkspaceList, readWorkspaceListWithHealth, upsertWorkspace } from "@shared/workspaces";
 import { updateWorkspace } from "@shared/workspaces";
+import { type SkillListResult, type SkillListWarningCode } from "@shared/ipc";
 
 let mainWindow: BrowserWindow | null = null;
 let stopWatchingBoard: (() => void) | null = null;
@@ -80,7 +86,7 @@ let mainPerfRecorder: PerfRecorder | null = null;
 let rendererPerfRecorder: PerfRecorder | null = null;
 let persistenceHealth: PersistenceStoreHealth[] = [];
 let appResourcesCleanedUp = false;
-const skillScanCache = new Map<string, { entries: SkillEntry[]; expiresAt: number }>();
+const skillScanCache = new Map<string, { result: SkillListResult; expiresAt: number }>();
 const pendingSessionStarts = createSessionStartWaiterMap();
 const SESSION_START_TIMEOUT_MS = 12_000;
 const SUPERVISOR_SNAPSHOT_TIMEOUT_MS = 1_500;
@@ -749,35 +755,43 @@ function setupIpc(): void {
 
   ipcMain.handle(
     "watchboard:list-skills",
-    async (_event, location: AgentPathLocation, options?: { forceRefresh?: boolean }): Promise<SkillEntry[]> => {
+    async (_event, location: AgentPathLocation, options?: { forceRefresh?: boolean }): Promise<SkillListResult> => {
       const cacheKey = `skills:${location}`;
       if (!options?.forceRefresh) {
-        const cachedEntries = readSkillScanCache(skillScanCache, cacheKey);
-        if (cachedEntries) {
-          return cachedEntries;
+        const cachedResult = readSkillScanCache(skillScanCache, cacheKey);
+        if (cachedResult) {
+          return cachedResult;
         }
       } else {
         skillScanCache.delete(cacheKey);
       }
 
       const startedAt = performance.now();
-      let skills: SkillEntry[] = [];
+      let result: SkillListResult = {
+        entries: [],
+        warning: null,
+        warningCode: null
+      };
       if (location === "wsl") {
         if (process.platform !== "win32") {
-          return [];
+          return result;
         }
         try {
-          const distro = await resolveWslDistro();
-          skills = await listWslSkillEntries(distro);
-        } catch {
-          return [];
+          result = await listWslSkillEntries();
+        } catch (error) {
+          result = {
+            entries: [],
+            warning: `WSL skill scan failed: ${error instanceof Error ? error.message : String(error)}`,
+            warningCode: classifySkillScanFailure(error)
+          };
         }
       } else {
         const home = await resolveAgentHome(location);
         if (!home) {
-          return [];
+          return result;
         }
         const seen = new Set<string>();
+        const skills: SkillEntry[] = [];
         const codexSkillsDir = join(home, ".codex", "skills");
         skills.push(...scanSkillEntries(codexSkillsDir, "codex", location, seen));
 
@@ -786,33 +800,44 @@ function setupIpc(): void {
 
         const claudeSkillsDir = join(home, ".claude", "skills");
         skills.push(...scanSkillEntries(claudeSkillsDir, "claude-skill", location, seen));
+        skills.sort((left, right) => {
+          if (left.source !== right.source) {
+            return left.source.localeCompare(right.source);
+          }
+          return left.name.localeCompare(right.name);
+        });
+        result = {
+          entries: skills,
+          warning: null,
+          warningCode: null
+        };
       }
 
-      skills.sort((left, right) => {
-        if (left.source !== right.source) {
-          return left.source.localeCompare(right.source);
-        }
-        return left.name.localeCompare(right.name);
-      });
-
       const durationMs = performance.now() - startedAt;
-      if (shouldLogSlowSkillScan(durationMs)) {
+      if (shouldLogSlowSkillScan(durationMs) || result.warningCode) {
         log.warn("skills-scan-slow", {
           location,
           durationMs,
-          skillCount: skills.length,
+          skillCount: result.entries.length,
+          warning: result.warning,
+          warningCode: result.warningCode,
           forceRefresh: Boolean(options?.forceRefresh)
         });
       }
-      return writeSkillScanCache(skillScanCache, cacheKey, skills);
+      return writeSkillScanCache(
+        skillScanCache,
+        cacheKey,
+        result,
+        Date.now(),
+        result.warningCode ? DEGRADED_SKILL_SCAN_CACHE_TTL_MS : undefined
+      );
     }
   );
 
   ipcMain.handle("watchboard:read-skill-content", async (_event, skillPath: string): Promise<string> => {
     try {
       if (process.platform === "win32" && skillPath.startsWith("/")) {
-        const distro = await resolveWslDistro();
-        return await readWslSkillContent(distro, skillPath);
+        return await readWslSkillContent(undefined, skillPath);
       }
       return await readFile(skillPath, "utf8");
     } catch {
@@ -932,6 +957,11 @@ async function resolveAgentHome(location: AgentPathLocation): Promise<string | n
   } catch {
     return null;
   }
+}
+
+function classifySkillScanFailure(error: unknown): SkillListWarningCode {
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed out|timeout/i.test(message) ? "scan-timeout" : "scan-error";
 }
 
 async function buildAgentConfigEntry(configId: AgentConfigFileId, location: AgentPathLocation): Promise<AgentConfigEntry> {

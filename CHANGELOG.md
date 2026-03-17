@@ -11,13 +11,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added terminal recovery policy coverage, including mutation-style fault-injection cases for empty/control-only backlog, silent-ready recovery eligibility, and redraw retry suppression.
 - Added an application version readout to `Settings -> Debug` so packaged builds can expose their runtime build identity without leaking user-specific executable paths.
 - Added headless Electron coverage that requires the top-level `analysis` navigation tab to remain visible and enter the analysis empty-state guidance flow.
+- Added `SkillListResult` IPC type with warning/warningCode fields so skill scan failures and safety-limit truncation surface in the renderer instead of silently returning empty lists.
+- Added scan-state tracking (`skillsPaneScanState`) to the Skills pane so chat autostart waits for the scan to finish before launching a session.
+- Added WSL skill scan safety limits (max 400 directories, max 200 entries) with `__watchboardMeta` metadata row and truncation warnings.
+- Added degraded skill scan cache TTL (750 ms) for failed or safety-limited scans so transient errors do not block repeated retries.
+- Added cross-host `dist:win` build config extraction (`dist-win-config.mjs`) with unit tests for platform detection and build argument generation.
 
 ### Changed
 - Extracted terminal runtime construction and silent-backlog recovery decisions into focused renderer helpers so startup recovery behavior can be tested without binding unit tests to the real xterm modules.
+- Changed `listSkills` IPC return type from `SkillEntry[]` to `SkillListResult` with structured warning metadata across the full renderer/main boundary.
+- Changed skill scan cache internals from `SkillEntry[]` to `SkillListResult` so warnings survive cache reads.
 
 ### Fixed
 - Fixed terminal startup recovery so `terminal ready` panes keep their fallback visible until printable content arrives, while still issuing one safe redraw nudge for the blank-on-start race instead of silently collapsing into an empty terminal.
 - Fixed Windows `dist:win` packaging fallback so a stale `release/win-unpacked` directory can no longer mask a failed `electron-builder` run and be synced as if it were a fresh build.
+- Fixed WSL calls failing with hardcoded `-d Ubuntu-22.04` when WSL interop is unstable by making the distro parameter optional in `resolveWslHome`, `listWslSkillEntries`, `readWslSkillContent`, and doctor diagnostics — all now omit `-d` when no distro is configured, letting Windows use the default distribution.
 
 ## [0.9.0] - 2026-03-16
 

@@ -2,6 +2,8 @@ import { existsSync, rmSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
+import { getWindowsDirBuildArgs, isCrossPackagingHost } from "./dist-win-config.mjs";
+
 const root = process.cwd();
 const executablePath = join(root, "release", "win-unpacked", "Agent Watchboard.exe");
 const appAsarPath = join(root, "release", "win-unpacked", "resources", "app.asar");
@@ -10,7 +12,13 @@ const buildStartedAt = Date.now();
 runOrThrow("pnpm", ["build"]);
 removeStaleWindowsOutput();
 
-const builder = spawnSync("pnpm", ["exec", "electron-builder", "--win", "dir"], {
+if (isCrossPackagingHost()) {
+  process.stderr.write(
+    "[watchboard] cross-host Windows packaging enabled: skipping native dependency rebuild and Windows executable resource edits\n"
+  );
+}
+
+const builder = spawnSync("pnpm", getWindowsDirBuildArgs(), {
   cwd: root,
   stdio: "inherit",
   shell: process.platform === "win32"

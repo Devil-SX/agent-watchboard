@@ -12,9 +12,10 @@ import { SettingsPanel } from "@renderer/components/SettingsPanel";
 import { SkillsPanel } from "@renderer/components/SkillsPanel";
 import { buildPaneChatSessionKey, createPaneChatInstance } from "@renderer/components/paneChatSession";
 import { shouldStartPaneChatSession } from "@renderer/components/paneChatStartup";
+import { createIdleSkillsPaneScanState, isSkillsPaneScanReady } from "@renderer/components/skillsPaneScanState";
 import { createTerminalViewState, type TerminalViewState } from "@renderer/components/terminalViewState";
 import { buildSkillsChatSessionKey, createSkillsChatInstance } from "@renderer/components/skillsChatSession";
-import { shouldStartSkillsChatSession } from "@renderer/components/skillsChatStartup";
+import { canStartSkillsChatSession } from "@renderer/components/skillsChatStartup";
 import { applyOptimisticSettingsPreference, hasSettingsPreferenceChange } from "@renderer/components/settingsDraft";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
@@ -102,6 +103,9 @@ export function App(): ReactElement {
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
   const [skillsChatInstance, setSkillsChatInstance] = useState<TerminalInstance | null>(null);
   const [skillsChatError, setSkillsChatError] = useState("");
+  const [skillsPaneScanState, setSkillsPaneScanState] = useState(() => createIdleSkillsPaneScanState());
+  const skillsPaneScanStateRef = useRef(skillsPaneScanState);
+  skillsPaneScanStateRef.current = skillsPaneScanState;
   const [configChatInstance, setConfigChatInstance] = useState<TerminalInstance | null>(null);
   const [configChatError, setConfigChatError] = useState("");
   const [sshSecretDrafts, setSshSecretDrafts] = useState<Record<string, SshSecretInput>>({});
@@ -419,6 +423,10 @@ export function App(): ReactElement {
     }
   }, [sessions, workbench]);
 
+  const isScanReady = settingsDraft
+    ? isSkillsPaneScanReady(skillsPaneScanState, settingsDraft.skillsPane.location)
+    : false;
+
   useEffect(() => {
     if (!settingsDraft) {
       return;
@@ -475,7 +483,12 @@ export function App(): ReactElement {
     }
 
     const skillsIsChatOpen = settingsDraft.skillsPane.isChatOpen;
-    const shouldAllowSkillsChatStartup = shouldStartSkillsChatSession(activeTab, skillsIsChatOpen);
+    const shouldAllowSkillsChatStartup = canStartSkillsChatSession(
+      activeTab,
+      skillsIsChatOpen,
+      settingsDraft.skillsPane.location,
+      skillsPaneScanStateRef.current
+    );
     const nextSkillsKey = skillsIsChatOpen
       ? buildSkillsChatSessionKey(settingsDraft.skillsPane.chatAgent, settingsDraft.skillsPane.location, platform)
       : null;
@@ -502,7 +515,7 @@ export function App(): ReactElement {
         }
       } else {
         const session = sessions[current.sessionId];
-        if (!session || session.status === "stopped") {
+        if (session?.status === "stopped") {
           const nextInstance = createSkillsChatInstance(
             settingsDraft.skillsPane.chatAgent,
             settingsDraft.skillsPane.location,
@@ -554,7 +567,7 @@ export function App(): ReactElement {
     }
 
     const configSession = sessions[currentConfig.sessionId];
-    if (!configSession || configSession.status === "stopped") {
+    if (configSession?.status === "stopped") {
       const nextInstance = createPaneChatInstance(
         "config",
         settingsDraft.agentConfigPane.chatAgent,
@@ -567,7 +580,8 @@ export function App(): ReactElement {
       setConfigChatError("");
       startPaneChat(nextInstance, "config-chat-restart", configChatStartRequestRef, setConfigChatError);
     }
-  }, [activeTab, configChatInstance, diagnostics?.platform, sessions, settingsDraft, skillsChatInstance]);
+  }, [activeTab, configChatInstance, diagnostics?.platform, isScanReady, sessions, settingsDraft, skillsChatInstance]);
+
 
   useEffect(() => {
     if (!workbench || !workbenchDirty) {
@@ -1394,6 +1408,7 @@ export function App(): ReactElement {
             attachSessionBacklog={attachSessionBacklog}
             onTerminalViewStateChange={updateTerminalViewState}
             onViewStateChange={(state) => void handleSkillsPaneStateChange(state)}
+            onScanStateChange={setSkillsPaneScanState}
           />
         </div>
       </section>

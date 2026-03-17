@@ -32,14 +32,16 @@ export async function resolveWslDistro(preferred?: string): Promise<string> {
   return distro;
 }
 
-export async function resolveWslHome(distro: string): Promise<string> {
-  const cached = cachedWslHomes.get(distro);
+export async function resolveWslHome(distro?: string): Promise<string> {
+  const cacheKey = distro ?? "__default__";
+  const cached = cachedWslHomes.get(cacheKey);
   if (cached) {
     return cached;
   }
+  const distroArgs = distro ? ["-d", distro] : [];
   const { stdout } = await execFileAsync(
     "wsl.exe",
-    ["-d", distro, "--", "sh", "-c", 'printf %s "$HOME"'],
+    [...distroArgs, "--", "sh", "-c", 'printf %s "$HOME"'],
     {
       windowsHide: true,
       timeout: 5000
@@ -47,8 +49,8 @@ export async function resolveWslHome(distro: string): Promise<string> {
   );
   const home = stdout.trim();
   if (!home.startsWith("/")) {
-    throw new Error(`Unable to resolve WSL HOME for distro ${distro}`);
+    throw new Error(`Unable to resolve WSL HOME${distro ? ` for distro ${distro}` : ""}`);
   }
-  cachedWslHomes.set(distro, home);
+  cachedWslHomes.set(cacheKey, home);
   return home;
 }
