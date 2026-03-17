@@ -6,7 +6,6 @@ import { resolveAutoStartCandidates } from "@renderer/components/autoStart";
 import { BoardTree } from "@renderer/components/BoardTree";
 import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
 import { DoctorModal } from "@renderer/components/DoctorModal";
-import { appendSessionBacklogChunk } from "@renderer/components/sessionBacklog";
 import { summarizeInstance, summarizeWorkbenchInstances } from "@renderer/components/sessionDebug";
 import { SettingsPanel } from "@renderer/components/SettingsPanel";
 import { SkillsPanel } from "@renderer/components/SkillsPanel";
@@ -21,6 +20,7 @@ import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
+import { appendSessionBacklogChunk } from "@shared/sessionBacklog";
 import {
   type AnalysisPaneState,
   type AgentConfigPaneState,

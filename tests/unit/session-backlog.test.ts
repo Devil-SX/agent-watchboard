@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { appendSessionBacklogChunk, MAX_SESSION_BACKLOG_CHARS } from "../../src/renderer/components/sessionBacklog";
+import { appendSessionBacklogChunk, MAX_SESSION_BACKLOG_CHARS } from "../../src/shared/sessionBacklog";
 
 test("appendSessionBacklogChunk appends live output in order", () => {
   let backlog = "";

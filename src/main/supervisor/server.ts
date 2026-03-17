@@ -25,6 +25,7 @@ import { createPerfEvent } from "@shared/perf";
 import { PerfRecorder } from "@shared/perfNode";
 import { expandHomePath } from "@shared/nodePath";
 import { resolveNodeRuntimePaths } from "@shared/runtimePaths";
+import { appendSessionBacklogChunk } from "@shared/sessionBacklog";
 
 type SessionRecord = {
   state: SessionState;
@@ -42,8 +43,6 @@ type SessionRecord = {
 
 const ACTIVE_THRESHOLD_MS = 15_000;
 const IDLE_THRESHOLD_MS = 5 * 60_000;
-const MAX_SESSION_BACKLOG_CHARS = 200_000;
-
 type SupervisorMessageLogger = {
   warn(message: string, details?: unknown): void;
 };
@@ -548,13 +547,7 @@ class SupervisorServer {
   }
 }
 
-export function appendSessionBacklogChunk(existing: string, chunk: string): string {
-  const next = existing + chunk;
-  if (next.length <= MAX_SESSION_BACKLOG_CHARS) {
-    return next;
-  }
-  return next.slice(next.length - MAX_SESSION_BACKLOG_CHARS);
-}
+export { appendSessionBacklogChunk };
 
 export function createSessionAttachResult(session: SessionState, backlog: string): SessionAttachResult {
   return {

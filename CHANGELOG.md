@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.15] - 2026-03-17
+
+> **Code Stats** | Total: 36441 lines | Delta: +12 (-12) = **+0 net** | Change: **+0.00%** vs v0.9.14
+
+### Changed
+- Moved session backlog trimming into a single shared module so renderer and supervisor now consume the same scrollback cap and append logic instead of maintaining duplicate copies.
+
 ## [0.9.14] - 2026-03-17
 
 > **Code Stats** | Total: 36441 lines | Delta: +226 (-16) = **+210 net** | Change: **+0.58%** vs v0.9.13
