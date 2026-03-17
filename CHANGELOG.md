@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-03-17
+
+> **Code Stats** | Total: 35777 lines | Delta: +99 (-1) = **+98 net** | Change: **+0.27%** vs v0.9.7
+
+### Added
+- Added workspace persistence normalization coverage for healthy empty lists, self-repair writes that restore terminal titles, and corrupted workspaces whose terminal arrays are empty.
+
 ## [0.9.7] - 2026-03-17
 
 > **Code Stats** | Total: 35679 lines | Delta: +83 (-1) = **+82 net** | Change: **+0.23%** vs v0.9.6
