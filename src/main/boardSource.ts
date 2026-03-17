@@ -7,9 +7,78 @@ import { expandHomePath } from "@shared/nodePath";
 import { resolveWslDistro, resolveWslHome } from "./wslPaths";
 
 type StopWatching = () => void;
+type BoardSourceSettings = Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro">;
+type BoardPollLogger = Pick<typeof log, "info" | "warn">;
+
+export type WslBoardPollState = {
+  consecutiveErrors: number;
+  lastSerialized: string;
+};
+
+export type WslBoardPollResult = WslBoardPollState & {
+  delayMs: number;
+};
+
+const WSL_BOARD_POLL_BASE_DELAY_MS = 1_500;
+const WSL_BOARD_POLL_MAX_DELAY_MS = 60_000;
+
+export function getWslBoardPollDelayMs(consecutiveErrors: number): number {
+  if (consecutiveErrors <= 0) {
+    return WSL_BOARD_POLL_BASE_DELAY_MS;
+  }
+  return Math.min(WSL_BOARD_POLL_BASE_DELAY_MS * 2 ** consecutiveErrors, WSL_BOARD_POLL_MAX_DELAY_MS);
+}
+
+export async function pollWslBoardDocumentOnce(
+  settings: BoardSourceSettings,
+  state: WslBoardPollState,
+  onUpdate: (document: BoardDocument) => void,
+  options?: {
+    logger?: BoardPollLogger;
+    readBoard?: (settings: BoardSourceSettings) => Promise<BoardDocument>;
+  }
+): Promise<WslBoardPollResult> {
+  const logger = options?.logger ?? log;
+  const readBoard = options?.readBoard ?? readBoardFromWsl;
+
+  try {
+    const next = await readBoard(settings);
+    if (state.consecutiveErrors > 0) {
+      logger.info("board-wsl-poll-recovered", {
+        boardPath: getActiveBoardPath(settings),
+        distro: settings.boardWslDistro ?? null,
+        previousErrorCount: state.consecutiveErrors
+      });
+    }
+    const serialized = JSON.stringify(next);
+    if (serialized !== state.lastSerialized) {
+      onUpdate(next);
+    }
+    return {
+      consecutiveErrors: 0,
+      lastSerialized: serialized,
+      delayMs: getWslBoardPollDelayMs(0)
+    };
+  } catch (error) {
+    const consecutiveErrors = state.consecutiveErrors + 1;
+    const delayMs = getWslBoardPollDelayMs(consecutiveErrors);
+    logger.warn("board-wsl-poll-failed", {
+      boardPath: getActiveBoardPath(settings),
+      distro: settings.boardWslDistro ?? null,
+      consecutiveErrors,
+      delayMs,
+      message: error instanceof Error ? error.message : String(error)
+    });
+    return {
+      consecutiveErrors,
+      lastSerialized: state.lastSerialized,
+      delayMs
+    };
+  }
+}
 
 export async function loadBoardDocument(
-  settings: Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro">
+  settings: BoardSourceSettings
 ): Promise<BoardDocument> {
   const activeBoardPath = getActiveBoardPath(settings);
   log.info("loadBoardDocument", {
@@ -26,27 +95,28 @@ export async function loadBoardDocument(
 }
 
 export async function watchBoardDocument(
-  settings: Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro">,
+  settings: BoardSourceSettings,
   onUpdate: (document: BoardDocument) => void
 ): Promise<StopWatching> {
   if (settings.boardLocationKind === "wsl" && process.platform === "win32") {
     let active = true;
-    let lastSerialized = "";
+    let state: WslBoardPollState = {
+      consecutiveErrors: 0,
+      lastSerialized: ""
+    };
     const poll = async () => {
       if (!active) {
         return;
       }
-      try {
-        const next = await readBoardFromWsl(settings);
-        const serialized = JSON.stringify(next);
-        if (serialized !== lastSerialized) {
-          lastSerialized = serialized;
-          onUpdate(next);
-        }
-      } catch {
-        // keep polling; renderer will continue showing previous state
+      const result = await pollWslBoardDocumentOnce(settings, state, onUpdate);
+      state = {
+        consecutiveErrors: result.consecutiveErrors,
+        lastSerialized: result.lastSerialized
+      };
+      if (!active) {
+        return;
       }
-      setTimeout(poll, 1500).unref();
+      setTimeout(poll, result.delayMs).unref();
     };
     await poll();
     return () => {
@@ -74,7 +144,7 @@ export async function watchBoardDocument(
 }
 
 async function readBoardFromWsl(
-  settings: Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro">
+  settings: BoardSourceSettings
 ): Promise<BoardDocument> {
   const windowsPath = await resolveWslBoardWindowsPath(settings);
   try {
@@ -106,7 +176,7 @@ function normalizeWslBoardPath(path: string): string {
 }
 
 async function resolveWslBoardWindowsPath(
-  settings: Pick<AppSettings, "boardLocationKind" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro">
+  settings: BoardSourceSettings
 ): Promise<string> {
   const distro = await resolveWslDistro(settings.boardWslDistro);
   const linuxPath = normalizeWslBoardPath(getActiveBoardPath(settings));

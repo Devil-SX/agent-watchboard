@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.14] - 2026-03-17
+
+> **Code Stats** | Total: 36441 lines | Delta: +226 (-16) = **+210 net** | Change: **+0.58%** vs v0.9.13
+
+### Added
+- Added WSL board polling regression coverage for exponential backoff, warning logs on repeated failures, and recovery logging that resets the retry interval after a successful read.
+
+### Fixed
+- Fixed Windows WSL board polling so repeated read failures no longer spin forever at a fixed 1.5s cadence with no visibility; failures now back off exponentially and emit poll-level diagnostics instead of being silently swallowed.
+
 ## [0.9.13] - 2026-03-17
 
 > **Code Stats** | Total: 36231 lines | Delta: +107 (-27) = **+80 net** | Change: **+0.22%** vs v0.9.12
