@@ -946,7 +946,12 @@ export function resolveTerminalStartupCommandWithEnvironment(
 export function buildSshStartupCommand(
   environment: Pick<SshEnvironment, "host" | "port" | "username" | "authMode" | "privateKeyPath" | "remoteCommand">
 ): string {
-  const target = [environment.username.trim(), environment.host.trim()].filter(Boolean).join("@");
+  const host = environment.host.trim();
+  const username = environment.username.trim();
+  if (!host) {
+    return "";
+  }
+  const target = username ? `${username}@${host}` : host;
   const parts = ["ssh"];
   if (environment.port > 0 && environment.port !== 22) {
     parts.push("-p", String(environment.port));

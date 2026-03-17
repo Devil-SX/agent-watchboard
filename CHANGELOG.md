@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-03-17
+
+> **Code Stats** | Total: 35597 lines | Delta: +69 (-2) = **+67 net** | Change: **+0.19%** vs v0.9.5
+
+### Added
+- Added SSH startup edge-case coverage so empty, whitespace-only, and username-without-host environments no longer regress into generating malformed launch commands.
+
+### Fixed
+- Fixed `buildSshStartupCommand()` so invalid SSH environments with no host now return an empty startup command instead of emitting a bare `ssh` invocation or a username-only target.
+
 ## [0.9.5] - 2026-03-17
 
 > **Code Stats** | Total: 35530 lines | Delta: +142 (-25) = **+117 net** | Change: **+0.33%** vs v0.9.4
