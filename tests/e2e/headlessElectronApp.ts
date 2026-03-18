@@ -42,6 +42,7 @@ export async function closeHeadlessElectronTestApp(app: ElectronApplication | un
   if (!app) {
     return;
   }
+  const electronProcess = app.process();
 
   try {
     await withTimeout(
@@ -56,9 +57,13 @@ export async function closeHeadlessElectronTestApp(app: ElectronApplication | un
 
   try {
     await withTimeout(app.close(), ELECTRON_E2E_CLOSE_TIMEOUT_MS);
+    return;
   } catch {
-    // Ignore duplicate-close races once the process is gone.
+    // Fall through to a hard kill if Playwright never observes a clean close.
   }
+
+  forceKillProcess(electronProcess);
+  await waitForProcessExit(electronProcess, 1_000);
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -77,5 +82,36 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
         reject(error);
       }
     );
+  });
+}
+
+function forceKillProcess(process: ReturnType<ElectronApplication["process"]>): void {
+  if (process.killed) {
+    return;
+  }
+  try {
+    process.kill("SIGKILL");
+  } catch {
+    // Ignore already-exited races.
+  }
+}
+
+async function waitForProcessExit(process: ReturnType<ElectronApplication["process"]>, timeoutMs: number): Promise<void> {
+  if (process.exitCode !== null || process.signalCode !== null || process.killed) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const timeoutId = setTimeout(() => {
+      process.removeListener("exit", handleExit);
+      resolve();
+    }, timeoutMs);
+
+    const handleExit = (): void => {
+      clearTimeout(timeoutId);
+      resolve();
+    };
+
+    process.once("exit", handleExit);
   });
 }
