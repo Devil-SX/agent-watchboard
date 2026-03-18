@@ -27,6 +27,7 @@ type Props = {
   activePaneId: string | null;
   workbench: WorkbenchDocument;
   sessions: Record<string, SessionState>;
+  cronCountdownByInstanceId: ReadonlyMap<string, string>;
   sortMode: WorkspaceSortMode;
   filterMode: WorkspaceFilterMode;
   environmentFilterMode: WorkspaceEnvironmentFilterMode;
@@ -55,6 +56,7 @@ export function WorkspaceSidebar({
   activePaneId,
   workbench,
   sessions,
+  cronCountdownByInstanceId,
   sortMode,
   filterMode,
   environmentFilterMode,
@@ -333,6 +335,9 @@ export function WorkspaceSidebar({
                         <span className="workspace-instance-copy">
                           <strong>{instance.title}</strong>
                           <span>{instance.terminalProfileSnapshot.cwd}</span>
+                          {cronCountdownByInstanceId.get(instance.instanceId) ? (
+                            <span className="workspace-instance-countdown">{cronCountdownByInstanceId.get(instance.instanceId)}</span>
+                          ) : null}
                         </span>
                       </button>
                     );

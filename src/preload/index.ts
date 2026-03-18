@@ -62,6 +62,10 @@ const api: WatchboardApi = {
   runAnalysisQuery: (location, sql) => ipcRenderer.invoke("watchboard:run-analysis-query", location, sql),
   listAnalysisSessions: (location, limit) => ipcRenderer.invoke("watchboard:list-analysis-sessions", location, limit),
   getAnalysisSessionDetail: (location, sessionId) => ipcRenderer.invoke("watchboard:get-analysis-session-detail", location, sessionId),
+  getAnalysisSessionStatistics: (location, sessionId) =>
+    ipcRenderer.invoke("watchboard:get-analysis-session-statistics", location, sessionId),
+  getAnalysisCrossSessionMetrics: (location, limit) =>
+    ipcRenderer.invoke("watchboard:get-analysis-cross-session-metrics", location, limit),
   getDoctorDiagnostics: () => ipcRenderer.invoke("watchboard:get-doctor-diagnostics"),
   runDoctorCheck: (location, agent) => ipcRenderer.invoke("watchboard:run-doctor-check", location, agent)
 };

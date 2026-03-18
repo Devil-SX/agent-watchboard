@@ -212,6 +212,56 @@ export function removeInstanceFromWorkbench(document: WorkbenchDocument, instanc
   });
 }
 
+export function updateWorkbenchInstance(
+  document: WorkbenchDocument,
+  instanceId: string,
+  updater: (instance: TerminalInstance) => TerminalInstance
+): WorkbenchDocument {
+  const base = normalizeWorkbenchDocument(document);
+  let changed = false;
+  const nextInstances = base.instances.map((instance) => {
+    if (instance.instanceId !== instanceId) {
+      return instance;
+    }
+    const nextInstance = updater(instance);
+    changed = changed || nextInstance !== instance;
+    return nextInstance;
+  });
+  if (!changed) {
+    return base;
+  }
+  return normalizeWorkbenchDocument({
+    ...base,
+    updatedAt: nowIso(),
+    instances: nextInstances
+  });
+}
+
+export function updateWorkbenchWorkspaceInstances(
+  document: WorkbenchDocument,
+  workspaceId: string,
+  updater: (instance: TerminalInstance) => TerminalInstance
+): WorkbenchDocument {
+  const base = normalizeWorkbenchDocument(document);
+  let changed = false;
+  const nextInstances = base.instances.map((instance) => {
+    if (instance.workspaceId !== workspaceId) {
+      return instance;
+    }
+    const nextInstance = updater(instance);
+    changed = changed || nextInstance !== instance;
+    return nextInstance;
+  });
+  if (!changed) {
+    return base;
+  }
+  return normalizeWorkbenchDocument({
+    ...base,
+    updatedAt: nowIso(),
+    instances: nextInstances
+  });
+}
+
 export function replaceWorkbenchLayout(document: WorkbenchDocument, layoutModel: WorkbenchLayoutModel): WorkbenchDocument {
   return normalizeWorkbenchDocument({
     ...document,

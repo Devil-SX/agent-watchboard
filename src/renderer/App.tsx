@@ -1,4 +1,4 @@
-import { Profiler, startTransition, useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import { Profiler, startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
 
 import { AgentConfigPanel } from "@renderer/components/AgentConfigPanel";
 import { AnalysisPanel } from "@renderer/components/AnalysisPanel";
@@ -21,6 +21,14 @@ import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import { appendSessionBacklogChunk } from "@shared/sessionBacklog";
+import {
+  buildCronRelaunchProfile,
+  getCronCountdownLabel,
+  isCronEnabledForInstance,
+  markCronPendingOnIdle,
+  scheduleCronAfterStart,
+  syncCronTemplateToInstance
+} from "@shared/terminalCron";
 import {
   type AnalysisPaneState,
   type AgentConfigPaneState,
@@ -54,6 +62,8 @@ import {
   reconcileWorkbenchLayoutChange,
   removeInstanceFromWorkbench,
   restoreInstance,
+  updateWorkbenchInstance,
+  updateWorkbenchWorkspaceInstances,
   updateWorkbenchActivePane
 } from "@shared/workbenchModel";
 
@@ -76,6 +86,7 @@ export function App(): ReactElement {
   const sessionRequestStartedAtRef = useRef<Map<string, number>>(new Map());
   const persistedSettingsRef = useRef<AppSettings | null>(null);
   const workbenchSaveSequenceRef = useRef(0);
+  const cronRestartInflightRef = useRef<Set<string>>(new Set());
   const tabSwitchStartedAtRef = useRef<number | null>(null);
   const sessionBacklogsRef = useRef<Record<string, string>>({});
   const attachInflightRef = useRef<Map<string, Promise<string>>>(new Map());
@@ -110,15 +121,33 @@ export function App(): ReactElement {
   const [configChatError, setConfigChatError] = useState("");
   const [sshSecretDrafts, setSshSecretDrafts] = useState<Record<string, SshSecretInput>>({});
   const [sshTestStates, setSshTestStates] = useState<Record<string, { isRunning: boolean; result: SshTestResult | null }>>({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const skillsChatKeyRef = useRef<string | null>(null);
   const skillsChatStartRequestRef = useRef(0);
   const configChatKeyRef = useRef<string | null>(null);
   const configChatStartRequestRef = useRef(0);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const workbenchRef = useRef(workbench);
+  workbenchRef.current = workbench;
 
   const savedWorkspace = workspaceList?.workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedWorkspace =
     draftWorkspace && draftWorkspace.id === selectedWorkspaceId ? draftWorkspace : savedWorkspace ?? draftWorkspace;
   const activePaneInstance = workbench?.instances.find((instance) => instance.paneId === workbench.activePaneId) ?? null;
+  const cronCountdownByInstanceId = useMemo(
+    () => {
+      const entries = new Map<string, string>();
+      for (const instance of workbench?.instances ?? []) {
+        const countdown = getCronCountdownLabel(instance, nowMs);
+        if (countdown) {
+          entries.set(instance.instanceId, countdown);
+        }
+      }
+      return entries;
+    },
+    [nowMs, workbench?.instances]
+  );
 
   function emitRendererDebugLog(message: string, details?: unknown): void {
     void window.watchboard.debugLog(message, details).catch(() => undefined);
@@ -423,6 +452,63 @@ export function App(): ReactElement {
     }
   }, [sessions, workbench]);
 
+  useEffect(() => {
+    if (!(workbench?.instances.some((instance) => isCronEnabledForInstance(instance)))) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1_000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [workbench?.instances]);
+
+  useEffect(() => {
+    if (!workbench) {
+      return;
+    }
+    let nextWorkbench = workbench;
+    const nowIso = new Date(nowMs).toISOString();
+    for (const instance of workbench.instances) {
+      if (!isCronEnabledForInstance(instance)) {
+        continue;
+      }
+      const session = sessions[instance.sessionId];
+      if (!instance.cronState.nextTriggerAt && !instance.cronState.pendingOnIdle && session && session.status !== "stopped") {
+        nextWorkbench = updateWorkbenchInstance(nextWorkbench, instance.instanceId, (currentInstance) =>
+          scheduleCronAfterStart(currentInstance, session.startedAt)
+        );
+        continue;
+      }
+      if (cronRestartInflightRef.current.has(instance.instanceId)) {
+        continue;
+      }
+      if (instance.cronState.pendingOnIdle) {
+        if (session?.status === "running-idle") {
+          void restartCronInstance(instance);
+        }
+        continue;
+      }
+      if (!instance.cronState.nextTriggerAt || Date.parse(instance.cronState.nextTriggerAt) > nowMs) {
+        continue;
+      }
+      if (session?.status === "running-idle") {
+        void restartCronInstance(instance);
+        continue;
+      }
+      if (!session || session.status === "stopped") {
+        continue;
+      }
+      nextWorkbench = updateWorkbenchInstance(nextWorkbench, instance.instanceId, (currentInstance) =>
+        markCronPendingOnIdle(currentInstance, true, nowIso)
+      );
+    }
+    if (nextWorkbench !== workbench) {
+      stageWorkbench(nextWorkbench);
+    }
+  }, [nowMs, sessions, workbench]);
+
   const isScanReady = settingsDraft
     ? isSkillsPaneScanReady(skillsPaneScanState, settingsDraft.skillsPane.location)
     : false;
@@ -635,6 +721,62 @@ export function App(): ReactElement {
     setWorkbenchDirty(true);
   }
 
+  function patchWorkbenchInstance(instanceId: string, updater: (instance: TerminalInstance) => TerminalInstance): void {
+    const currentWorkbench = workbenchRef.current;
+    if (!currentWorkbench) {
+      return;
+    }
+    const nextWorkbench = updateWorkbenchInstance(currentWorkbench, instanceId, updater);
+    if (nextWorkbench !== currentWorkbench) {
+      stageWorkbench(nextWorkbench);
+    }
+  }
+
+  async function waitForSessionToStop(sessionId: string, timeoutMs = 5_000): Promise<void> {
+    const startedAt = performance.now();
+    while (performance.now() - startedAt < timeoutMs) {
+      const session = sessionsRef.current[sessionId];
+      if (!session || session.status === "stopped") {
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 60));
+    }
+    throw new Error(`Timed out waiting for session ${sessionId} to stop`);
+  }
+
+  async function restartCronInstance(instance: TerminalInstance): Promise<void> {
+    if (cronRestartInflightRef.current.has(instance.instanceId)) {
+      return;
+    }
+    cronRestartInflightRef.current.add(instance.instanceId);
+    try {
+      const currentSession = sessionsRef.current[instance.sessionId];
+      if (currentSession && currentSession.status !== "stopped") {
+        await window.watchboard.stopSession(instance.sessionId, createRequestId("cron-stop"));
+        await waitForSessionToStop(instance.sessionId);
+      }
+      const currentWorkbench = workbenchRef.current;
+      const currentInstance = currentWorkbench?.instances.find((item) => item.instanceId === instance.instanceId);
+      if (!currentInstance || !isCronEnabledForInstance(currentInstance)) {
+        return;
+      }
+      const runtimeInstance: TerminalInstance = {
+        ...currentInstance,
+        autoStart: currentInstance.terminalProfileSnapshot.autoStart,
+        terminalProfileSnapshot: buildCronRelaunchProfile(currentInstance.terminalProfileSnapshot),
+        updatedAt: new Date().toISOString()
+      };
+      await startWorkspaceSession(runtimeInstance, {
+        requestId: createRequestId("cron-restart"),
+        reason: currentInstance.cronState.pendingOnIdle ? "cron-pending-idle" : "cron-interval"
+      });
+    } catch (restartError) {
+      setError(messageOf(restartError));
+    } finally {
+      cronRestartInflightRef.current.delete(instance.instanceId);
+    }
+  }
+
   function markWorkspaceLaunched(workspaceId: string, launchedAt: string): void {
     setWorkspaceList((current) => {
       if (!current) {
@@ -683,6 +825,16 @@ export function App(): ReactElement {
       setWorkspaceList(next);
       const saved = next.workspaces.find((item) => item.id === normalizedWorkspace.id) ?? null;
       if (saved) {
+        const currentWorkbench = workbenchRef.current;
+        if (currentWorkbench) {
+          const savedTerminal = normalizeTerminal(saved, diagnostics, settingsDraft);
+          const nextWorkbench = updateWorkbenchWorkspaceInstances(currentWorkbench, saved.id, (instance) =>
+            syncCronTemplateToInstance(instance, savedTerminal, saved.updatedAt)
+          );
+          if (nextWorkbench !== currentWorkbench) {
+            stageWorkbench(nextWorkbench);
+          }
+        }
         loadWorkspaceIntoEditor(saved, setSelectedWorkspaceId, setDraftWorkspace, setIsDirty);
       }
       setError("");
@@ -779,7 +931,7 @@ export function App(): ReactElement {
       requestId?: string;
       reason?: string;
     }
-  ): Promise<void> {
+  ): Promise<SessionState> {
     const requestId = options?.requestId ?? createRequestId("session");
     sessionRequestStartedAtRef.current.set(instance.sessionId, performance.now());
     emitRendererDebugLog("session-invoke-begin", {
@@ -811,6 +963,8 @@ export function App(): ReactElement {
         startedAt: session.startedAt
       });
       markWorkspaceLaunched(instance.workspaceId, session.startedAt);
+      patchWorkbenchInstance(instance.instanceId, (currentInstance) => scheduleCronAfterStart(currentInstance, session.startedAt));
+      return session;
     } catch (error) {
       sessionRequestStartedAtRef.current.delete(instance.sessionId);
       emitRendererDebugLog("session-invoke-rejected", {
@@ -1310,6 +1464,7 @@ export function App(): ReactElement {
               activePaneId={workbench.activePaneId}
               workbench={workbench}
               sessions={sessions}
+              cronCountdownByInstanceId={cronCountdownByInstanceId}
               sortMode={settingsDraft.workspaceSortMode}
               filterMode={settingsDraft.workspaceFilterMode}
               environmentFilterMode={settingsDraft.workspaceEnvironmentFilterMode}
@@ -1352,6 +1507,7 @@ export function App(): ReactElement {
               workbench={workbench}
               workspaces={workspaceList.workspaces}
               sessions={sessions}
+              cronCountdownByInstanceId={cronCountdownByInstanceId}
               settings={settingsDraft}
               isVisible
               getSessionBacklog={getSessionBacklog}

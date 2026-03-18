@@ -56,6 +56,19 @@ export function CalendarIcon({ className }: IconProps): ReactElement {
   );
 }
 
+export function AlarmIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="8.75" r="3.75" />
+      <path d="M8 6.75v2.1l1.45 1" />
+      <path d="m3.35 3.65-1.1-1.1" />
+      <path d="m12.65 3.65 1.1-1.1" />
+      <path d="M5.2 13.6 4.2 15" />
+      <path d="M10.8 13.6 11.8 15" />
+    </svg>
+  );
+}
+
 export function PlusIcon({ className }: IconProps): ReactElement {
   return (
     <svg

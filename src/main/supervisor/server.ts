@@ -26,6 +26,7 @@ import { PerfRecorder } from "@shared/perfNode";
 import { expandHomePath } from "@shared/nodePath";
 import { resolveNodeRuntimePaths } from "@shared/runtimePaths";
 import { appendSessionBacklogChunk } from "@shared/sessionBacklog";
+import { assessTerminalActivity } from "@shared/terminalActivity";
 
 type SessionRecord = {
   state: SessionState;
@@ -51,8 +52,13 @@ type SupervisorErrorLogger = {
   error(message: string, details?: unknown): void;
 };
 
-export function applyPtyActivityStatus(state: SessionState): boolean {
+export function applyPtyActivityStatus(state: SessionState, data: string): boolean {
   if (state.endedAt) {
+    return false;
+  }
+
+  const activity = assessTerminalActivity(data);
+  if (!activity.isMeaningfulActivity) {
     return false;
   }
 
@@ -344,7 +350,7 @@ class SupervisorServer {
         if (!session) {
           return;
         }
-        const didPromoteState = applyPtyActivityStatus(session.state);
+        const didPromoteState = applyPtyActivityStatus(session.state, data);
         session.outputChunks += 1;
         session.outputBytes += Buffer.byteLength(data, "utf8");
         session.backlog = appendSessionBacklogChunk(session.backlog, data);

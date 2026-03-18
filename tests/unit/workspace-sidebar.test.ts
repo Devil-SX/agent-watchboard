@@ -28,7 +28,12 @@ function makeWorkspace(
         startupMode: "custom",
         startupCustomCommand: command,
         env: {},
-        autoStart: true
+        autoStart: true,
+        cron: {
+          enabled: false,
+          intervalMinutes: 30,
+          prompt: ""
+        }
       }
     ],
     layoutTree: {
@@ -56,7 +61,12 @@ function makeInstance(workspace: Workspace, ordinal = 0, collapsed = false): Ter
     terminalProfileSnapshot: {
       ...workspace.terminals[0]!
     },
-    openedAt: now,
+    cronState: {
+      nextTriggerAt: null,
+      pendingOnIdle: false,
+      lastTriggeredAt: null
+    },
+    createdAt: now,
     updatedAt: now
   };
 }

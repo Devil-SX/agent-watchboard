@@ -12,6 +12,7 @@ import {
   shouldReuseLiveSession
 } from "../../src/main/supervisor/server";
 import type { SessionState } from "../../src/shared/schema";
+import { assessTerminalActivity } from "../../src/shared/terminalActivity";
 
 function makeSession(status: SessionState["status"]): SessionState {
   return {
@@ -32,7 +33,7 @@ function makeSession(status: SessionState["status"]): SessionState {
 test("applyPtyActivityStatus promotes idle sessions back to running-active", () => {
   const session = makeSession("running-idle");
 
-  const didPromote = applyPtyActivityStatus(session);
+  const didPromote = applyPtyActivityStatus(session, "watchboard ready\r\n");
 
   assert.equal(didPromote, true);
   assert.equal(session.status, "running-active");
@@ -42,7 +43,7 @@ test("applyPtyActivityStatus promotes idle sessions back to running-active", () 
 test("applyPtyActivityStatus avoids redundant broadcasts for already-active sessions", () => {
   const session = makeSession("running-active");
 
-  const didPromote = applyPtyActivityStatus(session);
+  const didPromote = applyPtyActivityStatus(session, "still running\r\n");
 
   assert.equal(didPromote, false);
   assert.equal(session.status, "running-active");
@@ -54,11 +55,55 @@ test("applyPtyActivityStatus ignores stopped sessions", () => {
     endedAt: "2026-03-14T01:00:00.000Z"
   };
 
-  const didPromote = applyPtyActivityStatus(session);
+  const didPromote = applyPtyActivityStatus(session, "ignored\r\n");
 
   assert.equal(didPromote, false);
   assert.equal(session.status, "stopped");
   assert.equal(session.lastPtyActivityAt, "2026-03-14T00:00:00.000Z");
+});
+
+test("applyPtyActivityStatus ignores pure control traffic that only moves the cursor", () => {
+  const session = makeSession("running-idle");
+
+  const didPromote = applyPtyActivityStatus(session, "\u001b[?25h\u001b[?25l\u001b[2;1H\u001b[6n");
+
+  assert.equal(didPromote, false);
+  assert.equal(session.status, "running-idle");
+  assert.equal(session.lastPtyActivityAt, "2026-03-14T00:00:00.000Z");
+});
+
+test("applyPtyActivityStatus ignores noisy square-heavy output", () => {
+  const session = makeSession("running-idle");
+
+  const didPromote = applyPtyActivityStatus(session, "□□□□■□ ready");
+
+  assert.equal(didPromote, false);
+  assert.equal(session.status, "running-idle");
+  assert.equal(session.lastPtyActivityAt, "2026-03-14T00:00:00.000Z");
+});
+
+test("assessTerminalActivity accepts readable ASCII payloads", () => {
+  const assessment = assessTerminalActivity("claude> reviewing files\r\n");
+
+  assert.equal(assessment.isMeaningfulActivity, true);
+  assert.equal(assessment.reason, "meaningful");
+  assert.match(assessment.sanitized, /reviewing files/);
+});
+
+test("assessTerminalActivity rejects cursor-noise payloads after stripping control sequences", () => {
+  const assessment = assessTerminalActivity("\u001b[?2004h\u001b[?25l\u001b[2 q");
+
+  assert.equal(assessment.isMeaningfulActivity, false);
+  assert.equal(assessment.reason, "empty");
+  assert.equal(assessment.visibleCharacterCount, 0);
+});
+
+test("assessTerminalActivity rejects payloads dominated by replacement and square glyphs", () => {
+  const assessment = assessTerminalActivity("□□□�□■");
+
+  assert.equal(assessment.isMeaningfulActivity, false);
+  assert.equal(assessment.reason, "too-many-squares");
+  assert.equal(assessment.suspiciousSquareRatio >= 0.45, true);
 });
 
 test("shouldReuseLiveSession keeps running skills sessions attached instead of replacing them", () => {

@@ -92,6 +92,8 @@ export type WatchboardApi = {
   runAnalysisQuery: (location: AgentPathLocation, sql: string) => Promise<AnalysisQueryResult>;
   listAnalysisSessions: (location: AgentPathLocation, limit?: number) => Promise<AnalysisSessionSummary[]>;
   getAnalysisSessionDetail: (location: AgentPathLocation, sessionId: string) => Promise<AnalysisSessionDetail | null>;
+  getAnalysisSessionStatistics: (location: AgentPathLocation, sessionId: string) => Promise<AnalysisSessionStatistics | null>;
+  getAnalysisCrossSessionMetrics: (location: AgentPathLocation, limit?: number) => Promise<AnalysisCrossSessionMetrics>;
 };
 
 export type AnalysisDatabaseStatus = "ready" | "missing" | "unreadable" | "unsupported";
@@ -135,4 +137,81 @@ export type AnalysisSessionSummary = {
 export type AnalysisSessionDetail = {
   summary: AnalysisSessionSummary;
   statistics: Record<string, unknown> | null;
+};
+
+export type AnalysisMetricDatum = {
+  label: string;
+  value: number;
+  hint?: string | null;
+};
+
+export type AnalysisToolMetric = {
+  label: string;
+  count: number;
+  totalTokens: number;
+  successCount: number;
+  errorCount: number;
+  avgLatencySeconds: number;
+};
+
+export type AnalysisErrorRecord = {
+  timestamp: string | null;
+  toolName: string;
+  category: string;
+  summary: string;
+  preview: string | null;
+};
+
+export type AnalysisBashCommandMetric = {
+  command: string;
+  count: number;
+};
+
+export type AnalysisSessionStatistics = {
+  summary: AnalysisSessionSummary;
+  statisticsSizeBytes: number;
+  messageBreakdown: AnalysisMetricDatum[];
+  tokenBreakdown: AnalysisMetricDatum[];
+  timeBreakdown: AnalysisMetricDatum[];
+  timeDistribution: AnalysisMetricDatum[];
+  toolCalls: AnalysisToolMetric[];
+  toolGroups: AnalysisToolMetric[];
+  errorCategories: AnalysisMetricDatum[];
+  errorRecords: AnalysisErrorRecord[];
+  characterBreakdown: AnalysisMetricDatum[];
+  resourceBreakdown: AnalysisMetricDatum[];
+  bashCommands: AnalysisBashCommandMetric[];
+  leverageMetrics: AnalysisMetricDatum[];
+  activeTimeRatio: number | null;
+  modelTimeoutCount: number | null;
+};
+
+export type AnalysisProjectMetric = {
+  projectPath: string;
+  sessionCount: number;
+  totalTokens: number;
+  totalToolCalls: number;
+};
+
+export type AnalysisSessionTrendPoint = {
+  sessionId: string;
+  label: string;
+  ecosystem: string | null;
+  bottleneck: string | null;
+  totalTokens: number;
+  totalToolCalls: number;
+  durationSeconds: number | null;
+};
+
+export type AnalysisCrossSessionMetrics = {
+  location: AgentPathLocation;
+  totalSessions: number;
+  totalTokens: number;
+  totalToolCalls: number;
+  averageDurationSeconds: number | null;
+  averageAutomationRatio: number | null;
+  ecosystemDistribution: AnalysisMetricDatum[];
+  bottleneckDistribution: AnalysisMetricDatum[];
+  topProjects: AnalysisProjectMetric[];
+  recentSessions: AnalysisSessionTrendPoint[];
 };

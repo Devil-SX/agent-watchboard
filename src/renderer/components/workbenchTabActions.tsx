@@ -5,6 +5,7 @@ import { StatusOrbit } from "@renderer/components/StatusOrbit";
 type PaneTabLabelProps = {
   title: string;
   meta: string;
+  countdown: string | null;
   statusClassName: string;
   isWorking: boolean;
   tooltip: string;
@@ -18,7 +19,7 @@ type PaneTabActionsProps = {
   onClosePane: (instanceId: string) => Promise<void> | void;
 };
 
-export function PaneTabLabel({ title, meta, statusClassName, isWorking, tooltip }: PaneTabLabelProps): ReactElement {
+export function PaneTabLabel({ title, meta, countdown, statusClassName, isWorking, tooltip }: PaneTabLabelProps): ReactElement {
   return (
     <span className={`pane-tab-label ${statusClassName}`} title={tooltip}>
       <StatusOrbit active={isWorking} />
@@ -26,6 +27,7 @@ export function PaneTabLabel({ title, meta, statusClassName, isWorking, tooltip 
         <strong>{title}</strong>
         <span className="pane-tab-meta">{meta}</span>
       </span>
+      {countdown ? <span className="pane-tab-countdown">{countdown}</span> : null}
     </span>
   );
 }

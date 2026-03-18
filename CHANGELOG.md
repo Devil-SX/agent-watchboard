@@ -6,10 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-03-18
+
+> **Code Stats** | Total: 41303 lines | Delta: +3766 (-327) = **+3439 net** | Change: **+9.18%** vs v0.9.17
+
+### Added
+- Added cross-session and per-session analysis dashboards with chart-ready aggregates, top-project summaries, recent-session trends, and a dedicated analysis render profiling script.
+- Added template cron scheduling with persisted interval and prompt settings, runtime countdown state, and workspace/tab countdown badges for scheduled terminal relaunches.
+- Added regression coverage for analysis database snapshot fallback, cron command preview updates, settings/workbench round trips, and terminal activity filtering heuristics.
+
+### Changed
+- Reworked analysis database reads to prefer lightweight aggregated metrics and to fall back to temporary SQLite snapshots when the live profiler database is locked.
+
 ### Fixed
 - Fixed Linux CI Electron E2E startup by adding `--no-sandbox` and `--disable-setuid-sandbox` to the shared headless test launcher, preventing GitHub Actions runners from aborting before the app window can open.
 - Fixed GitHub Actions Electron E2E startup on `ubuntu-latest` by running the gated Playwright job under `xvfb-run`, so headless test launches no longer abort with `Missing X server or $DISPLAY`.
 - Fixed Electron E2E teardown flakes by adding bounded shutdown timeouts around the shared app quit/close helper, preventing a slow app shutdown from consuming the full Playwright worker teardown window.
+- Fixed analysis reads showing `db locked` by retrying read-only access and snapshotting the profiler database before serving queries and charts.
+- Fixed supervisor activity promotion so cursor-control noise and square-dominated terminal garbage no longer misclassify sessions as meaningfully active.
+- Fixed config drawer command previews so cron prompt edits immediately update the resolved relaunch command shown to the user.
 
 ## [0.9.17] - 2026-03-18
 

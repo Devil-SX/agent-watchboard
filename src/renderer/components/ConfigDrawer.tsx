@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown } from "@renderer/components/CompactControls";
+import { AlarmIcon } from "@renderer/components/IconButton";
 import { movePathSuggestionIndex } from "@renderer/components/pathSuggestionNavigation";
 import { scrollActivePathSuggestionIntoView } from "@renderer/components/pathSuggestionScroll";
 import type { PathCompletionResult } from "@shared/ipc";
+import { buildCronRelaunchCommand } from "@shared/terminalCron";
 import {
   buildPresetCommand,
   buildSshStartupCommand,
@@ -62,8 +64,17 @@ export function ConfigDrawer({
   const blurTimerRef = useRef<number | null>(null);
   const completionRequestRef = useRef(0);
   const cwdSuggestionListRef = useRef<HTMLDivElement | null>(null);
-  const resolvedStartupCommand =
+  const resolvedBaseCommand =
     terminal?.target === "ssh" && activeSshEnvironment ? buildSshStartupCommand(activeSshEnvironment) : terminal ? describeTerminalLaunch(terminal) : "";
+  const resolvedStartupCommand = terminal
+    ? buildCronRelaunchCommand({
+        ...terminal,
+        startupMode: "custom",
+        startupPresetId: undefined,
+        startupCustomCommand: resolvedBaseCommand,
+        startupCommand: resolvedBaseCommand
+      })
+    : "";
   const presetState = decomposePresetId(terminal?.startupPresetId);
   const suggestions = cwdCompletion?.suggestions ?? [];
 
@@ -411,6 +422,62 @@ export function ConfigDrawer({
                   onChange={(event) => onTerminalChange({ autoStart: event.target.checked })}
                 />
               </label>
+              <label className="field checkbox-field cron-checkbox-field">
+                <span className="cron-field-label">
+                  <span className="cron-field-icon" aria-hidden="true">
+                    <AlarmIcon />
+                  </span>
+                  <span>Cron</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={terminal.cron.enabled}
+                  onChange={(event) =>
+                    onTerminalChange({
+                      cron: {
+                        ...terminal.cron,
+                        enabled: event.target.checked
+                      }
+                    })
+                  }
+                />
+              </label>
+              {terminal.cron.enabled ? (
+                <>
+                  <label className="field">
+                    <span>Interval (minutes)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={terminal.cron.intervalMinutes}
+                      onChange={(event) =>
+                        onTerminalChange({
+                          cron: {
+                            ...terminal.cron,
+                            intervalMinutes: Math.max(1, Number(event.target.value || 1))
+                          }
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>User Prompt On Relaunch</span>
+                    <textarea
+                      rows={4}
+                      value={terminal.cron.prompt}
+                      onChange={(event) =>
+                        onTerminalChange({
+                          cron: {
+                            ...terminal.cron,
+                            prompt: event.target.value
+                          }
+                        })
+                      }
+                    />
+                  </label>
+                </>
+              ) : null}
               <div className="field field-readonly">
                 <span>Resolved Command</span>
                 <code>{resolvedStartupCommand}</code>

@@ -19,8 +19,11 @@ import {
 } from "@main/skillScanCache";
 import {
   buildAnalysisDatabasePath,
+  type AnalysisDatabaseLogger,
   createMissingAnalysisDatabaseInfo,
+  getAnalysisCrossSessionMetricsAtPath,
   getAnalysisSessionDetailAtPath,
+  getAnalysisSessionStatisticsAtPath,
   inspectAnalysisDatabaseAtPath,
   listAnalysisSessionsAtPath,
   runAnalysisQueryAtPath
@@ -98,6 +101,17 @@ const sessionStates = new Map<string, SessionState>();
 const supervisorSnapshotBarrier = createSupervisorSnapshotBarrier();
 let supervisorEventRelayAttached = false;
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const analysisDatabaseLogger: AnalysisDatabaseLogger = {
+  info: (event, payload) => {
+    log.info(event, payload);
+  },
+  warn: (event, payload) => {
+    log.warn(event, payload);
+  },
+  error: (event, payload) => {
+    log.error(event, payload);
+  }
+};
 
 function defaultWorkspaceSeed(): { platform: NodeJS.Platform } {
   return {
@@ -922,25 +936,92 @@ function setupIpc(): void {
 
   ipcMain.handle("watchboard:get-analysis-database", async (_event, location: AgentPathLocation) => {
     const filePath = await resolveAnalysisDatabasePath(location);
+    log.info("analysis-db-resolve", {
+      operation: "inspect",
+      location,
+      filePath
+    });
     if (!filePath) {
       return createMissingAnalysisDatabaseInfo(location);
     }
-    return inspectAnalysisDatabaseAtPath(location, filePath);
+    const info = inspectAnalysisDatabaseAtPath(location, filePath, { logger: analysisDatabaseLogger });
+    log.info("analysis-db-result", {
+      operation: "inspect",
+      location,
+      filePath,
+      status: info.status,
+      sessionCount: info.sessionCount,
+      totalFiles: info.totalFiles,
+      error: info.error
+    });
+    return info;
   });
 
   ipcMain.handle("watchboard:run-analysis-query", async (_event, location: AgentPathLocation, sql: string) => {
     const filePath = await requireAnalysisDatabasePath(location);
-    return runAnalysisQueryAtPath(location, filePath, sql);
+    log.info("analysis-db-resolve", {
+      operation: "query",
+      location,
+      filePath,
+      queryPreview: sql.trim().slice(0, 160)
+    });
+    return runAnalysisQueryAtPath(location, filePath, sql, { logger: analysisDatabaseLogger });
   });
 
   ipcMain.handle("watchboard:list-analysis-sessions", async (_event, location: AgentPathLocation, limit?: number) => {
     const filePath = await requireAnalysisDatabasePath(location);
-    return listAnalysisSessionsAtPath(filePath, limit);
+    log.info("analysis-db-resolve", {
+      operation: "list-sessions",
+      location,
+      filePath,
+      limit: limit ?? null
+    });
+    return listAnalysisSessionsAtPath(filePath, limit, {
+      location,
+      logger: analysisDatabaseLogger
+    });
   });
 
   ipcMain.handle("watchboard:get-analysis-session-detail", async (_event, location: AgentPathLocation, sessionId: string) => {
     const filePath = await requireAnalysisDatabasePath(location);
-    return getAnalysisSessionDetailAtPath(filePath, sessionId);
+    log.info("analysis-db-resolve", {
+      operation: "session-detail",
+      location,
+      filePath,
+      sessionId
+    });
+    return getAnalysisSessionDetailAtPath(filePath, sessionId, {
+      location,
+      logger: analysisDatabaseLogger
+    });
+  });
+
+  ipcMain.handle("watchboard:get-analysis-session-statistics", async (_event, location: AgentPathLocation, sessionId: string) => {
+    const filePath = await requireAnalysisDatabasePath(location);
+    log.info("analysis-db-resolve", {
+      operation: "session-statistics",
+      location,
+      filePath,
+      sessionId
+    });
+    return getAnalysisSessionStatisticsAtPath(filePath, sessionId, {
+      location,
+      logger: analysisDatabaseLogger
+    });
+  });
+
+  ipcMain.handle("watchboard:get-analysis-cross-session-metrics", async (_event, location: AgentPathLocation, limit?: number) => {
+    const filePath = await requireAnalysisDatabasePath(location);
+    log.info("analysis-db-resolve", {
+      operation: "cross-session-metrics",
+      location,
+      filePath,
+      limit: limit ?? null
+    });
+    return getAnalysisCrossSessionMetricsAtPath(location, filePath, limit, {
+      location,
+      logger: analysisDatabaseLogger
+    });
   });
 }
 

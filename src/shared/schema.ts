@@ -136,7 +136,7 @@ export const AgentConfigPaneStateSchema = z.object({
   })
 });
 export type AgentConfigPaneState = z.infer<typeof AgentConfigPaneStateSchema>;
-export const AnalysisPaneSectionSchema = z.enum(["overview", "sessions", "query"]);
+export const AnalysisPaneSectionSchema = z.enum(["overview", "sessions", "cross-session", "query"]);
 export type AnalysisPaneSection = z.infer<typeof AnalysisPaneSectionSchema>;
 export const DEFAULT_ANALYSIS_QUERY =
   "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;";
@@ -354,6 +354,23 @@ export const TERMINAL_FONT_PRESETS = [
 ] as const;
 
 export type TerminalFontPreset = (typeof TERMINAL_FONT_PRESETS)[number];
+export const DEFAULT_TERMINAL_CRON_INTERVAL_MINUTES = 30;
+
+export const TerminalCronSchema = z.object({
+  enabled: z.boolean().default(false),
+  intervalMinutes: z.number().int().positive().default(DEFAULT_TERMINAL_CRON_INTERVAL_MINUTES),
+  prompt: z.string().default("")
+});
+
+export type TerminalCron = z.infer<typeof TerminalCronSchema>;
+
+export const TerminalCronStateSchema = z.object({
+  nextTriggerAt: z.string().nullable().default(null),
+  pendingOnIdle: z.boolean().default(false),
+  lastTriggeredAt: z.string().nullable().default(null)
+});
+
+export type TerminalCronState = z.infer<typeof TerminalCronStateSchema>;
 
 export const TerminalProfileSchema = z.object({
   id: z.string(),
@@ -368,6 +385,11 @@ export const TerminalProfileSchema = z.object({
   startupCustomCommand: z.string().default(""),
   env: z.record(z.string(), z.string()).default({}),
   autoStart: z.boolean().default(true),
+  cron: TerminalCronSchema.default({
+    enabled: false,
+    intervalMinutes: DEFAULT_TERMINAL_CRON_INTERVAL_MINUTES,
+    prompt: ""
+  }),
   wslDistro: z.string().optional(),
   sshEnvironmentId: z.string().optional(),
   logAdapter: LogAdapterSchema.optional()
@@ -481,6 +503,11 @@ export const TerminalInstanceSchema = z.object({
   sessionId: z.string(),
   terminalProfileSnapshot: TerminalProfileSchema,
   autoStart: z.boolean().default(true),
+  cronState: TerminalCronStateSchema.default({
+    nextTriggerAt: null,
+    pendingOnIdle: false,
+    lastTriggeredAt: null
+  }),
   collapsed: z.boolean().default(false),
   createdAt: z.string(),
   updatedAt: z.string()
@@ -799,6 +826,7 @@ export function createTerminalProfile(overrides: Partial<TerminalProfile> = {}):
     startupCustomCommand,
     env: overrides.env ?? {},
     autoStart: overrides.autoStart ?? true,
+    cron: overrides.cron,
     wslDistro: overrides.wslDistro,
     sshEnvironmentId: overrides.sshEnvironmentId,
     logAdapter: overrides.logAdapter
@@ -1112,6 +1140,11 @@ export function createTerminalInstance(
       startupCommand: resolveTerminalStartupCommand(profile)
     },
     autoStart: profile.autoStart,
+    cronState: {
+      nextTriggerAt: null,
+      pendingOnIdle: false,
+      lastTriggeredAt: null
+    },
     createdAt,
     updatedAt: createdAt
   });

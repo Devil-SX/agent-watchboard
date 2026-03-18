@@ -14,6 +14,7 @@ type Props = {
   workbench: WorkbenchDocument;
   workspaces: Workspace[];
   sessions: Record<string, SessionState>;
+  cronCountdownByInstanceId: ReadonlyMap<string, string>;
   settings: AppSettings;
   isVisible: boolean;
   getSessionBacklog: (sessionId: string) => string;
@@ -48,6 +49,7 @@ export function WorkbenchView({
   workbench,
   workspaces,
   sessions,
+  cronCountdownByInstanceId,
   settings,
   isVisible,
   getSessionBacklog,
@@ -263,6 +265,7 @@ export function WorkbenchView({
       <PaneTabLabel
         title={instance.title}
         meta={`${instance.terminalProfileSnapshot.target} · ${instance.terminalProfileSnapshot.cwd}`}
+        countdown={cronCountdownByInstanceId.get(instance.instanceId) ?? null}
         statusClassName={visualStateClassName(status)}
         isWorking={status === "working"}
         tooltip={`${instance.title} · ${instance.terminalProfileSnapshot.target} · ${instance.terminalProfileSnapshot.cwd}`}

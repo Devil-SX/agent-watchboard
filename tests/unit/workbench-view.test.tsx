@@ -55,6 +55,7 @@ test("PaneTabLabel renders truncation-friendly markup for long titles and metada
     <PaneTabLabel
       title="Very Long Runtime Pane Name That Should Yield To Actions"
       meta="linux · /very/long/path/that/should/truncate/before/actions"
+      countdown="next in 5m 0s"
       statusClassName="is-working"
       isWorking={true}
       tooltip="tooltip"
@@ -64,8 +65,10 @@ test("PaneTabLabel renders truncation-friendly markup for long titles and metada
   assert.match(html, /pane-tab-label is-working/);
   assert.match(html, /pane-tab-copy/);
   assert.match(html, /pane-tab-meta/);
+  assert.match(html, /pane-tab-countdown/);
   assert.match(html, /Very Long Runtime Pane Name That Should Yield To Actions/);
   assert.match(html, /\/very\/long\/path\/that\/should\/truncate\/before\/actions/);
+  assert.match(html, /next in 5m 0s/);
 });
 
 test("PaneTabActions renders a fixed trailing action wrapper", () => {
