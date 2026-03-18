@@ -3,7 +3,7 @@ import { Profiler, startTransition, useEffect, useMemo, useRef, useState, type C
 import { AgentConfigPanel } from "@renderer/components/AgentConfigPanel";
 import { AnalysisPanel } from "@renderer/components/AnalysisPanel";
 import { resolveAutoStartCandidates } from "@renderer/components/autoStart";
-import { BoardTree } from "@renderer/components/BoardTree";
+import { BoardSidebarPanel } from "@renderer/components/BoardSidebarPanel";
 import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
 import { DoctorModal } from "@renderer/components/DoctorModal";
 import { summarizeInstance, summarizeWorkbenchInstances } from "@renderer/components/sessionDebug";
@@ -928,8 +928,8 @@ export function App(): ReactElement {
     update: Partial<
       Pick<
         AppSettings,
-        "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "skillsPane" | "agentConfigPane"
-        | "analysisPane" | "settingsPane"
+        "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "boardPanelCollapsed"
+        | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
       >
     >
   ): Promise<void> {
@@ -976,6 +976,10 @@ export function App(): ReactElement {
 
   async function handleAnalysisPaneStateChange(state: AnalysisPaneState): Promise<void> {
     await persistSettingsPreference({ analysisPane: state });
+  }
+
+  async function handleBoardPanelCollapsedChange(collapsed: boolean): Promise<void> {
+    await persistSettingsPreference({ boardPanelCollapsed: collapsed });
   }
 
   async function startWorkspaceSession(
@@ -1511,7 +1515,7 @@ export function App(): ReactElement {
   const activeContent =
     activeTab === "terminal" ? (
       <section className="content-pane is-active">
-        <div className="terminal-workbench">
+        <div className={settingsDraft.boardPanelCollapsed ? "terminal-workbench is-board-collapsed" : "terminal-workbench"}>
           <Profiler id="WorkspaceSidebar" onRender={handleProfilerRender}>
             <WorkspaceSidebar
               workspaces={workspaceList.workspaces}
@@ -1582,26 +1586,15 @@ export function App(): ReactElement {
             />
           </Profiler>
 
-          <aside className="board-panel">
-            <header className="board-panel-header">
-              <div>
-                <p className="panel-eyebrow">Todo Board</p>
-              </div>
-              <div className="board-panel-meta">
-                <span className="timestamp">
-                  {boardDocument?.updatedAt ? new Date(boardDocument.updatedAt).toLocaleString() : "No data"}
-                </span>
-              </div>
-            </header>
-            <Profiler id="BoardTree" onRender={handleProfilerRender}>
-              <BoardTree
-                document={boardDocument}
-                boardLocationKind={settingsDraft.boardLocationKind}
-                canSwitchLocation={diagnostics?.platform === "win32"}
-                onBoardLocationChange={(location) => void handleBoardLocationChange(location)}
-              />
-            </Profiler>
-          </aside>
+          <BoardSidebarPanel
+            document={boardDocument}
+            boardLocationKind={settingsDraft.boardLocationKind}
+            canSwitchLocation={diagnostics?.platform === "win32"}
+            isCollapsed={settingsDraft.boardPanelCollapsed}
+            onToggleCollapsed={() => void handleBoardPanelCollapsedChange(!settingsDraft.boardPanelCollapsed)}
+            onBoardLocationChange={(location) => void handleBoardLocationChange(location)}
+            onRender={handleProfilerRender}
+          />
         </div>
       </section>
     ) : activeTab === "skills" ? (

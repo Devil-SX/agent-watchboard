@@ -3,16 +3,16 @@ import type { AppSettings } from "@shared/schema";
 type SettingsPreferenceUpdate = Partial<
   Pick<
     AppSettings,
-    "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "skillsPane" | "agentConfigPane"
-    | "analysisPane" | "settingsPane"
+    "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "boardPanelCollapsed"
+    | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
   >
 >;
 
 export function applyOptimisticSettingsPreference<
   K extends keyof Pick<
     AppSettings,
-    "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "skillsPane" | "agentConfigPane"
-    | "analysisPane" | "settingsPane"
+    "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "boardPanelCollapsed"
+    | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
   >
 >(baseSettings: AppSettings, update: Pick<AppSettings, K> | Partial<Pick<AppSettings, K>>): AppSettings {
   return {

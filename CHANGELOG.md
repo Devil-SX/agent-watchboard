@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-03-19
+
+> **Code Stats** | Total: 42326 lines | Delta: +308 (-29) = **+279 net** | Change: **+0.66%** vs v0.10.2
+
+### Added
+- Added a collapsible Todo Board shell on the terminal workbench, including a restore button that brings the right-side board back in place without reloading the app.
+- Added persistence for the board-panel visibility preference so full-width terminal layouts stay collapsed across tab switches and subsequent launches.
+- Added board-shell regression coverage that proves collapse/re-expand preserves mounted board state and still applies board document updates received while hidden.
+
 ## [0.10.2] - 2026-03-19
 
 > **Code Stats** | Total: 42044 lines | Delta: +88 (-22) = **+66 net** | Change: **+0.16%** vs v0.10.1

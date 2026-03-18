@@ -151,3 +151,25 @@ test("hasSettingsPreferenceChange skips no-op updates for config, analysis, and 
     false
   );
 });
+
+test("board panel collapse preference is persisted only when it actually changes", () => {
+  const baseSettings = createDefaultAppSettings({ boardPanelCollapsed: false });
+
+  assert.equal(
+    hasSettingsPreferenceChange(baseSettings, {
+      boardPanelCollapsed: false
+    }),
+    false
+  );
+
+  const nextSettings = applyOptimisticSettingsPreference(baseSettings, {
+    boardPanelCollapsed: true
+  });
+  assert.equal(nextSettings.boardPanelCollapsed, true);
+  assert.equal(
+    hasSettingsPreferenceChange(baseSettings, {
+      boardPanelCollapsed: true
+    }),
+    true
+  );
+});
