@@ -1,5 +1,6 @@
 import { _electron, type ElectronApplication } from "@playwright/test";
 
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import { WATCHBOARD_DISABLE_GPU_ARG, WATCHBOARD_HEADLESS_TEST_ARG } from "../../src/main/headlessTestMode";
@@ -47,6 +48,7 @@ export async function closeHeadlessElectronTestApp(app: ElectronApplication | un
   try {
     await withTimeout(app.close(), ELECTRON_E2E_CLOSE_TIMEOUT_MS);
     await waitForProcessExit(electronProcess, 1_000);
+    forceKillDescendantProcesses(electronProcess.pid);
     return;
   } catch {
     // Fall through to progressively stronger shutdown paths.
@@ -76,10 +78,11 @@ export async function closeHeadlessElectronTestApp(app: ElectronApplication | un
 
   await waitForProcessExit(electronProcess, 1_000);
   if (electronProcess.exitCode !== null || electronProcess.signalCode !== null || electronProcess.killed) {
+    forceKillDescendantProcesses(electronProcess.pid);
     return;
   }
 
-  forceKillProcess(electronProcess);
+  forceKillProcessTree(electronProcess);
   await waitForProcessExit(electronProcess, 1_000);
 }
 
@@ -102,7 +105,9 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   });
 }
 
-function forceKillProcess(process: ReturnType<ElectronApplication["process"]>): void {
+function forceKillProcessTree(process: ReturnType<ElectronApplication["process"]>): void {
+  forceKillDescendantProcesses(process.pid);
+
   if (process.killed) {
     return;
   }
@@ -110,6 +115,69 @@ function forceKillProcess(process: ReturnType<ElectronApplication["process"]>): 
     process.kill("SIGKILL");
   } catch {
     // Ignore already-exited races.
+  }
+}
+
+function forceKillDescendantProcesses(parentPid: number | undefined): void {
+  if (!parentPid) {
+    return;
+  }
+
+  if (process.platform === "win32") {
+    try {
+      execFileSync("taskkill", ["/PID", String(parentPid), "/T", "/F"], {
+        stdio: "ignore"
+      });
+    } catch {
+      // Ignore already-exited races.
+    }
+    return;
+  }
+
+  for (const childPid of listDescendantPids(parentPid)) {
+    try {
+      process.kill(childPid, "SIGKILL");
+    } catch {
+      // Ignore already-exited races.
+    }
+  }
+}
+
+function listDescendantPids(parentPid: number): number[] {
+  const descendants = new Set<number>();
+  const pending = [parentPid];
+
+  while (pending.length > 0) {
+    const pid = pending.pop();
+    if (pid === undefined) {
+      continue;
+    }
+
+    for (const childPid of listImmediateChildPids(pid)) {
+      if (descendants.has(childPid)) {
+        continue;
+      }
+      descendants.add(childPid);
+      pending.push(childPid);
+    }
+  }
+
+  return [...descendants].reverse();
+}
+
+function listImmediateChildPids(parentPid: number): number[] {
+  try {
+    const output = execFileSync("ps", ["-o", "pid=", "--ppid", String(parentPid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+
+    return output
+      .split("\n")
+      .map((line) => Number.parseInt(line.trim(), 10))
+      .filter((pid) => Number.isInteger(pid) && pid > 0);
+  } catch {
+    return [];
   }
 }
 

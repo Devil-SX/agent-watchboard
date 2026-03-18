@@ -72,6 +72,9 @@ test("headless electron helper includes an explicit quit path for e2e shutdown",
   assert.equal(helperSource.includes("withTimeout(app.context().close(), ELECTRON_E2E_CLOSE_TIMEOUT_MS)"), true);
   assert.equal(helperSource.includes("electronApp.exit(0)"), true);
   assert.equal(helperSource.includes("ELECTRON_E2E_CLOSE_TIMEOUT_MS"), true);
-  assert.equal(helperSource.includes("forceKillProcess(electronProcess)"), true);
+  assert.equal(helperSource.includes("forceKillDescendantProcesses(electronProcess.pid)"), true);
+  assert.equal(helperSource.includes("execFileSync(\"ps\""), true);
+  assert.equal(helperSource.includes("execFileSync(\"taskkill\""), true);
+  assert.equal(helperSource.includes("forceKillProcessTree(electronProcess)"), true);
   assert.equal(helperSource.includes('process.kill("SIGKILL")'), true);
 });
