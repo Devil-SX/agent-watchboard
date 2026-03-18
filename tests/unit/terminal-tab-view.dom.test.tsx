@@ -64,6 +64,7 @@ async function renderTerminal(options?: {
   sessionBacklog?: string;
   attachResult?: string;
   attachReject?: boolean;
+  attachSessionBacklog?: () => Promise<string>;
   isVisible?: boolean;
   session?: ReturnType<typeof createSession> | null;
   terminalViewState?: {
@@ -109,6 +110,10 @@ async function renderTerminal(options?: {
   const root = ReactDOMClient.createRoot(container);
 
   const attachSessionBacklog = async () => {
+    if (options?.attachSessionBacklog) {
+      attachCalls += 1;
+      return options.attachSessionBacklog();
+    }
     attachCalls += 1;
     if (options?.attachReject) {
       throw new Error("attach failed");
@@ -296,6 +301,40 @@ test("TerminalTabView hydrates attach backlog that arrives after mount", { concu
       view.getPerfEvents().some((event) => event.name === "session-backlog-restored"),
       true
     );
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView shows hydrating fallback immediately while backlog attach is in flight and avoids duplicate attach calls", { concurrency: false }, async () => {
+  let resolveAttach: ((value: string) => void) | null = null;
+  const attachPromise = new Promise<string>((resolve) => {
+    resolveAttach = resolve;
+  });
+  const view = await renderTerminal({
+    attachSessionBacklog: async () => await attachPromise,
+    session: createSession("2026-03-15T00:00:00.000Z", "running-idle")
+  });
+  try {
+    await view.flushBoot();
+
+    assert.match(view.container.textContent ?? "", /hydrating terminal backlog/);
+    assert.equal(view.getAttachCalls(), 1);
+
+    await view.rerender({
+      session: createSession("2026-03-15T00:00:00.000Z", "running-active")
+    });
+    await view.flushBoot();
+
+    assert.match(view.container.textContent ?? "", /hydrating terminal backlog/);
+    assert.equal(view.getAttachCalls(), 1);
+
+    await act(async () => {
+      resolveAttach?.("\u001b]0;title\u0007restored content\r\n");
+      await Promise.resolve();
+    });
+
+    assert.deepEqual(view.getTerminal().writes, ["restored content\r\n"]);
   } finally {
     await view.cleanup();
   }

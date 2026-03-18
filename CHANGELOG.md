@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.17] - 2026-03-18
+
+> **Code Stats** | Total: 37462 lines | Delta: +81 (-29) = **+52 net** | Change: **+0.14%** vs v0.9.16
+
+### Added
+- Added a terminal DOM regression that keeps the backlog fallback in `hydrating` while attach is still in flight and asserts the same session only issues one attach request across status rerenders.
+
+### Fixed
+- Fixed terminal backlog hydration so chat terminals no longer flash from `terminal ready` to `hydrating backlog` during startup restores, and the same session no longer issues duplicate attach requests while backlog recovery is pending.
+
 ## [0.9.16] - 2026-03-17
 
 > **Code Stats** | Total: 36530 lines | Delta: +109 (-20) = **+89 net** | Change: **+0.24%** vs v0.9.15

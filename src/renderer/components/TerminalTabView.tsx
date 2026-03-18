@@ -74,6 +74,7 @@ export function TerminalTabView({
     max: 0
   });
   const lastStartedAtRef = useRef<string | null>(null);
+  const backlogHydrationTargetRef = useRef<string | null>(null);
   const sessionBacklogRef = useRef(sessionBacklog);
   const redrawNudgeAttemptedRef = useRef(false);
   const fallbackPhaseRef = useRef<TerminalFallbackPhase>(terminalViewState?.fallbackPhase ?? "waiting");
@@ -385,32 +386,6 @@ export function TerminalTabView({
           }
         });
       });
-    } else if (session && session.status !== "stopped") {
-      void attachSessionBacklog(sessionId)
-        .then((attachedBacklog) => {
-          if (sessionBacklogRef.current || !attachedBacklog) {
-            return;
-          }
-          const replayDecision = resolveTerminalBacklogReplayDecision(attachedBacklog);
-          if (replayDecision.kind !== "hydrate") {
-            return;
-          }
-          sessionBacklogRef.current = attachedBacklog;
-          updateFallbackPhase("hydrating");
-          xterm.write(replayDecision.normalizedBacklog, () => {
-            updateVisibleContent(true);
-            reportRendererPerf({
-              category: "terminal",
-              name: "session-backlog-restored",
-              durationMs: 0,
-              sessionId,
-              extra: {
-                chars: replayDecision.normalizedBacklog.length
-              }
-            });
-          });
-        })
-        .catch(() => undefined);
     }
 
     const handleTerminalData = (event: Event): void => {
@@ -489,6 +464,7 @@ export function TerminalTabView({
       scheduleCommittedResizeRef.current = null;
       requestTerminalRedrawRef.current = null;
       lastStartedAtRef.current = null;
+      backlogHydrationTargetRef.current = null;
       hasVisibleContentRef.current = false;
       redrawNudgeAttemptedRef.current = false;
       sessionStartMeasureRef.current = null;
@@ -531,6 +507,7 @@ export function TerminalTabView({
       setHasVisibleContent(false);
       fallbackPhaseRef.current = "waiting";
       setFallbackPhase("waiting");
+      backlogHydrationTargetRef.current = null;
       redrawNudgeAttemptedRef.current = false;
       xterm.reset();
     }
@@ -553,13 +530,33 @@ export function TerminalTabView({
     if (!xterm) {
       return;
     }
+    const hydrationTarget = `${sessionId}:${session.startedAt ?? "pending"}`;
+    if (backlogHydrationTargetRef.current === hydrationTarget) {
+      return;
+    }
+    backlogHydrationTargetRef.current = hydrationTarget;
+    if (!hasVisibleContentRef.current) {
+      fallbackPhaseRef.current = "hydrating";
+      setFallbackPhase("hydrating");
+    }
     void attachSessionBacklog(sessionId)
       .then((attachedBacklog) => {
-        if (sessionBacklogRef.current || !attachedBacklog) {
+        if (backlogHydrationTargetRef.current !== hydrationTarget) {
+          return;
+        }
+        if (sessionBacklogRef.current || !attachedBacklog || hasVisibleContentRef.current) {
+          if (!hasVisibleContentRef.current) {
+            fallbackPhaseRef.current = "waiting";
+            setFallbackPhase("waiting");
+          }
           return;
         }
         const replayDecision = resolveTerminalBacklogReplayDecision(attachedBacklog);
         if (replayDecision.kind !== "hydrate") {
+          if (!hasVisibleContentRef.current) {
+            fallbackPhaseRef.current = "waiting";
+            setFallbackPhase("waiting");
+          }
           return;
         }
         sessionBacklogRef.current = attachedBacklog;
@@ -578,7 +575,13 @@ export function TerminalTabView({
           });
         });
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (backlogHydrationTargetRef.current !== hydrationTarget || hasVisibleContentRef.current) {
+          return;
+        }
+        fallbackPhaseRef.current = "waiting";
+        setFallbackPhase("waiting");
+      });
   }, [attachSessionBacklog, session, sessionId]);
 
   useEffect(() => {
