@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { WATCHBOARD_DISABLE_GPU_ARG, WATCHBOARD_HEADLESS_TEST_ARG } from "../../src/main/headlessTestMode";
 
+const ELECTRON_E2E_CLOSE_TIMEOUT_MS = 5_000;
+
 export const HEADLESS_ELECTRON_TEST_ARGS = [
   path.resolve("out/main/index.js"),
   WATCHBOARD_HEADLESS_TEST_ARG,
@@ -42,16 +44,38 @@ export async function closeHeadlessElectronTestApp(app: ElectronApplication | un
   }
 
   try {
-    await app.evaluate(async ({ app: electronApp }) => {
-      await electronApp.quit();
-    });
+    await withTimeout(
+      app.evaluate(async ({ app: electronApp }) => {
+        await electronApp.quit();
+      }),
+      ELECTRON_E2E_CLOSE_TIMEOUT_MS
+    );
   } catch {
     // Ignore transport errors if the app is already shutting down.
   }
 
   try {
-    await app.close();
+    await withTimeout(app.close(), ELECTRON_E2E_CLOSE_TIMEOUT_MS);
   } catch {
     // Ignore duplicate-close races once the process is gone.
   }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    void promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
 }

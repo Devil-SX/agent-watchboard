@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Fixed Linux CI Electron E2E startup by adding `--no-sandbox` and `--disable-setuid-sandbox` to the shared headless test launcher, preventing GitHub Actions runners from aborting before the app window can open.
 - Fixed GitHub Actions Electron E2E startup on `ubuntu-latest` by running the gated Playwright job under `xvfb-run`, so headless test launches no longer abort with `Missing X server or $DISPLAY`.
+- Fixed Electron E2E teardown flakes by adding bounded shutdown timeouts around the shared app quit/close helper, preventing a slow app shutdown from consuming the full Playwright worker teardown window.
 
 ## [0.9.17] - 2026-03-18
 
