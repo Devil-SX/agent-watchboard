@@ -1,13 +1,15 @@
 import { defineConfig } from "@playwright/test";
 
+const isCi = process.env.CI === "1" || process.env.CI === "true";
+
 export default defineConfig({
   testDir: "tests/e2e",
   timeout: 30_000,
   retries: 0,
   fullyParallel: false,
-  reporter: [["html", { open: "never" }]],
+  reporter: isCi ? [["line"]] : [["html", { open: "never" }]],
   use: {
-    screenshot: "only-on-failure",
-    trace: "retain-on-failure"
+    screenshot: isCi ? "off" : "only-on-failure",
+    trace: isCi ? "off" : "retain-on-failure"
   }
 });
