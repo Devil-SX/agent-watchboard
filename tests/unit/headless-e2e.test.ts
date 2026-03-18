@@ -52,6 +52,7 @@ test("e2e specs use the shared headless helper instead of direct _electron.launc
 });
 
 const mainIndexSource = readFileSync(join(process.cwd(), "src", "main", "index.ts"), "utf8");
+const e2eGateSource = readFileSync(join(process.cwd(), "scripts", "e2e-gate.mjs"), "utf8");
 
 test("main window keeps headless e2e runs offscreen", () => {
   assert.equal(mainIndexSource.includes("offscreen: isHeadlessTest"), true);
@@ -77,4 +78,9 @@ test("headless electron helper includes an explicit quit path for e2e shutdown",
   assert.equal(helperSource.includes("execFileSync(\"taskkill\""), true);
   assert.equal(helperSource.includes("forceKillProcessTree(electronProcess)"), true);
   assert.equal(helperSource.includes('process.kill("SIGKILL")'), true);
+});
+
+test("ci e2e gate runs the direct Electron script instead of the Playwright test runner", () => {
+  assert.equal(e2eGateSource.includes('["exec", "tsx", "tests/e2e/scrollbar-overlay.ci.ts"]'), true);
+  assert.equal(e2eGateSource.includes("flaky worker lifecycle"), true);
 });
