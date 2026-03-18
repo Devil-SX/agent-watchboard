@@ -24,6 +24,8 @@ test("headless electron e2e args include explicit watchboard runtime flags", () 
   assert.ok(HEADLESS_ELECTRON_TEST_ARGS.includes(WATCHBOARD_HEADLESS_TEST_ARG));
   assert.ok(HEADLESS_ELECTRON_TEST_ARGS.includes(WATCHBOARD_DISABLE_GPU_ARG));
   assert.deepEqual(HEADLESS_ELECTRON_TEST_ARGS.slice(3), [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
     "--disable-gpu",
     "--disable-software-rasterizer",
     "--use-gl=disabled",

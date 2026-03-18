@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Fixed Linux CI Electron E2E startup by adding `--no-sandbox` and `--disable-setuid-sandbox` to the shared headless test launcher, preventing GitHub Actions runners from aborting before the app window can open.
+
 ## [0.9.17] - 2026-03-18
 
 > **Code Stats** | Total: 37462 lines | Delta: +81 (-29) = **+52 net** | Change: **+0.14%** vs v0.9.16

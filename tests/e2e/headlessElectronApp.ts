@@ -8,6 +8,8 @@ export const HEADLESS_ELECTRON_TEST_ARGS = [
   path.resolve("out/main/index.js"),
   WATCHBOARD_HEADLESS_TEST_ARG,
   WATCHBOARD_DISABLE_GPU_ARG,
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
   "--disable-gpu",
   "--disable-software-rasterizer",
   "--use-gl=disabled",
