@@ -30,8 +30,35 @@ export function buildCronRelaunchCommand(
   return `${baseCommand} ${quoteShellArgument(prompt)}`;
 }
 
-export function buildCronRelaunchProfile(profile: TerminalProfile): TerminalProfile {
-  const command = buildCronRelaunchCommand(profile);
+export function isCodexResumeLastFlow(
+  profile: Pick<TerminalProfile, "startupMode" | "startupPresetId" | "startupCustomCommand" | "startupCommand" | "cron">
+): boolean {
+  const baseCommand = resolveTerminalStartupCommand(profile).trim();
+  return detectAgentKind(profile) === "codex" && /\bcodex\b/.test(baseCommand) && /\bresume\s+--last\b/.test(baseCommand);
+}
+
+export function buildCodexExplicitResumeCommand(
+  profile: Pick<TerminalProfile, "startupMode" | "startupPresetId" | "startupCustomCommand" | "startupCommand" | "cron">,
+  sessionId: string
+): string {
+  const baseCommand = resolveTerminalStartupCommand(profile).trim();
+  const prompt = profile.cron.prompt.trim();
+  const sanitizedSessionId = sessionId.trim();
+  if (!baseCommand || !prompt || !sanitizedSessionId || !isCodexResumeLastFlow(profile)) {
+    return buildCronRelaunchCommand(profile);
+  }
+  // codex-cli 0.115.0 can misparse `codex resume --last 'prompt'` in an interactive TTY and treat
+  // the prompt as SESSION_ID. Replacing `--last` with an explicit saved session id keeps the prompt
+  // on argv without relying on a later terminal-input injection path.
+  const explicitResumeCommand = baseCommand.replace(/\bcodex\s+resume\s+--last\b/, "codex resume").trim();
+  if (explicitResumeCommand === baseCommand) {
+    return buildCronRelaunchCommand(profile);
+  }
+  return `${explicitResumeCommand} ${quoteShellArgument(sanitizedSessionId)} ${quoteShellArgument(prompt)}`;
+}
+
+export function buildCronRelaunchProfile(profile: TerminalProfile, commandOverride?: string): TerminalProfile {
+  const command = commandOverride ?? buildCronRelaunchCommand(profile);
   return {
     ...profile,
     startupMode: "custom",

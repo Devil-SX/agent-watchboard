@@ -4,10 +4,18 @@ import { existsSync } from "node:fs";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 
-import { buildWslLaunchCommand } from "../../src/main/wslTerminalLaunch";
+import { buildWslLaunchCommand, buildWslStartupCommand } from "../../src/main/wslTerminalLaunch";
 
 const execFile = promisify(execFileCallback);
 const WINDOWS_POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
+
+test("buildWslStartupCommand guards fallback on a quoted status value", () => {
+  const command = buildWslStartupCommand("/bin/bash", "printf 'ok\\n'");
+
+  assert.match(command, /\[ "\$\{status:-\}" != "0" \]/);
+  assert.match(command, /"\$\{status:-unknown\}"/);
+  assert.doesNotMatch(command, /\[ \$status -ne 0 \]/);
+});
 
 test(
   "Windows PowerShell can invoke the packaged WSL terminal launch pipeline and produce visible content",

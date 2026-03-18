@@ -41,6 +41,7 @@ import {
 } from "@main/supervisorSnapshotBarrier";
 import { openDebugPath } from "@main/openDebugPath";
 import { completeTerminalPath } from "@main/pathCompletion";
+import { resolveCronRelaunchCommand } from "@main/codexSessionResolver";
 import { resolveSessionAttachOutcome } from "@main/sessionAttach";
 import { testSshConnection } from "@main/sshConnection";
 import { attachSshSecretFlags, loadSshSecrets, mergeSshSecretsIntoSettings } from "@main/sshSecrets";
@@ -71,7 +72,8 @@ import {
   type TerminalInstance,
   Workspace,
   createDefaultAppSettings,
-  getActiveBoardPath
+  getActiveBoardPath,
+  resolveTerminalStartupCommand
 } from "@shared/schema";
 import { createPerfEvent, type PerfEvent } from "@shared/perf";
 import { PerfRecorder } from "@shared/perfNode";
@@ -116,6 +118,34 @@ const analysisDatabaseLogger: AnalysisDatabaseLogger = {
 function defaultWorkspaceSeed(): { platform: NodeJS.Platform } {
   return {
     platform: process.platform
+  };
+}
+
+function truncateForDebugLog(value: string, maxLength = 512): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}...<truncated>`;
+}
+
+function summarizeTerminalProfileForDebug(profile: TerminalInstance["terminalProfileSnapshot"]): Record<string, unknown> {
+  const resolvedStartupCommand = resolveTerminalStartupCommand(profile);
+  return {
+    target: profile.target,
+    cwd: profile.cwd,
+    shellOrProgram: profile.shellOrProgram,
+    args: profile.args,
+    startupMode: profile.startupMode,
+    startupPresetId: profile.startupPresetId ?? null,
+    startupCommand: profile.startupCommand ? truncateForDebugLog(profile.startupCommand) : null,
+    startupCustomCommand: profile.startupCustomCommand ? truncateForDebugLog(profile.startupCustomCommand) : null,
+    resolvedStartupCommand: resolvedStartupCommand ? truncateForDebugLog(resolvedStartupCommand) : null,
+    resolvedStartupCommandLength: resolvedStartupCommand.length,
+    wslDistro: profile.wslDistro ?? null,
+    sshEnvironmentId: profile.sshEnvironmentId ?? null,
+    cronEnabled: profile.cron.enabled,
+    cronIntervalMinutes: profile.cron.intervalMinutes,
+    cronPromptLength: profile.cron.prompt.trim().length
   };
 }
 
@@ -573,6 +603,10 @@ function setupIpc(): void {
 
   ipcMain.handle("watchboard:complete-path", async (_event, request) => completeTerminalPath(request));
 
+  ipcMain.handle("watchboard:resolve-cron-relaunch-command", async (_event, profile) => {
+    return resolveCronRelaunchCommand(profile);
+  });
+
   ipcMain.handle("watchboard:test-ssh-environment", async (_event, environment, secrets?: { password?: string; passphrase?: string }) => {
     const parsedEnvironment = SshEnvironmentSchema.parse(environment);
     const persistedSecrets: { password?: string; passphrase?: string } = await loadSshSecrets(
@@ -596,7 +630,8 @@ function setupIpc(): void {
       workspaceId: instance.workspaceId,
       instanceId: instance.instanceId,
       paneId: instance.paneId,
-      existingStatus: existing?.status ?? null
+      existingStatus: existing?.status ?? null,
+      ...summarizeTerminalProfileForDebug(instance.terminalProfileSnapshot)
     });
     recordMainPerf({
       category: "session",

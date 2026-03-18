@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-03-19
+
+> **Code Stats** | Total: 41981 lines | Delta: +681 (-17) = **+664 net** | Change: **+1.61%** vs v0.10.0
+
+### Added
+- Added a Codex cron relaunch session resolver plus focused host/WSL regression coverage so continue-mode schedules can resolve the latest saved session id before rebuilding the startup command.
+
+### Fixed
+- Fixed Codex cron continue relaunches so prompts are passed through explicit `codex resume <session-id>` commands instead of relying on terminal-input injection that could race the restore UI.
+- Fixed config drawer resolved-command previews so cron-enabled Codex continue terminals show the same session-aware relaunch command that the runtime path will actually execute.
+- Fixed the WSL startup fallback shell guard to quote empty status values, preventing the wrapper from emitting `bash: [: -ne: unary operator expected` when startup commands short-circuit unexpectedly.
+
 ## [0.10.0] - 2026-03-18
 
 > **Code Stats** | Total: 41303 lines | Delta: +3766 (-327) = **+3439 net** | Change: **+9.18%** vs v0.9.17

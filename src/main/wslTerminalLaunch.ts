@@ -25,7 +25,7 @@ export function buildWslLaunchCommand(cwd: string, shell: string, startupCommand
 export function buildWslStartupCommand(shell: string, startupCommand: string): string {
   const escapedCommand = startupCommand.replaceAll('"', '\\"');
   const escapedShell = shell.replaceAll('"', '\\"');
-  return `${escapedCommand}; status=$?; if [ $status -ne 0 ]; then printf '\\n[watchboard] startup command failed (%s), falling back to interactive shell\\n' "$status"; exec "\${SHELL:-${escapedShell}}" -il; fi`;
+  return `${escapedCommand}; status=$?; if [ "\${status:-}" != "0" ]; then printf '\\n[watchboard] startup command failed (%s), falling back to interactive shell\\n' "\${status:-unknown}"; exec "\${SHELL:-${escapedShell}}" -il; fi`;
 }
 
 function quoteForPosix(value: string): string {

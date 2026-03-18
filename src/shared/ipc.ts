@@ -78,6 +78,7 @@ export type WatchboardApi = {
   openDebugPath: (debugPath: string) => Promise<void>;
   completePath: (request: PathCompletionRequest) => Promise<PathCompletionResult>;
   testSshEnvironment: (environment: SshEnvironment, secrets?: SshSecretInput) => Promise<SshTestResult>;
+  resolveCronRelaunchCommand: (profile: TerminalProfile) => Promise<ResolvedCronRelaunchCommand>;
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
   onSessionState: (listener: (session: SessionState) => void) => () => void;
   onBoardUpdate: (listener: (document: BoardDocument) => void) => () => void;
@@ -94,6 +95,20 @@ export type WatchboardApi = {
   getAnalysisSessionDetail: (location: AgentPathLocation, sessionId: string) => Promise<AnalysisSessionDetail | null>;
   getAnalysisSessionStatistics: (location: AgentPathLocation, sessionId: string) => Promise<AnalysisSessionStatistics | null>;
   getAnalysisCrossSessionMetrics: (location: AgentPathLocation, limit?: number) => Promise<AnalysisCrossSessionMetrics>;
+};
+
+export type CronRelaunchResolution =
+  | "base-command"
+  | "prompt-appended"
+  | "codex-explicit-session"
+  | "codex-session-fallback";
+
+export type ResolvedCronRelaunchCommand = {
+  command: string;
+  resolution: CronRelaunchResolution;
+  sessionId: string | null;
+  normalizedCwd: string | null;
+  error: string | null;
 };
 
 export type AnalysisDatabaseStatus = "ready" | "missing" | "unreadable" | "unsupported";

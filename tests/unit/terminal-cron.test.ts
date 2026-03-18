@@ -8,6 +8,7 @@ import {
   type TerminalProfile
 } from "../../src/shared/schema";
 import {
+  buildCodexExplicitResumeCommand,
   buildCronRelaunchCommand,
   buildCronRelaunchProfile,
   getCronCountdownLabel,
@@ -57,12 +58,43 @@ test("buildCronRelaunchCommand appends the cron user prompt onto a Claude contin
   );
 });
 
-test("buildCronRelaunchProfile forces a custom startup command for the relaunch cycle", () => {
-  const profile = buildCronRelaunchProfile(createProfile());
+test("buildCodexExplicitResumeCommand replaces --last with an explicit session id", () => {
+  assert.equal(
+    buildCodexExplicitResumeCommand(createProfile(), "session-123"),
+    "codex resume 'session-123' 'summarize repo health'"
+  );
+});
+
+test("buildCodexExplicitResumeCommand keeps skip flags ahead of the resolved session and prompt", () => {
+  assert.equal(
+    buildCodexExplicitResumeCommand(
+      createProfile({
+        startupPresetId: "codex-resume-last-skip-dangerous",
+        startupCommand: "codex resume --last --dangerously-bypass-approvals-and-sandbox"
+      }),
+      "session-123"
+    ),
+    "codex resume --dangerously-bypass-approvals-and-sandbox 'session-123' 'summarize repo health'"
+  );
+});
+
+test("buildCronRelaunchProfile uses an explicit command override when provided", () => {
+  const profile = buildCronRelaunchProfile(createProfile(), "codex resume 'session-123' 'summarize repo health'");
 
   assert.equal(profile.startupMode, "custom");
   assert.equal(profile.startupPresetId, undefined);
-  assert.equal(profile.startupCustomCommand, "codex resume --last 'summarize repo health'");
+  assert.equal(profile.startupCustomCommand, "codex resume 'session-123' 'summarize repo health'");
+});
+
+test("buildCronRelaunchProfile still appends the prompt for Claude continue flows", () => {
+  const profile = buildCronRelaunchProfile(
+    createProfile({
+      startupPresetId: "claude-continue",
+      startupCommand: "claude -c"
+    })
+  );
+
+  assert.equal(profile.startupCustomCommand, "claude -c 'summarize repo health'");
 });
 
 test("syncCronTemplateToInstance resets the countdown when the interval changes", () => {

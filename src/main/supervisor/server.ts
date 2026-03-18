@@ -52,6 +52,34 @@ type SupervisorErrorLogger = {
   error(message: string, details?: unknown): void;
 };
 
+function truncateForDebugLog(value: string, maxLength = 512): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, maxLength)}...<truncated>`;
+}
+
+function summarizeProfileForSpawnLog(profile: TerminalProfile): Record<string, unknown> {
+  const resolvedStartupCommand = resolveTerminalStartupCommand(profile);
+  return {
+    target: profile.target,
+    requestedCwd: profile.cwd,
+    shellOrProgram: profile.shellOrProgram,
+    shellArgs: profile.args,
+    startupMode: profile.startupMode,
+    startupPresetId: profile.startupPresetId ?? null,
+    startupCommand: profile.startupCommand ? truncateForDebugLog(profile.startupCommand) : null,
+    startupCustomCommand: profile.startupCustomCommand ? truncateForDebugLog(profile.startupCustomCommand) : null,
+    resolvedStartupCommand: resolvedStartupCommand ? truncateForDebugLog(resolvedStartupCommand) : null,
+    resolvedStartupCommandLength: resolvedStartupCommand.length,
+    wslDistro: profile.wslDistro ?? null,
+    sshEnvironmentId: profile.sshEnvironmentId ?? null,
+    cronEnabled: profile.cron.enabled,
+    cronIntervalMinutes: profile.cron.intervalMinutes,
+    cronPromptLength: profile.cron.prompt.trim().length
+  };
+}
+
 export function applyPtyActivityStatus(state: SessionState, data: string): boolean {
   if (state.endedAt) {
     return false;
@@ -303,11 +331,21 @@ class SupervisorServer {
         workspaceId,
         instanceId,
         terminalId: profile.id,
-        target: profile.target,
         cwd: spawnConfig.cwd,
         file: spawnConfig.file,
         args: spawnConfig.args,
-        wslDistro: profile.wslDistro ?? null
+        ...summarizeProfileForSpawnLog(profile)
+      });
+      this.logger.info("session-spawn-config", {
+        requestId: requestId ?? null,
+        sessionId,
+        workspaceId,
+        instanceId,
+        terminalId: profile.id,
+        cwd: spawnConfig.cwd,
+        file: spawnConfig.file,
+        args: spawnConfig.args,
+        ...summarizeProfileForSpawnLog(profile)
       });
       const ptyProcess = pty.spawn(spawnConfig.file, spawnConfig.args, {
         name: "xterm-color",

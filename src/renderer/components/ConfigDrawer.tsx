@@ -75,8 +75,36 @@ export function ConfigDrawer({
         startupCommand: resolvedBaseCommand
       })
     : "";
+  const [resolvedCommandPreview, setResolvedCommandPreview] = useState(resolvedStartupCommand);
   const presetState = decomposePresetId(terminal?.startupPresetId);
   const suggestions = cwdCompletion?.suggestions ?? [];
+
+  useEffect(() => {
+    setResolvedCommandPreview(resolvedStartupCommand);
+    if (!isOpen || !terminal) {
+      return;
+    }
+    const previewProfile =
+      terminal.target === "ssh" && activeSshEnvironment
+        ? {
+            ...terminal,
+            startupMode: "custom" as const,
+            startupPresetId: undefined,
+            startupCustomCommand: resolvedBaseCommand,
+            startupCommand: resolvedBaseCommand
+          }
+        : terminal;
+    let cancelled = false;
+    void window.watchboard.resolveCronRelaunchCommand(previewProfile).then((resolved) => {
+      if (cancelled) {
+        return;
+      }
+      setResolvedCommandPreview(resolved.command);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSshEnvironment, isOpen, resolvedBaseCommand, resolvedStartupCommand, terminal]);
 
   useEffect(() => {
     if (!isOpen || !terminal) {
@@ -480,7 +508,7 @@ export function ConfigDrawer({
               ) : null}
               <div className="field field-readonly">
                 <span>Resolved Command</span>
-                <code>{resolvedStartupCommand}</code>
+                <code>{resolvedCommandPreview}</code>
               </div>
             </div>
           </section>

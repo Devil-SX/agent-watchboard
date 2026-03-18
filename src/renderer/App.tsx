@@ -153,6 +153,34 @@ export function App(): ReactElement {
     void window.watchboard.debugLog(message, details).catch(() => undefined);
   }
 
+  function truncateForDebug(value: string, maxLength = 512): string {
+    if (value.length <= maxLength) {
+      return value;
+    }
+    return `${value.slice(0, maxLength)}...<truncated>`;
+  }
+
+  function summarizeLaunchProfileForDebug(profile: TerminalProfile): Record<string, unknown> {
+    const resolvedStartupCommand = resolveTerminalStartupCommandWithEnvironment(profile);
+    return {
+      target: profile.target,
+      cwd: profile.cwd,
+      shellOrProgram: profile.shellOrProgram,
+      args: profile.args,
+      startupMode: profile.startupMode,
+      startupPresetId: profile.startupPresetId ?? null,
+      startupCommand: profile.startupCommand ? truncateForDebug(profile.startupCommand) : null,
+      startupCustomCommand: profile.startupCustomCommand ? truncateForDebug(profile.startupCustomCommand) : null,
+      resolvedStartupCommand: resolvedStartupCommand ? truncateForDebug(resolvedStartupCommand) : null,
+      resolvedStartupCommandLength: resolvedStartupCommand.length,
+      wslDistro: profile.wslDistro ?? null,
+      sshEnvironmentId: profile.sshEnvironmentId ?? null,
+      cronEnabled: profile.cron.enabled,
+      cronIntervalMinutes: profile.cron.intervalMinutes,
+      cronPromptLength: profile.cron.prompt.trim().length
+    };
+  }
+
   useEffect(() => {
     let unsubscribeData: () => void = () => {};
     let unsubscribeState: () => void = () => {};
@@ -760,15 +788,40 @@ export function App(): ReactElement {
       if (!currentInstance || !isCronEnabledForInstance(currentInstance)) {
         return;
       }
+      const reason = currentInstance.cronState.pendingOnIdle ? "cron-pending-idle" : "cron-interval";
+      const requestId = createRequestId("cron-restart");
+      const resolvedRelaunch = await window.watchboard.resolveCronRelaunchCommand(currentInstance.terminalProfileSnapshot);
+      emitRendererDebugLog("cron-restart-begin", {
+        requestId,
+        reason,
+        currentSessionStatus: currentSession?.status ?? "missing",
+        cronState: currentInstance.cronState,
+        relaunchCommand: truncateForDebug(resolvedRelaunch.command),
+        relaunchCommandLength: resolvedRelaunch.command.length,
+        relaunchResolution: resolvedRelaunch.resolution,
+        relaunchSessionId: resolvedRelaunch.sessionId,
+        relaunchNormalizedCwd: resolvedRelaunch.normalizedCwd,
+        relaunchResolveError: resolvedRelaunch.error,
+        ...summarizeInstance(currentInstance),
+        ...summarizeLaunchProfileForDebug(currentInstance.terminalProfileSnapshot)
+      });
       const runtimeInstance: TerminalInstance = {
         ...currentInstance,
         autoStart: currentInstance.terminalProfileSnapshot.autoStart,
-        terminalProfileSnapshot: buildCronRelaunchProfile(currentInstance.terminalProfileSnapshot),
+        terminalProfileSnapshot: buildCronRelaunchProfile(currentInstance.terminalProfileSnapshot, resolvedRelaunch.command),
         updatedAt: new Date().toISOString()
       };
+      emitRendererDebugLog("cron-restart-dispatch", {
+        requestId,
+        reason,
+        relaunchResolution: resolvedRelaunch.resolution,
+        relaunchSessionId: resolvedRelaunch.sessionId,
+        ...summarizeInstance(runtimeInstance),
+        ...summarizeLaunchProfileForDebug(runtimeInstance.terminalProfileSnapshot)
+      });
       await startWorkspaceSession(runtimeInstance, {
-        requestId: createRequestId("cron-restart"),
-        reason: currentInstance.cronState.pendingOnIdle ? "cron-pending-idle" : "cron-interval"
+        requestId,
+        reason
       });
     } catch (restartError) {
       setError(messageOf(restartError));
@@ -938,7 +991,8 @@ export function App(): ReactElement {
       requestId,
       reason: options?.reason ?? "workspace-session",
       activePaneId: workbench?.activePaneId ?? null,
-      ...summarizeInstance(instance)
+      ...summarizeInstance(instance),
+      ...summarizeLaunchProfileForDebug(instance.terminalProfileSnapshot)
     });
     reportRendererPerf({
       category: "session",
@@ -971,6 +1025,7 @@ export function App(): ReactElement {
         requestId,
         reason: options?.reason ?? "workspace-session",
         ...summarizeInstance(instance),
+        ...summarizeLaunchProfileForDebug(instance.terminalProfileSnapshot),
         message: messageOf(error)
       });
       throw error;

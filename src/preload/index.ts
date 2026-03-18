@@ -26,6 +26,7 @@ const api: WatchboardApi = {
   openDebugPath: (debugPath) => ipcRenderer.invoke("watchboard:open-debug-path", debugPath),
   completePath: (request) => ipcRenderer.invoke("watchboard:complete-path", request),
   testSshEnvironment: (environment, secrets) => ipcRenderer.invoke("watchboard:test-ssh-environment", environment, secrets),
+  resolveCronRelaunchCommand: (profile) => ipcRenderer.invoke("watchboard:resolve-cron-relaunch-command", profile),
   onSessionData: (listener) => {
     const wrapped = (_event: unknown, payload: { sessionId: string; data: string; emittedAt: number }) => listener(payload);
     ipcRenderer.on("session-data", wrapped);
