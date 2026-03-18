@@ -45,21 +45,38 @@ export async function closeHeadlessElectronTestApp(app: ElectronApplication | un
   const electronProcess = app.process();
 
   try {
+    await withTimeout(app.close(), ELECTRON_E2E_CLOSE_TIMEOUT_MS);
+    await waitForProcessExit(electronProcess, 1_000);
+    return;
+  } catch {
+    // Fall through to progressively stronger shutdown paths.
+  }
+
+  try {
+    await withTimeout(app.context().close(), ELECTRON_E2E_CLOSE_TIMEOUT_MS);
+    await waitForProcessExit(electronProcess, 1_000);
+  } catch {
+    // Ignore already-closed contexts and keep escalating.
+  }
+
+  if (electronProcess.exitCode !== null || electronProcess.signalCode !== null || electronProcess.killed) {
+    return;
+  }
+
+  try {
     await withTimeout(
-      app.evaluate(async ({ app: electronApp }) => {
-        await electronApp.quit();
+      app.evaluate(({ app: electronApp }) => {
+        electronApp.exit(0);
       }),
       ELECTRON_E2E_CLOSE_TIMEOUT_MS
     );
   } catch {
-    // Ignore transport errors if the app is already shutting down.
+    // Ignore transport errors if the app exits before the RPC settles.
   }
 
-  try {
-    await withTimeout(app.close(), ELECTRON_E2E_CLOSE_TIMEOUT_MS);
+  await waitForProcessExit(electronProcess, 1_000);
+  if (electronProcess.exitCode !== null || electronProcess.signalCode !== null || electronProcess.killed) {
     return;
-  } catch {
-    // Fall through to a hard kill if Playwright never observes a clean close.
   }
 
   forceKillProcess(electronProcess);
