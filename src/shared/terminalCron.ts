@@ -5,6 +5,7 @@ import {
   type TerminalInstance,
   type TerminalProfile
 } from "@shared/schema";
+import { quotePosixShellArgument } from "@shared/posixShell";
 
 export function isCronEnabled(cron: Pick<TerminalCron, "enabled"> | null | undefined): boolean {
   return Boolean(cron?.enabled);
@@ -27,7 +28,7 @@ export function buildCronRelaunchCommand(
   if (detectAgentKind(profile) === "unknown") {
     return baseCommand;
   }
-  return `${baseCommand} ${quoteShellArgument(prompt)}`;
+  return `${baseCommand} ${quotePosixShellArgument(prompt)}`;
 }
 
 export function isCodexResumeLastFlow(
@@ -54,7 +55,7 @@ export function buildCodexExplicitResumeCommand(
   if (explicitResumeCommand === baseCommand) {
     return buildCronRelaunchCommand(profile);
   }
-  return `${explicitResumeCommand} ${quoteShellArgument(sanitizedSessionId)} ${quoteShellArgument(prompt)}`;
+  return `${explicitResumeCommand} ${quotePosixShellArgument(sanitizedSessionId)} ${quotePosixShellArgument(prompt)}`;
 }
 
 export function buildCronRelaunchProfile(profile: TerminalProfile, commandOverride?: string): TerminalProfile {
@@ -171,8 +172,4 @@ export function getCronCountdownLabel(
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `next in ${minutes}m ${seconds}s`;
-}
-
-function quoteShellArgument(value: string): string {
-  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { quotePosixShellArgument } from "../../src/shared/posixShell";
 import {
   createTerminalInstance,
   createWorkspaceTemplate,
@@ -58,6 +59,32 @@ test("buildCronRelaunchCommand appends the cron user prompt onto a Claude contin
   );
 });
 
+test("buildCronRelaunchCommand preserves bash-safe quoting for mixed prompt payloads", () => {
+  const promptCases = [
+    'double "quotes" only',
+    "single 'quotes' only",
+    `mixed "double" and 'single' quotes`,
+    `{"kind":"json","text":"say \\"hi\\" and don't stop"}`
+  ];
+
+  for (const prompt of promptCases) {
+    assert.equal(
+      buildCronRelaunchCommand(
+        createProfile({
+          startupPresetId: "claude-continue",
+          startupCommand: "claude -c",
+          cron: {
+            enabled: true,
+            intervalMinutes: 15,
+            prompt
+          }
+        })
+      ),
+      `claude -c ${quotePosixShellArgument(prompt)}`
+    );
+  }
+});
+
 test("buildCodexExplicitResumeCommand replaces --last with an explicit session id", () => {
   assert.equal(
     buildCodexExplicitResumeCommand(createProfile(), "session-123"),
@@ -75,6 +102,23 @@ test("buildCodexExplicitResumeCommand keeps skip flags ahead of the resolved ses
       "session-123"
     ),
     "codex resume --dangerously-bypass-approvals-and-sandbox 'session-123' 'summarize repo health'"
+  );
+});
+
+test("buildCodexExplicitResumeCommand preserves prompt text that contains both quote styles", () => {
+  const prompt = `say "a'b" and continue with {"mode":"strict"}`;
+  assert.equal(
+    buildCodexExplicitResumeCommand(
+      createProfile({
+        cron: {
+          enabled: true,
+          intervalMinutes: 15,
+          prompt
+        }
+      }),
+      "session-123"
+    ),
+    `codex resume 'session-123' ${quotePosixShellArgument(prompt)}`
   );
 });
 

@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 
+import { quotePosixShellArgument } from "../../src/shared/posixShell";
 import { buildWslLaunchCommand, buildWslStartupCommand } from "../../src/main/wslTerminalLaunch";
 
 const execFile = promisify(execFileCallback);
@@ -15,6 +16,20 @@ test("buildWslStartupCommand guards fallback on a quoted status value", () => {
   assert.match(command, /\[ "\$\{status:-\}" != "0" \]/);
   assert.match(command, /"\$\{status:-unknown\}"/);
   assert.doesNotMatch(command, /\[ \$status -ne 0 \]/);
+});
+
+test("buildWslStartupCommand preserves mixed-quote payloads when the shell fragment is already quoted", async () => {
+  const prompt = `say "a'b" and continue with {"mode":"strict"}`;
+  const startupCommand = `printf '%s\\n' ${quotePosixShellArgument(prompt)}`;
+  const command = buildWslStartupCommand("/bin/bash", startupCommand);
+
+  const result = await execFile("/bin/bash", ["-lc", command], {
+    encoding: "utf8",
+    timeout: 15_000,
+    maxBuffer: 1024 * 1024
+  });
+
+  assert.equal(result.stdout.trim(), prompt);
 });
 
 test(

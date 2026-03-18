@@ -1,8 +1,10 @@
+import { quotePosixShellArgument } from "@shared/posixShell";
+
 export function normalizeWslShellCwd(cwd: string): string {
   if (/^[a-zA-Z]:\\/.test(cwd)) {
     const drive = cwd[0]?.toLowerCase() ?? "c";
     const normalized = cwd.slice(2).replaceAll("\\", "/");
-    return quoteForPosix(`/mnt/${drive}${normalized}`);
+    return quotePosixShellArgument(`/mnt/${drive}${normalized}`);
   }
   if (cwd === "~") {
     return "~";
@@ -10,7 +12,7 @@ export function normalizeWslShellCwd(cwd: string): string {
   if (cwd.startsWith("~/")) {
     return cwd;
   }
-  return quoteForPosix(cwd);
+  return quotePosixShellArgument(cwd);
 }
 
 export function buildWslLaunchCommand(cwd: string, shell: string, startupCommand: string): string {
@@ -23,11 +25,8 @@ export function buildWslLaunchCommand(cwd: string, shell: string, startupCommand
 }
 
 export function buildWslStartupCommand(shell: string, startupCommand: string): string {
-  const escapedCommand = startupCommand.replaceAll('"', '\\"');
   const escapedShell = shell.replaceAll('"', '\\"');
-  return `${escapedCommand}; status=$?; if [ "\${status:-}" != "0" ]; then printf '\\n[watchboard] startup command failed (%s), falling back to interactive shell\\n' "\${status:-unknown}"; exec "\${SHELL:-${escapedShell}}" -il; fi`;
-}
-
-function quoteForPosix(value: string): string {
-  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+  // `startupCommand` is already a shell-ready fragment built from quoted argv pieces. Re-escaping its
+  // double quotes here mutates payload text inside existing single-quoted arguments, so keep it intact.
+  return `${startupCommand}; status=$?; if [ "\${status:-}" != "0" ]; then printf '\\n[watchboard] startup command failed (%s), falling back to interactive shell\\n' "\${status:-unknown}"; exec "\${SHELL:-${escapedShell}}" -il; fi`;
 }

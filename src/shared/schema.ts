@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { quotePosixShellArgument } from "@shared/posixShell";
 
 export const APP_DIR_NAME = ".agent-watchboard";
 export const DEFAULT_BOARD_RELATIVE_PATH = "~/.agent-watchboard/board.json";
@@ -983,20 +984,16 @@ export function buildSshStartupCommand(
     parts.push("-p", String(environment.port));
   }
   if (environment.authMode === "key" && environment.privateKeyPath.trim()) {
-    parts.push("-i", quoteShellArgument(environment.privateKeyPath.trim()));
+    parts.push("-i", quotePosixShellArgument(environment.privateKeyPath.trim()));
   }
   if (target) {
-    parts.push(quoteShellArgument(target));
+    parts.push(quotePosixShellArgument(target));
   }
   const remoteCommand = environment.remoteCommand.trim();
   if (remoteCommand) {
-    parts.push(quoteShellArgument(remoteCommand));
+    parts.push(quotePosixShellArgument(remoteCommand));
   }
   return parts.join(" ").trim();
-}
-
-function quoteShellArgument(value: string): string {
-  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
 }
 
 export function describeTerminalLaunch(

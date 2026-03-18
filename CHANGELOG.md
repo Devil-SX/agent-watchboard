@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-03-19
+
+> **Code Stats** | Total: 42044 lines | Delta: +88 (-22) = **+66 net** | Change: **+0.16%** vs v0.10.1
+
+### Added
+- Added mixed-quote cron relaunch regressions plus an execution-level WSL startup test that verifies prompts containing both single and double quotes survive the full bash launch path unchanged.
+
+### Fixed
+- Fixed cron relaunch shell quoting so prompt text with mixed single/double quotes now reuses one shared POSIX quoting helper across terminal cron and SSH command builders.
+- Fixed WSL startup wrapping so shell-ready startup commands are no longer rewritten with blanket double-quote escaping, preventing quoted cron prompts from being mutated before `bash -ilc` executes them.
+
 ## [0.10.1] - 2026-03-19
 
 > **Code Stats** | Total: 41981 lines | Delta: +681 (-17) = **+664 net** | Change: **+1.61%** vs v0.10.0
