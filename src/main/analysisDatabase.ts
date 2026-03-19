@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type {
+  AnalysisBootstrapPayload,
   AnalysisBashCommandMetric,
   AnalysisCrossSessionMetrics,
   AnalysisDatabaseInfo,
@@ -40,9 +41,16 @@ export type AnalysisDatabaseLogger = {
   error?: (event: string, payload: Record<string, unknown>) => void;
 };
 
+export type AnalysisPerfStage = {
+  name: string;
+  durationMs: number;
+  extra?: Record<string, unknown>;
+};
+
 type AnalysisReadOptions = {
   location?: AgentPathLocation;
   logger?: AnalysisDatabaseLogger;
+  onPerf?: (event: AnalysisPerfStage) => void;
 };
 
 export function buildAnalysisDatabasePath(homePath: string): string {
@@ -113,8 +121,12 @@ export function runAnalysisQueryAtPath(
   const normalizedSql = normalizeReadOnlyQuery(sql);
   const startedAt = performance.now();
   return withReadOnlyDatabase(location, filePath, "query", options, (db) => {
+    const sqlStartedAt = performance.now();
     const rows = db.prepare(normalizedSql).all() as Array<Record<string, unknown>>;
     const columns = rows[0] ? Object.keys(rows[0]) : inferColumns(db, normalizedSql);
+    recordAnalysisPerf(options, "query-sql", sqlStartedAt, {
+      rowCount: rows.length
+    });
     const truncated = rows.length > QUERY_ROW_LIMIT;
     const boundedRows = rows.slice(0, QUERY_ROW_LIMIT).map((row) => columns.map((column) => normalizeQueryValue(row[column])));
     return {
@@ -134,6 +146,7 @@ export function listAnalysisSessionsAtPath(
   options: AnalysisReadOptions = {}
 ): AnalysisSessionSummary[] {
   return withReadOnlyDatabase(options.location ?? "host", filePath, "list-sessions", options, (db) => {
+    const sqlStartedAt = performance.now();
     const rows = db.prepare(
       `select
          session_id as sessionId,
@@ -151,6 +164,9 @@ export function listAnalysisSessionsAtPath(
        order by coalesce(parsed_at, updated_at) desc
        limit ?`
     ).all(Math.max(1, Math.min(limit, SESSION_LIST_LIMIT))) as Array<Record<string, unknown>>;
+    recordAnalysisPerf(options, "session-list-sql", sqlStartedAt, {
+      rowCount: rows.length
+    });
 
     return rows.map(normalizeSessionSummaryRow);
   });
@@ -162,6 +178,7 @@ export function getAnalysisSessionDetailAtPath(
   options: AnalysisReadOptions = {}
 ): AnalysisSessionDetail | null {
   return withReadOnlyDatabase(options.location ?? "host", filePath, "session-detail", options, (db) => {
+    const sqlStartedAt = performance.now();
     const row = db.prepare(
       `select
          s.session_id as sessionId,
@@ -180,15 +197,25 @@ export function getAnalysisSessionDetailAtPath(
        left join session_statistics ss on ss.session_id = s.session_id
        where s.session_id = ?`
     ).get(sessionId) as Record<string, unknown> | undefined;
+    recordAnalysisPerf(options, "session-detail-sql", sqlStartedAt, {
+      sessionId,
+      found: Boolean(row)
+    });
 
     if (!row) {
       return null;
     }
 
     const statisticsJson = typeof row.statisticsJson === "string" ? row.statisticsJson : null;
+    const parseStartedAt = performance.now();
+    const statistics = statisticsJson ? parseStatisticsJson(statisticsJson) : null;
+    recordAnalysisPerf(options, "session-detail-json-parse", parseStartedAt, {
+      sessionId,
+      hasStatistics: Boolean(statisticsJson)
+    });
     return {
       summary: normalizeSessionSummaryRow(row),
-      statistics: statisticsJson ? parseStatisticsJson(statisticsJson) : null
+      statistics
     };
   });
 }
@@ -199,6 +226,7 @@ export function getAnalysisSessionStatisticsAtPath(
   options: AnalysisReadOptions = {}
 ): AnalysisSessionStatistics | null {
   return withReadOnlyDatabase(options.location ?? "host", filePath, "session-statistics", options, (db) => {
+    const sqlStartedAt = performance.now();
     const row = db.prepare(
       `select
          s.session_id as sessionId,
@@ -217,14 +245,174 @@ export function getAnalysisSessionStatisticsAtPath(
        left join session_statistics ss on ss.session_id = s.session_id
        where s.session_id = ?`
     ).get(sessionId) as Record<string, unknown> | undefined;
+    recordAnalysisPerf(options, "session-statistics-sql", sqlStartedAt, {
+      sessionId,
+      found: Boolean(row)
+    });
 
     if (!row) {
       return null;
     }
 
     const statisticsJson = typeof row.statisticsJson === "string" ? row.statisticsJson : null;
-    return buildSessionStatisticsModel(normalizeSessionSummaryRow(row), statisticsJson);
+    return buildSessionStatisticsModel(normalizeSessionSummaryRow(row), statisticsJson, options);
   });
+}
+
+export function getAnalysisBootstrapAtPath(
+  location: AgentPathLocation,
+  filePath: string,
+  selectedSessionId: string | null,
+  limit = SESSION_LIST_LIMIT,
+  options: AnalysisReadOptions = {}
+): AnalysisBootstrapPayload {
+  if (!existsSync(filePath)) {
+    return {
+      databaseInfo: createMissingAnalysisDatabaseInfo(location),
+      sessions: [],
+      selectedSessionId: null,
+      sessionStatistics: null
+    };
+  }
+
+  try {
+    return withReadOnlyDatabase(location, filePath, "bootstrap", options, (db) => {
+      const inspectStartedAt = performance.now();
+      const tableNames = listTableNames(db);
+      if (!hasRequiredTables(tableNames)) {
+        recordAnalysisPerf(options, "bootstrap-inspect-sql", inspectStartedAt, {
+          status: "unsupported",
+          tableCount: tableNames.length
+        });
+        return {
+          databaseInfo: {
+            location,
+            status: "unsupported",
+            displayPath: "~/.agent-vis/profiler.db",
+            error: "Profiler database is missing the canonical tracked_files/sessions/session_statistics tables.",
+            tableNames,
+            sessionCount: 0,
+            totalFiles: 0,
+            lastParsedAt: null
+          },
+          sessions: [],
+          selectedSessionId: null,
+          sessionStatistics: null
+        };
+      }
+
+      const sessionRow = db.prepare("select count(*) as count from sessions").get() as { count?: number } | undefined;
+      const fileRow = db.prepare("select count(*) as count from tracked_files").get() as { count?: number } | undefined;
+      const syncRow = db.prepare("select max(last_parsed_at) as lastParsedAt from tracked_files where parse_status = 'parsed'").get() as
+        | { lastParsedAt?: string | null }
+        | undefined;
+      recordAnalysisPerf(options, "bootstrap-inspect-sql", inspectStartedAt, {
+        status: "ready",
+        tableCount: tableNames.length
+      });
+
+      const databaseInfo: AnalysisDatabaseInfo = {
+        location,
+        status: "ready",
+        displayPath: "~/.agent-vis/profiler.db",
+        error: null,
+        tableNames,
+        sessionCount: Number(sessionRow?.count ?? 0),
+        totalFiles: Number(fileRow?.count ?? 0),
+        lastParsedAt: syncRow?.lastParsedAt ?? null
+      };
+
+      const listStartedAt = performance.now();
+      const sessionRows = db.prepare(
+        `select
+           session_id as sessionId,
+           logical_session_id as logicalSessionId,
+           ecosystem,
+           project_path as projectPath,
+           total_tokens as totalTokens,
+           total_tool_calls as totalToolCalls,
+           parsed_at as parsedAt,
+           updated_at as updatedAt,
+           duration_seconds as durationSeconds,
+           automation_ratio as automationRatio,
+           bottleneck
+         from sessions
+         order by coalesce(parsed_at, updated_at) desc
+         limit ?`
+      ).all(Math.max(1, Math.min(limit, SESSION_LIST_LIMIT))) as Array<Record<string, unknown>>;
+      recordAnalysisPerf(options, "bootstrap-session-list-sql", listStartedAt, {
+        rowCount: sessionRows.length
+      });
+
+      const sessions = sessionRows.map(normalizeSessionSummaryRow);
+      const resolvedSessionId =
+        selectedSessionId && sessions.some((session) => session.sessionId === selectedSessionId)
+          ? selectedSessionId
+          : sessions[0]?.sessionId ?? null;
+
+      if (!resolvedSessionId) {
+        return {
+          databaseInfo,
+          sessions,
+          selectedSessionId: null,
+          sessionStatistics: null
+        };
+      }
+
+      const statisticsStartedAt = performance.now();
+      const statisticsRow = db.prepare(
+        `select
+           s.session_id as sessionId,
+           s.logical_session_id as logicalSessionId,
+           s.ecosystem,
+           s.project_path as projectPath,
+           s.total_tokens as totalTokens,
+           s.total_tool_calls as totalToolCalls,
+           s.parsed_at as parsedAt,
+           s.updated_at as updatedAt,
+           s.duration_seconds as durationSeconds,
+           s.automation_ratio as automationRatio,
+           s.bottleneck,
+           ss.statistics_json as statisticsJson
+         from sessions s
+         left join session_statistics ss on ss.session_id = s.session_id
+         where s.session_id = ?`
+      ).get(resolvedSessionId) as Record<string, unknown> | undefined;
+      recordAnalysisPerf(options, "bootstrap-session-statistics-sql", statisticsStartedAt, {
+        sessionId: resolvedSessionId,
+        found: Boolean(statisticsRow)
+      });
+
+      return {
+        databaseInfo,
+        sessions,
+        selectedSessionId: resolvedSessionId,
+        sessionStatistics: statisticsRow
+          ? buildSessionStatisticsModel(
+              normalizeSessionSummaryRow(statisticsRow),
+              typeof statisticsRow.statisticsJson === "string" ? statisticsRow.statisticsJson : null,
+              options
+            )
+          : null
+      };
+    });
+  } catch (error) {
+    return {
+      databaseInfo: {
+        location,
+        status: "unreadable",
+        displayPath: "~/.agent-vis/profiler.db",
+        error: formatReadableAnalysisError(error),
+        tableNames: [],
+        sessionCount: 0,
+        totalFiles: 0,
+        lastParsedAt: null
+      },
+      sessions: [],
+      selectedSessionId: null,
+      sessionStatistics: null
+    };
+  }
 }
 
 export function getAnalysisCrossSessionMetricsAtPath(
@@ -234,6 +422,7 @@ export function getAnalysisCrossSessionMetricsAtPath(
   options: AnalysisReadOptions = {}
 ): AnalysisCrossSessionMetrics {
   return withReadOnlyDatabase(location, filePath, "cross-session-metrics", options, (db) => {
+    const sqlStartedAt = performance.now();
     const summaryRow = db.prepare(
       `select
          count(*) as totalSessions,
@@ -283,6 +472,9 @@ export function getAnalysisCrossSessionMetricsAtPath(
        order by coalesce(parsed_at, updated_at, created_at) desc
        limit ?`
     ).all(Math.max(1, Math.min(limit, RECENT_TREND_LIMIT))) as Array<Record<string, unknown>>;
+    recordAnalysisPerf(options, "cross-session-sql", sqlStartedAt, {
+      recentSessionCount: recentSessions.length
+    });
 
     return {
       location,
@@ -314,9 +506,16 @@ export function getAnalysisCrossSessionMetricsAtPath(
 
 function buildSessionStatisticsModel(
   summary: AnalysisSessionSummary,
-  statisticsJson: string | null
+  statisticsJson: string | null,
+  options: AnalysisReadOptions = {}
 ): AnalysisSessionStatistics {
+  const parseStartedAt = performance.now();
   const raw = statisticsJson ? parseStatisticsJson(statisticsJson) : null;
+  recordAnalysisPerf(options, "statistics-json-parse", parseStartedAt, {
+    sessionId: summary.sessionId,
+    hasStatistics: Boolean(statisticsJson)
+  });
+  const transformStartedAt = performance.now();
   const toolCalls = normalizeToolMetrics(raw?.tool_calls, "tool_name");
   const toolGroups = normalizeToolMetrics(raw?.tool_groups, "group_name");
   const errorRecords = normalizeErrorRecords(raw?.tool_error_records);
@@ -331,6 +530,9 @@ function buildSessionStatisticsModel(
   const leverageMetrics = buildLeverageMetrics(raw, summary);
   const activeTimeRatio = readNumberField(raw?.time_breakdown, "active_time_ratio");
   const modelTimeoutCount = readNumberField(raw?.time_breakdown, "model_timeout_count");
+  recordAnalysisPerf(options, "statistics-transform", transformStartedAt, {
+    sessionId: summary.sessionId
+  });
 
   return {
     summary,
@@ -653,8 +855,14 @@ function withReadOnlyDatabase<T>(
   }
 
   for (let attempt = 0; attempt <= READ_LOCK_RETRY_DELAYS_MS.length; attempt += 1) {
+    const directReadStartedAt = performance.now();
     try {
-      return withOpenedDatabase(filePath, callback);
+      const result = withOpenedDatabase(filePath, callback);
+      recordAnalysisPerf(options, "db-direct-read", directReadStartedAt, {
+        location,
+        operation
+      });
+      return result;
     } catch (error) {
       if (!isLockedDatabaseError(error)) {
         throw error;
@@ -675,6 +883,15 @@ function withReadOnlyDatabase<T>(
         break;
       }
 
+      options.onPerf?.({
+        name: "db-lock-retry-wait",
+        durationMs: delayMs,
+        extra: {
+          location,
+          operation,
+          attempt: attempt + 1
+        }
+      });
       sleepSync(delayMs);
     }
   }
@@ -693,9 +910,14 @@ function withSnapshotDatabase<T>(
   const snapshotDbPath = join(snapshotDir, basename(filePath));
 
   try {
+    const snapshotCopyStartedAt = performance.now();
     copyFileSync(filePath, snapshotDbPath);
     copySnapshotSidecar(filePath, snapshotDbPath, "-wal");
     copySnapshotSidecar(filePath, snapshotDbPath, "-shm");
+    recordAnalysisPerf(options, "db-snapshot-copy", snapshotCopyStartedAt, {
+      location,
+      operation
+    });
 
     options.logger?.warn?.("analysis-db-using-snapshot", {
       location,
@@ -704,7 +926,13 @@ function withSnapshotDatabase<T>(
       snapshotDbPath
     });
 
-    return withOpenedDatabase(snapshotDbPath, callback);
+    const snapshotReadStartedAt = performance.now();
+    const result = withOpenedDatabase(snapshotDbPath, callback);
+    recordAnalysisPerf(options, "db-snapshot-read", snapshotReadStartedAt, {
+      location,
+      operation
+    });
+    return result;
   } catch (error) {
     options.logger?.error?.("analysis-db-snapshot-failed", {
       location,
@@ -767,4 +995,17 @@ function formatReadableAnalysisError(error: unknown): string {
     return "Profiler database is busy because another process is writing to it. Retry once the write finishes.";
   }
   return getErrorMessage(error);
+}
+
+function recordAnalysisPerf(
+  options: AnalysisReadOptions,
+  name: string,
+  startedAt: number,
+  extra?: Record<string, unknown>
+): void {
+  options.onPerf?.({
+    name,
+    durationMs: performance.now() - startedAt,
+    extra
+  });
 }

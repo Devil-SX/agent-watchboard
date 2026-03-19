@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import {
   createMissingAnalysisDatabaseInfo,
+  getAnalysisBootstrapAtPath,
   getAnalysisCrossSessionMetricsAtPath,
   getAnalysisSessionDetailAtPath,
   getAnalysisSessionStatisticsAtPath,
@@ -120,6 +121,26 @@ test("getAnalysisCrossSessionMetricsAtPath returns aggregate ecosystem and proje
   assert.equal(metrics.ecosystemDistribution.some((entry) => entry.label === "claude" && entry.value === 1), true);
   assert.equal(metrics.topProjects[0]?.sessionCount >= 1, true);
   assert.equal(metrics.recentSessions.length, 2);
+});
+
+test("getAnalysisBootstrapAtPath returns the initial database summary sessions and selected statistics in one read path", async () => {
+  const dbPath = await createProfilerFixture();
+  const perfEvents: string[] = [];
+
+  const payload = getAnalysisBootstrapAtPath("host", dbPath, null, 10, {
+    location: "host",
+    onPerf: (event) => perfEvents.push(event.name)
+  });
+
+  assert.equal(payload.databaseInfo.status, "ready");
+  assert.equal(payload.sessions.length, 1);
+  assert.equal(payload.selectedSessionId, "session-1");
+  assert.equal(payload.sessionStatistics?.summary.sessionId, "session-1");
+  assert.equal(perfEvents.includes("bootstrap-inspect-sql"), true);
+  assert.equal(perfEvents.includes("bootstrap-session-list-sql"), true);
+  assert.equal(perfEvents.includes("bootstrap-session-statistics-sql"), true);
+  assert.equal(perfEvents.includes("statistics-json-parse"), true);
+  assert.equal(perfEvents.includes("statistics-transform"), true);
 });
 
 test("analysis database falls back to a temporary snapshot when the live database is locked", async () => {

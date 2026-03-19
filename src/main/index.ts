@@ -21,6 +21,7 @@ import {
   buildAnalysisDatabasePath,
   type AnalysisDatabaseLogger,
   createMissingAnalysisDatabaseInfo,
+  getAnalysisBootstrapAtPath,
   getAnalysisCrossSessionMetricsAtPath,
   getAnalysisSessionDetailAtPath,
   getAnalysisSessionStatisticsAtPath,
@@ -114,6 +115,22 @@ const analysisDatabaseLogger: AnalysisDatabaseLogger = {
     log.error(event, payload);
   }
 };
+
+function createAnalysisPerfReporter(location: AgentPathLocation, operation: string, filePath: string) {
+  return (event: { name: string; durationMs: number; extra?: Record<string, unknown> }) => {
+    recordMainPerf({
+      category: "analysis",
+      name: event.name,
+      durationMs: event.durationMs,
+      extra: {
+        location,
+        operation,
+        filePath,
+        ...event.extra
+      }
+    });
+  };
+}
 
 function defaultWorkspaceSeed(): { platform: NodeJS.Platform } {
   return {
@@ -987,7 +1004,10 @@ function setupIpc(): void {
     if (!filePath) {
       return createMissingAnalysisDatabaseInfo(location);
     }
-    const info = inspectAnalysisDatabaseAtPath(location, filePath, { logger: analysisDatabaseLogger });
+    const info = inspectAnalysisDatabaseAtPath(location, filePath, {
+      logger: analysisDatabaseLogger,
+      onPerf: createAnalysisPerfReporter(location, "inspect", filePath)
+    });
     log.info("analysis-db-result", {
       operation: "inspect",
       location,
@@ -1000,6 +1020,33 @@ function setupIpc(): void {
     return info;
   });
 
+  ipcMain.handle(
+    "watchboard:get-analysis-bootstrap",
+    async (_event, location: AgentPathLocation, selectedSessionId?: string | null, limit?: number) => {
+      const filePath = await resolveAnalysisDatabasePath(location);
+      log.info("analysis-db-resolve", {
+        operation: "bootstrap",
+        location,
+        filePath,
+        selectedSessionId: selectedSessionId ?? null,
+        limit: limit ?? null
+      });
+      if (!filePath) {
+        return {
+          databaseInfo: createMissingAnalysisDatabaseInfo(location),
+          sessions: [],
+          selectedSessionId: null,
+          sessionStatistics: null
+        };
+      }
+      return getAnalysisBootstrapAtPath(location, filePath, selectedSessionId ?? null, limit, {
+        location,
+        logger: analysisDatabaseLogger,
+        onPerf: createAnalysisPerfReporter(location, "bootstrap", filePath)
+      });
+    }
+  );
+
   ipcMain.handle("watchboard:run-analysis-query", async (_event, location: AgentPathLocation, sql: string) => {
     const filePath = await requireAnalysisDatabasePath(location);
     log.info("analysis-db-resolve", {
@@ -1008,7 +1055,10 @@ function setupIpc(): void {
       filePath,
       queryPreview: sql.trim().slice(0, 160)
     });
-    return runAnalysisQueryAtPath(location, filePath, sql, { logger: analysisDatabaseLogger });
+    return runAnalysisQueryAtPath(location, filePath, sql, {
+      logger: analysisDatabaseLogger,
+      onPerf: createAnalysisPerfReporter(location, "query", filePath)
+    });
   });
 
   ipcMain.handle("watchboard:list-analysis-sessions", async (_event, location: AgentPathLocation, limit?: number) => {
@@ -1021,7 +1071,8 @@ function setupIpc(): void {
     });
     return listAnalysisSessionsAtPath(filePath, limit, {
       location,
-      logger: analysisDatabaseLogger
+      logger: analysisDatabaseLogger,
+      onPerf: createAnalysisPerfReporter(location, "list-sessions", filePath)
     });
   });
 
@@ -1035,7 +1086,8 @@ function setupIpc(): void {
     });
     return getAnalysisSessionDetailAtPath(filePath, sessionId, {
       location,
-      logger: analysisDatabaseLogger
+      logger: analysisDatabaseLogger,
+      onPerf: createAnalysisPerfReporter(location, "session-detail", filePath)
     });
   });
 
@@ -1049,7 +1101,8 @@ function setupIpc(): void {
     });
     return getAnalysisSessionStatisticsAtPath(filePath, sessionId, {
       location,
-      logger: analysisDatabaseLogger
+      logger: analysisDatabaseLogger,
+      onPerf: createAnalysisPerfReporter(location, "session-statistics", filePath)
     });
   });
 
@@ -1063,7 +1116,8 @@ function setupIpc(): void {
     });
     return getAnalysisCrossSessionMetricsAtPath(location, filePath, limit, {
       location,
-      logger: analysisDatabaseLogger
+      logger: analysisDatabaseLogger,
+      onPerf: createAnalysisPerfReporter(location, "cross-session-metrics", filePath)
     });
   });
 }

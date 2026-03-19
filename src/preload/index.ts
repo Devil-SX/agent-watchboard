@@ -52,6 +52,8 @@ const api: WatchboardApi = {
   readAgentConfig: (configId, location) => ipcRenderer.invoke("watchboard:read-agent-config", configId, location),
   writeAgentConfig: (configId, location, content) => ipcRenderer.invoke("watchboard:write-agent-config", configId, location, content),
   getAnalysisDatabase: (location) => ipcRenderer.invoke("watchboard:get-analysis-database", location),
+  getAnalysisBootstrap: (location, selectedSessionId, limit) =>
+    ipcRenderer.invoke("watchboard:get-analysis-bootstrap", location, selectedSessionId, limit),
   runAnalysisQuery: (location, sql) => ipcRenderer.invoke("watchboard:run-analysis-query", location, sql),
   listAnalysisSessions: (location, limit) => ipcRenderer.invoke("watchboard:list-analysis-sessions", location, limit),
   getAnalysisSessionDetail: (location, sessionId) => ipcRenderer.invoke("watchboard:get-analysis-session-detail", location, sessionId),

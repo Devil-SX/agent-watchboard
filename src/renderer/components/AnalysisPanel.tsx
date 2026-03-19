@@ -210,10 +210,74 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     let cancelled = false;
     const locationCache = getAnalysisLocationCache(location);
     const previousSignature = getAnalysisDatabaseSignature(locationCache.databaseInfo);
+    const shouldBootstrap =
+      locationCache.databaseInfo == null &&
+      locationCache.sessions == null &&
+      activeSection !== "cross-session" &&
+      activeSection !== "query";
     setIsLoadingDatabase(locationCache.databaseInfo == null);
     setSessionError("");
     setSessionStatisticsError("");
     setCrossSessionError("");
+
+    if (shouldBootstrap) {
+      void measureRendererAsync(
+        "analysis",
+        "bootstrap",
+        () => window.watchboard.getAnalysisBootstrap(location, selectedSessionId, 36),
+        { location, section: activeSection }
+      )
+        .then((payload) => {
+          if (cancelled) {
+            return;
+          }
+          if (getAnalysisDatabaseSignature(payload.databaseInfo) !== previousSignature) {
+            resetAnalysisDerivedCache(location);
+          }
+          locationCache.databaseInfo = payload.databaseInfo;
+          locationCache.sessions = payload.sessions;
+          if (payload.selectedSessionId) {
+            locationCache.sessionStatisticsById.set(payload.selectedSessionId, payload.sessionStatistics);
+          }
+          startTransition(() => {
+            setDatabaseInfo(payload.databaseInfo);
+            setSessions(payload.sessions);
+            setSelectedSessionId(payload.selectedSessionId);
+            setSessionStatistics(payload.sessionStatistics);
+          });
+        })
+        .catch((error: unknown) => {
+          if (cancelled) {
+            return;
+          }
+          const unreadableInfo = {
+            location,
+            status: "unreadable",
+            displayPath: "~/.agent-vis/profiler.db",
+            error: error instanceof Error ? error.message : String(error),
+            tableNames: [],
+            sessionCount: 0,
+            totalFiles: 0,
+            lastParsedAt: null
+          } satisfies AnalysisDatabaseInfo;
+          locationCache.databaseInfo = unreadableInfo;
+          if (getAnalysisDatabaseSignature(unreadableInfo) !== previousSignature) {
+            resetAnalysisDerivedCache(location);
+          }
+          startTransition(() => {
+            setDatabaseInfo(unreadableInfo);
+          });
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsLoadingDatabase(false);
+          }
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }
 
     void measureRendererAsync("analysis", "database-inspect", () => window.watchboard.getAnalysisDatabase(location), { location })
       .then((info) => {
@@ -259,7 +323,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     return () => {
       cancelled = true;
     };
-  }, [location]);
+  }, [activeSection, location]);
 
   useEffect(() => {
     if (databaseInfo?.status !== "ready") {
@@ -312,7 +376,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     return () => {
       cancelled = true;
     };
-  }, [databaseSignature, location, selectedSessionId]);
+  }, [databaseSignature, location]);
 
   useEffect(() => {
     if (databaseInfo?.status !== "ready" || !selectedSessionId || activeSection === "cross-session" || activeSection === "query") {

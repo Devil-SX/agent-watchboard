@@ -66,9 +66,9 @@ function createSessionStatistics(totalTokens: number) {
 
 async function flushMicrotasks() {
   await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve();
+    }
   });
 }
 
@@ -111,6 +111,7 @@ async function renderAnalysisPanel(setupWatchboard?: () => void) {
 test("AnalysisPanel reuses cached derived data across remount when database freshness is unchanged", async () => {
   resetAnalysisPanelCacheForTests();
   const calls = {
+    bootstrap: 0,
     inspect: 0,
     listSessions: 0,
     sessionStatistics: 0
@@ -118,6 +119,15 @@ test("AnalysisPanel reuses cached derived data across remount when database fres
 
   const first = await renderAnalysisPanel(() => {
     globalThis.window.watchboard = {
+      getAnalysisBootstrap: async () => {
+        calls.bootstrap += 1;
+        return {
+          databaseInfo: createDatabaseInfo("2026-03-19T00:00:00.000Z"),
+          sessions: createSessionSummary(1024),
+          selectedSessionId: "session-1",
+          sessionStatistics: createSessionStatistics(1024)
+        };
+      },
       getAnalysisDatabase: async () => {
         calls.inspect += 1;
         return createDatabaseInfo("2026-03-19T00:00:00.000Z");
@@ -143,15 +153,25 @@ test("AnalysisPanel reuses cached derived data across remount when database fres
   try {
     await flushMicrotasks();
     assert.match(first.container.textContent ?? "", /Selected Session/);
-    assert.equal(calls.inspect, 1);
-    assert.equal(calls.listSessions, 1);
-    assert.equal(calls.sessionStatistics, 1);
+    assert.equal(calls.bootstrap, 1);
+    assert.equal(calls.inspect, 0);
+    assert.equal(calls.listSessions, 0);
+    assert.equal(calls.sessionStatistics, 0);
   } finally {
     await first.unmount();
   }
 
   const second = await renderAnalysisPanel(() => {
     globalThis.window.watchboard = {
+      getAnalysisBootstrap: async () => {
+        calls.bootstrap += 1;
+        return {
+          databaseInfo: createDatabaseInfo("2026-03-19T00:00:00.000Z"),
+          sessions: createSessionSummary(1024),
+          selectedSessionId: "session-1",
+          sessionStatistics: createSessionStatistics(1024)
+        };
+      },
       getAnalysisDatabase: async () => {
         calls.inspect += 1;
         return createDatabaseInfo("2026-03-19T00:00:00.000Z");
@@ -179,9 +199,10 @@ test("AnalysisPanel reuses cached derived data across remount when database fres
     assert.doesNotMatch(second.container.textContent ?? "", /Inspecting profiler database/);
 
     await flushMicrotasks();
-    assert.equal(calls.inspect, 2);
-    assert.equal(calls.listSessions, 1);
-    assert.equal(calls.sessionStatistics, 1);
+    assert.equal(calls.bootstrap, 1);
+    assert.equal(calls.inspect, 1);
+    assert.equal(calls.listSessions, 0);
+    assert.equal(calls.sessionStatistics, 0);
   } finally {
     await second.unmount();
     resetAnalysisPanelCacheForTests();
@@ -197,6 +218,7 @@ test("AnalysisPanel invalidates cached derived data when profiler freshness chan
   const sessionResponses = [createSessionSummary(1024), createSessionSummary(2048)];
   const statisticsResponses = [createSessionStatistics(1024), createSessionStatistics(2048)];
   const calls = {
+    bootstrap: 0,
     inspect: 0,
     listSessions: 0,
     sessionStatistics: 0
@@ -204,18 +226,29 @@ test("AnalysisPanel invalidates cached derived data when profiler freshness chan
 
   const first = await renderAnalysisPanel(() => {
     globalThis.window.watchboard = {
+      getAnalysisBootstrap: async () => {
+        const inspectIndex = Math.min(calls.bootstrap, inspectResponses.length - 1);
+        const payload = {
+          databaseInfo: inspectResponses[inspectIndex],
+          sessions: sessionResponses[inspectIndex],
+          selectedSessionId: "session-1",
+          sessionStatistics: statisticsResponses[inspectIndex]
+        };
+        calls.bootstrap += 1;
+        return payload;
+      },
       getAnalysisDatabase: async () => {
-        const next = inspectResponses[Math.min(calls.inspect, inspectResponses.length - 1)];
+        const next = inspectResponses[Math.min(calls.inspect + 1, inspectResponses.length - 1)];
         calls.inspect += 1;
         return next;
       },
       listAnalysisSessions: async () => {
-        const next = sessionResponses[Math.min(calls.listSessions, sessionResponses.length - 1)];
+        const next = sessionResponses[Math.min(calls.listSessions + 1, sessionResponses.length - 1)];
         calls.listSessions += 1;
         return next;
       },
       getAnalysisSessionStatistics: async () => {
-        const next = statisticsResponses[Math.min(calls.sessionStatistics, statisticsResponses.length - 1)];
+        const next = statisticsResponses[Math.min(calls.sessionStatistics + 1, statisticsResponses.length - 1)];
         calls.sessionStatistics += 1;
         return next;
       },
@@ -238,18 +271,29 @@ test("AnalysisPanel invalidates cached derived data when profiler freshness chan
 
   const second = await renderAnalysisPanel(() => {
     globalThis.window.watchboard = {
+      getAnalysisBootstrap: async () => {
+        const inspectIndex = Math.min(calls.bootstrap, inspectResponses.length - 1);
+        const payload = {
+          databaseInfo: inspectResponses[inspectIndex],
+          sessions: sessionResponses[inspectIndex],
+          selectedSessionId: "session-1",
+          sessionStatistics: statisticsResponses[inspectIndex]
+        };
+        calls.bootstrap += 1;
+        return payload;
+      },
       getAnalysisDatabase: async () => {
-        const next = inspectResponses[Math.min(calls.inspect, inspectResponses.length - 1)];
+        const next = inspectResponses[Math.min(calls.inspect + 1, inspectResponses.length - 1)];
         calls.inspect += 1;
         return next;
       },
       listAnalysisSessions: async () => {
-        const next = sessionResponses[Math.min(calls.listSessions, sessionResponses.length - 1)];
+        const next = sessionResponses[Math.min(calls.listSessions + 1, sessionResponses.length - 1)];
         calls.listSessions += 1;
         return next;
       },
       getAnalysisSessionStatistics: async () => {
-        const next = statisticsResponses[Math.min(calls.sessionStatistics, statisticsResponses.length - 1)];
+        const next = statisticsResponses[Math.min(calls.sessionStatistics + 1, statisticsResponses.length - 1)];
         calls.sessionStatistics += 1;
         return next;
       },
@@ -266,9 +310,10 @@ test("AnalysisPanel invalidates cached derived data when profiler freshness chan
   try {
     await flushMicrotasks();
 
-    assert.equal(calls.inspect, 2);
-    assert.equal(calls.listSessions, 2);
-    assert.equal(calls.sessionStatistics, 2);
+    assert.equal(calls.bootstrap, 1);
+    assert.equal(calls.inspect, 1);
+    assert.equal(calls.listSessions, 1);
+    assert.equal(calls.sessionStatistics, 1);
     assert.match(second.container.textContent ?? "", /2,048/);
   } finally {
     await second.unmount();

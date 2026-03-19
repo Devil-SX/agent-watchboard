@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-03-19
+
+> **Code Stats** | Total: 44036 lines | Delta: +470 (-31) = **+439 net** | Change: **+1.01%** vs v0.12.1
+
+### Added
+- Added an analysis bootstrap IPC path that can return database summary, session list, and selected-session statistics from one read-only database pass instead of forcing the renderer through three separate cold-start requests.
+- Added stage-level analysis perf events for bootstrap SQL, session-list SQL, statistics SQL, JSON parse/transform, direct-read timing, lock-retry waits, and snapshot copy/read fallback timing.
+- Added regression coverage for the new bootstrap read path and for analysis pane remounts that detect profiler freshness changes before invalidating cached derived state.
+
+### Fixed
+- Fixed the analysis pane cold-start path so overview/session entry can materialize its first meaningful content with a single bootstrap IPC instead of serializing `inspect`, `list-sessions`, and `session-statistics` into separate database-open cycles.
+- Fixed analysis profiling blind spots so the existing analysis perf report workflow can now attribute load-path cost across main-process read stages instead of collapsing everything into one opaque renderer-side duration.
+
 ## [0.12.1] - 2026-03-19
 
 > **Code Stats** | Total: 43309 lines | Delta: +168 (-23) = **+145 net** | Change: **+0.34%** vs v0.12.0

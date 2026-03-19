@@ -90,6 +90,11 @@ export type WatchboardApi = {
   getDoctorDiagnostics: () => Promise<DoctorDiagnosticsDocument>;
   runDoctorCheck: (location: DoctorLocation, agent: DoctorAgent) => Promise<DoctorCheckResult>;
   getAnalysisDatabase: (location: AgentPathLocation) => Promise<AnalysisDatabaseInfo>;
+  getAnalysisBootstrap: (
+    location: AgentPathLocation,
+    selectedSessionId?: string | null,
+    limit?: number
+  ) => Promise<AnalysisBootstrapPayload>;
   runAnalysisQuery: (location: AgentPathLocation, sql: string) => Promise<AnalysisQueryResult>;
   listAnalysisSessions: (location: AgentPathLocation, limit?: number) => Promise<AnalysisSessionSummary[]>;
   getAnalysisSessionDetail: (location: AgentPathLocation, sessionId: string) => Promise<AnalysisSessionDetail | null>;
@@ -125,6 +130,13 @@ export type AnalysisDatabaseInfo = {
 };
 
 export type AnalysisQueryValue = string | number | boolean | null;
+
+export type AnalysisBootstrapPayload = {
+  databaseInfo: AnalysisDatabaseInfo;
+  sessions: AnalysisSessionSummary[];
+  selectedSessionId: string | null;
+  sessionStatistics: AnalysisSessionStatistics | null;
+};
 
 export type AnalysisQueryResult = {
   location: AgentPathLocation;
