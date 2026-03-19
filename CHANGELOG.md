@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-03-19
+
+> **Code Stats** | Total: 44063 lines | Delta: +39 (-2) = **+37 net** | Change: **+0.08%** vs v0.12.2
+
+### Added
+- Added an analysis style contract test that keeps the pane-level vertical scroll path and rejects regressing the analysis-specific list/table containers back to `overflow: overlay`.
+
+### Fixed
+- Fixed analysis scrolling so the main analysis body now exposes an explicit vertical scrollbar and the session-list/table subcontainers use standard `overflow: auto` behavior across Windows and Linux builds.
+
 ## [0.12.2] - 2026-03-19
 
 > **Code Stats** | Total: 44036 lines | Delta: +470 (-31) = **+439 net** | Change: **+1.01%** vs v0.12.1
