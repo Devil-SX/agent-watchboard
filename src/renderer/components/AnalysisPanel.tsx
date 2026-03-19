@@ -57,6 +57,17 @@ const CHART_COLORS = [
   "#c3e88d"
 ];
 
+type AnalysisLocationCache = {
+  databaseInfo: AnalysisDatabaseInfo | null;
+  sessions: AnalysisSessionSummary[] | null;
+  sessionStatisticsById: Map<string, AnalysisSessionStatistics | null>;
+  rawSessionDetailById: Map<string, AnalysisSessionDetail | null>;
+  crossSessionMetrics: AnalysisCrossSessionMetrics | null;
+  queryResultsBySql: Map<string, AnalysisQueryResult | null>;
+};
+
+const analysisLocationCache = new Map<AgentPathLocation, AnalysisLocationCache>();
+
 type Props = {
   diagnostics: DiagnosticsInfo | null;
   viewState: AnalysisPaneState;
@@ -94,28 +105,40 @@ type SurfaceProps = {
   onToggleRawStatistics: () => void;
 };
 
+export function resetAnalysisPanelCacheForTests(): void {
+  analysisLocationCache.clear();
+}
+
 export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Props): ReactElement {
+  const initialCache = getAnalysisLocationCache(viewState.location);
+  const initialExecutedQuery = normalizeAnalysisQueryCacheKey(viewState.executedQueryText);
   const [location, setLocation] = useState<AgentPathLocation>(viewState.location);
   const [activeSection, setActiveSection] = useState<AnalysisPaneSection>(viewState.activeSection);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(viewState.selectedSessionId);
   const [queryText, setQueryText] = useState(viewState.queryText);
   const [executedQueryText, setExecutedQueryText] = useState(viewState.executedQueryText);
-  const [databaseInfo, setDatabaseInfo] = useState<AnalysisDatabaseInfo | null>(null);
-  const [isLoadingDatabase, setIsLoadingDatabase] = useState(true);
-  const [sessions, setSessions] = useState<AnalysisSessionSummary[]>([]);
+  const [databaseInfo, setDatabaseInfo] = useState<AnalysisDatabaseInfo | null>(initialCache.databaseInfo);
+  const [isLoadingDatabase, setIsLoadingDatabase] = useState(initialCache.databaseInfo == null);
+  const [sessions, setSessions] = useState<AnalysisSessionSummary[]>(initialCache.sessions ?? []);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionError, setSessionError] = useState("");
-  const [sessionStatistics, setSessionStatistics] = useState<AnalysisSessionStatistics | null>(null);
+  const [sessionStatistics, setSessionStatistics] = useState<AnalysisSessionStatistics | null>(
+    viewState.selectedSessionId ? initialCache.sessionStatisticsById.get(viewState.selectedSessionId) ?? null : null
+  );
   const [sessionStatisticsLoading, setSessionStatisticsLoading] = useState(false);
   const [sessionStatisticsError, setSessionStatisticsError] = useState("");
-  const [crossSessionMetrics, setCrossSessionMetrics] = useState<AnalysisCrossSessionMetrics | null>(null);
+  const [crossSessionMetrics, setCrossSessionMetrics] = useState<AnalysisCrossSessionMetrics | null>(initialCache.crossSessionMetrics);
   const [crossSessionLoading, setCrossSessionLoading] = useState(false);
   const [crossSessionError, setCrossSessionError] = useState("");
-  const [queryResult, setQueryResult] = useState<AnalysisQueryResult | null>(null);
+  const [queryResult, setQueryResult] = useState<AnalysisQueryResult | null>(
+    initialExecutedQuery ? initialCache.queryResultsBySql.get(initialExecutedQuery) ?? null : null
+  );
   const [queryError, setQueryError] = useState("");
   const [queryRunning, setQueryRunning] = useState(false);
   const [showRawStatistics, setShowRawStatistics] = useState(false);
-  const [rawSessionDetail, setRawSessionDetail] = useState<AnalysisSessionDetail | null>(null);
+  const [rawSessionDetail, setRawSessionDetail] = useState<AnalysisSessionDetail | null>(
+    viewState.selectedSessionId ? initialCache.rawSessionDetailById.get(viewState.selectedSessionId) ?? null : null
+  );
   const [rawSessionDetailLoading, setRawSessionDetailLoading] = useState(false);
   const persistReadyRef = useRef(false);
   const isApplyingViewStateRef = useRef(false);
@@ -134,6 +157,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     }),
     [activeSection, executedQueryText, location, queryText, selectedSessionId]
   );
+  const databaseSignature = getAnalysisDatabaseSignature(databaseInfo);
 
   useEffect(() => {
     isApplyingViewStateRef.current = true;
@@ -169,8 +193,24 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   }, [currentPaneState, onViewStateChange, viewState]);
 
   useEffect(() => {
+    const locationCache = getAnalysisLocationCache(location);
+    const normalizedExecutedQuery = normalizeAnalysisQueryCacheKey(executedQueryText);
+    startTransition(() => {
+      setDatabaseInfo(locationCache.databaseInfo);
+      setIsLoadingDatabase(locationCache.databaseInfo == null);
+      setSessions(locationCache.sessions ?? []);
+      setCrossSessionMetrics(locationCache.crossSessionMetrics);
+      setSessionStatistics(selectedSessionId ? locationCache.sessionStatisticsById.get(selectedSessionId) ?? null : null);
+      setRawSessionDetail(selectedSessionId ? locationCache.rawSessionDetailById.get(selectedSessionId) ?? null : null);
+      setQueryResult(normalizedExecutedQuery ? locationCache.queryResultsBySql.get(normalizedExecutedQuery) ?? null : null);
+    });
+  }, [executedQueryText, location, selectedSessionId]);
+
+  useEffect(() => {
     let cancelled = false;
-    setIsLoadingDatabase(true);
+    const locationCache = getAnalysisLocationCache(location);
+    const previousSignature = getAnalysisDatabaseSignature(locationCache.databaseInfo);
+    setIsLoadingDatabase(locationCache.databaseInfo == null);
     setSessionError("");
     setSessionStatisticsError("");
     setCrossSessionError("");
@@ -180,6 +220,10 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         if (cancelled) {
           return;
         }
+        locationCache.databaseInfo = info;
+        if (getAnalysisDatabaseSignature(info) !== previousSignature) {
+          resetAnalysisDerivedCache(location);
+        }
         startTransition(() => {
           setDatabaseInfo(info);
         });
@@ -188,17 +232,22 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         if (cancelled) {
           return;
         }
+        const unreadableInfo = {
+          location,
+          status: "unreadable",
+          displayPath: "~/.agent-vis/profiler.db",
+          error: error instanceof Error ? error.message : String(error),
+          tableNames: [],
+          sessionCount: 0,
+          totalFiles: 0,
+          lastParsedAt: null
+        } satisfies AnalysisDatabaseInfo;
+        locationCache.databaseInfo = unreadableInfo;
+        if (getAnalysisDatabaseSignature(unreadableInfo) !== previousSignature) {
+          resetAnalysisDerivedCache(location);
+        }
         startTransition(() => {
-          setDatabaseInfo({
-            location,
-            status: "unreadable",
-            displayPath: "~/.agent-vis/profiler.db",
-            error: error instanceof Error ? error.message : String(error),
-            tableNames: [],
-            sessionCount: 0,
-            totalFiles: 0,
-            lastParsedAt: null
-          });
+          setDatabaseInfo(unreadableInfo);
         });
       })
       .finally(() => {
@@ -214,8 +263,21 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
 
   useEffect(() => {
     if (databaseInfo?.status !== "ready") {
+      getAnalysisLocationCache(location).sessions = null;
       setSessions([]);
       setSelectedSessionId(null);
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    if (locationCache.sessions) {
+      startTransition(() => {
+        setSessions(locationCache.sessions ?? []);
+        if (!selectedSessionId || !locationCache.sessions?.some((session) => session.sessionId === selectedSessionId)) {
+          setSelectedSessionId(locationCache.sessions?.[0]?.sessionId ?? null);
+        }
+      });
+      setSessionsLoading(false);
       return;
     }
 
@@ -228,6 +290,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         if (cancelled) {
           return;
         }
+        locationCache.sessions = nextSessions;
         startTransition(() => {
           setSessions(nextSessions);
           if (!selectedSessionId || !nextSessions.some((session) => session.sessionId === selectedSessionId)) {
@@ -249,12 +312,19 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     return () => {
       cancelled = true;
     };
-  }, [databaseInfo?.status, location, selectedSessionId]);
+  }, [databaseSignature, location, selectedSessionId]);
 
   useEffect(() => {
     if (databaseInfo?.status !== "ready" || !selectedSessionId || activeSection === "cross-session" || activeSection === "query") {
       setSessionStatistics(null);
       setSessionStatisticsError("");
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    if (locationCache.sessionStatisticsById.has(selectedSessionId)) {
+      setSessionStatistics(locationCache.sessionStatisticsById.get(selectedSessionId) ?? null);
+      setSessionStatisticsLoading(false);
       return;
     }
 
@@ -272,6 +342,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         if (cancelled) {
           return;
         }
+        locationCache.sessionStatisticsById.set(selectedSessionId, result);
         startTransition(() => {
           setSessionStatistics(result);
         });
@@ -290,12 +361,19 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     return () => {
       cancelled = true;
     };
-  }, [activeSection, databaseInfo?.status, location, selectedSessionId]);
+  }, [activeSection, databaseSignature, location, selectedSessionId]);
 
   useEffect(() => {
     if (databaseInfo?.status !== "ready" || activeSection !== "cross-session") {
       setCrossSessionMetrics(null);
       setCrossSessionError("");
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    if (locationCache.crossSessionMetrics) {
+      setCrossSessionMetrics(locationCache.crossSessionMetrics);
+      setCrossSessionLoading(false);
       return;
     }
 
@@ -313,6 +391,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         if (cancelled) {
           return;
         }
+        locationCache.crossSessionMetrics = result;
         startTransition(() => {
           setCrossSessionMetrics(result);
         });
@@ -331,12 +410,20 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     return () => {
       cancelled = true;
     };
-  }, [activeSection, databaseInfo?.status, location]);
+  }, [activeSection, databaseSignature, location]);
 
   useEffect(() => {
     if (databaseInfo?.status !== "ready" || activeSection !== "query" || !executedQueryText.trim()) {
       setQueryResult(null);
       setQueryError("");
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    const normalizedQuery = normalizeAnalysisQueryCacheKey(executedQueryText);
+    if (normalizedQuery && locationCache.queryResultsBySql.has(normalizedQuery)) {
+      setQueryResult(locationCache.queryResultsBySql.get(normalizedQuery) ?? null);
+      setQueryRunning(false);
       return;
     }
 
@@ -351,6 +438,9 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         if (cancelled) {
           return;
         }
+        if (normalizedQuery) {
+          locationCache.queryResultsBySql.set(normalizedQuery, result);
+        }
         startTransition(() => {
           setQueryResult(result);
         });
@@ -358,6 +448,9 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       .catch((error: unknown) => {
         if (cancelled) {
           return;
+        }
+        if (normalizedQuery) {
+          locationCache.queryResultsBySql.delete(normalizedQuery);
         }
         setQueryResult(null);
         setQueryError(error instanceof Error ? error.message : String(error));
@@ -371,11 +464,18 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     return () => {
       cancelled = true;
     };
-  }, [activeSection, databaseInfo?.status, executedQueryText, location]);
+  }, [activeSection, databaseSignature, executedQueryText, location]);
 
   useEffect(() => {
     if (databaseInfo?.status !== "ready" || activeSection !== "sessions" || !showRawStatistics || !selectedSessionId) {
       setRawSessionDetail(null);
+      setRawSessionDetailLoading(false);
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    if (locationCache.rawSessionDetailById.has(selectedSessionId)) {
+      setRawSessionDetail(locationCache.rawSessionDetailById.get(selectedSessionId) ?? null);
       setRawSessionDetailLoading(false);
       return;
     }
@@ -393,6 +493,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         if (cancelled) {
           return;
         }
+        locationCache.rawSessionDetailById.set(selectedSessionId, detail);
         startTransition(() => {
           setRawSessionDetail(detail);
         });
@@ -406,7 +507,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     return () => {
       cancelled = true;
     };
-  }, [activeSection, databaseInfo?.status, location, selectedSessionId, showRawStatistics]);
+  }, [activeSection, databaseSignature, location, selectedSessionId, showRawStatistics]);
 
   useEffect(() => {
     let signature = "";
@@ -599,6 +700,50 @@ export function AnalysisPanelSurface({
       ) : null}
     </div>
   );
+}
+
+function getAnalysisLocationCache(location: AgentPathLocation): AnalysisLocationCache {
+  const existing = analysisLocationCache.get(location);
+  if (existing) {
+    return existing;
+  }
+  const next: AnalysisLocationCache = {
+    databaseInfo: null,
+    sessions: null,
+    sessionStatisticsById: new Map(),
+    rawSessionDetailById: new Map(),
+    crossSessionMetrics: null,
+    queryResultsBySql: new Map()
+  };
+  analysisLocationCache.set(location, next);
+  return next;
+}
+
+function resetAnalysisDerivedCache(location: AgentPathLocation): void {
+  const locationCache = getAnalysisLocationCache(location);
+  locationCache.sessions = null;
+  locationCache.sessionStatisticsById.clear();
+  locationCache.rawSessionDetailById.clear();
+  locationCache.crossSessionMetrics = null;
+  locationCache.queryResultsBySql.clear();
+}
+
+function getAnalysisDatabaseSignature(databaseInfo: AnalysisDatabaseInfo | null): string {
+  if (!databaseInfo) {
+    return "missing";
+  }
+  return [
+    databaseInfo.location,
+    databaseInfo.status,
+    databaseInfo.lastParsedAt ?? "",
+    String(databaseInfo.sessionCount),
+    String(databaseInfo.totalFiles),
+    String(databaseInfo.tableNames.length)
+  ].join(":");
+}
+
+function normalizeAnalysisQueryCacheKey(value: string): string {
+  return value.trim();
 }
 
 function OverviewSection({

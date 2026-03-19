@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-03-19
+
+> **Code Stats** | Total: 43309 lines | Delta: +168 (-23) = **+145 net** | Change: **+0.34%** vs v0.12.0
+
+### Added
+- Added DOM lifecycle regressions for the analysis pane so tab re-entry now proves both cached reuse on unchanged profiler freshness and forced re-fetch when `lastParsedAt` advances.
+
+### Fixed
+- Fixed analysis tab re-entry so the renderer now reuses the last successful database/session payloads across remounts instead of showing a full reload cycle every time the pane is reopened.
+- Fixed analysis cache invalidation so session lists, per-session statistics, raw detail payloads, cross-session metrics, and query results are only discarded when the backing profiler freshness signature actually changes.
+
 ## [0.12.0] - 2026-03-19
 
 > **Code Stats** | Total: 43160 lines | Delta: +667 (-102) = **+565 net** | Change: **+1.33%** vs v0.11.0
