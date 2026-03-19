@@ -33,15 +33,7 @@ const api: WatchboardApi = {
     return () => ipcRenderer.removeListener("session-data", wrapped);
   },
   onSessionState: (listener) => {
-    const wrapped = (_event: unknown, payload: unknown) => {
-      if (Array.isArray(payload)) {
-        for (const session of payload) {
-          listener(session);
-        }
-        return;
-      }
-      listener(payload as never);
-    };
+    const wrapped = (_event: unknown, payload: unknown) => listener(payload as never);
     ipcRenderer.on("session-state", wrapped);
     ipcRenderer.on("session-state-bulk", wrapped);
     return () => {

@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-03-19
+
+> **Code Stats** | Total: 43160 lines | Delta: +667 (-102) = **+565 net** | Change: **+1.33%** vs v0.11.0
+
+### Added
+- Added a repo-safe Codex idle-sample fixture plus a manual PTY sampling script so terminal activity heuristics can be recalibrated against captured interactive output without leaking user paths.
+- Added regression coverage for repeated low-signal activity suppression, jittered active-to-idle thresholds, cron relaunch prompt expansion, legacy status normalization, and immediate cron re-triggering after config edits.
+
+### Changed
+- Batched supervisor session-state broadcasts and renderer state application so concurrent terminal status refreshes no longer force every session through the same UI update tick.
+- Collapsed the terminal status model so long-silent live sessions now stay in `running-idle` instead of diverging into a separate `running-stalled` state.
+- Restyled the collapsed Todo Board restore control into a side-mounted triangular pull handle so it reads as a drawer affordance instead of competing with runtime pane actions.
+
+### Fixed
+- Fixed terminal activity detection so control-sequence noise, prompt redraw chrome, and repeated low-entropy status fragments from Codex idle sessions no longer promote terminals back into `running-active`.
+- Fixed cron relaunch command construction so scheduled prompts now prepend an internal autonomous-execution instruction while keeping the effective combined command visible in resolved-command previews.
+- Fixed cron template edits so changing the active cron configuration immediately schedules one fresh run instead of waiting for the next interval boundary.
+- Fixed the collapsed Todo Board restore affordance so it no longer overlaps the runtime pane action cluster in the terminal workbench.
+
 ## [0.11.0] - 2026-03-19
 
 > **Code Stats** | Total: 42326 lines | Delta: +308 (-29) = **+279 net** | Change: **+0.66%** vs v0.10.2

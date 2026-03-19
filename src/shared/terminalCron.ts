@@ -7,6 +7,9 @@ import {
 } from "@shared/schema";
 import { quotePosixShellArgument } from "@shared/posixShell";
 
+export const CRON_AUTONOMY_PROMPT_PREFIX =
+  "This is a scheduled command. Operate as autonomously as possible without waiting for user interaction. The command is:";
+
 export function isCronEnabled(cron: Pick<TerminalCron, "enabled"> | null | undefined): boolean {
   return Boolean(cron?.enabled);
 }
@@ -21,7 +24,7 @@ export function buildCronRelaunchCommand(
   profile: Pick<TerminalProfile, "startupMode" | "startupPresetId" | "startupCustomCommand" | "startupCommand" | "cron">
 ): string {
   const baseCommand = resolveTerminalStartupCommand(profile).trim();
-  const prompt = profile.cron.prompt.trim();
+  const prompt = buildCronPromptText(profile.cron.prompt);
   if (!baseCommand || !prompt) {
     return baseCommand;
   }
@@ -43,7 +46,7 @@ export function buildCodexExplicitResumeCommand(
   sessionId: string
 ): string {
   const baseCommand = resolveTerminalStartupCommand(profile).trim();
-  const prompt = profile.cron.prompt.trim();
+  const prompt = buildCronPromptText(profile.cron.prompt);
   const sanitizedSessionId = sessionId.trim();
   if (!baseCommand || !prompt || !sanitizedSessionId || !isCodexResumeLastFlow(profile)) {
     return buildCronRelaunchCommand(profile);
@@ -56,6 +59,14 @@ export function buildCodexExplicitResumeCommand(
     return buildCronRelaunchCommand(profile);
   }
   return `${explicitResumeCommand} ${quotePosixShellArgument(sanitizedSessionId)} ${quotePosixShellArgument(prompt)}`;
+}
+
+export function buildCronPromptText(prompt: string): string {
+  const trimmedPrompt = prompt.trim();
+  if (!trimmedPrompt) {
+    return "";
+  }
+  return `${CRON_AUTONOMY_PROMPT_PREFIX}\n\n${trimmedPrompt}`;
 }
 
 export function buildCronRelaunchProfile(profile: TerminalProfile, commandOverride?: string): TerminalProfile {
@@ -72,6 +83,36 @@ export function buildCronRelaunchProfile(profile: TerminalProfile, commandOverri
 export function computeNextCronTriggerAt(baseIso: string, intervalMinutes: number): string {
   const nextMs = Date.parse(baseIso) + intervalMinutes * 60_000;
   return new Date(nextMs).toISOString();
+}
+
+export function hasCronRelaunchConfigChanged(
+  previousProfile: Pick<
+    TerminalProfile,
+    "target" | "cwd" | "wslDistro" | "shellOrProgram" | "args" | "startupMode" | "startupPresetId" | "startupCustomCommand"
+    | "startupCommand" | "cron"
+  >,
+  nextProfile: Pick<
+    TerminalProfile,
+    "target" | "cwd" | "wslDistro" | "shellOrProgram" | "args" | "startupMode" | "startupPresetId" | "startupCustomCommand"
+    | "startupCommand" | "cron"
+  >
+): boolean {
+  if (!nextProfile.cron.enabled) {
+    return false;
+  }
+  if (!previousProfile.cron.enabled) {
+    return true;
+  }
+  return (
+    previousProfile.cron.intervalMinutes !== nextProfile.cron.intervalMinutes ||
+    previousProfile.cron.prompt.trim() !== nextProfile.cron.prompt.trim() ||
+    previousProfile.target !== nextProfile.target ||
+    previousProfile.cwd !== nextProfile.cwd ||
+    (previousProfile.wslDistro ?? null) !== (nextProfile.wslDistro ?? null) ||
+    previousProfile.shellOrProgram !== nextProfile.shellOrProgram ||
+    previousProfile.args.join("\u0000") !== nextProfile.args.join("\u0000") ||
+    resolveTerminalStartupCommand(previousProfile).trim() !== resolveTerminalStartupCommand(nextProfile).trim()
+  );
 }
 
 export function syncCronTemplateToInstance(
@@ -106,6 +147,21 @@ export function syncCronTemplateToInstance(
       ...instance.cronState,
       nextTriggerAt,
       pendingOnIdle
+    },
+    updatedAt: nowIso
+  };
+}
+
+export function markCronDueNow(instance: TerminalInstance, nowIso: string): TerminalInstance {
+  if (!instance.terminalProfileSnapshot.cron.enabled) {
+    return instance;
+  }
+  return {
+    ...instance,
+    cronState: {
+      ...instance.cronState,
+      nextTriggerAt: nowIso,
+      pendingOnIdle: false
     },
     updatedAt: nowIso
   };

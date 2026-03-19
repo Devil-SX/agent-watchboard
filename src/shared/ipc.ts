@@ -80,7 +80,7 @@ export type WatchboardApi = {
   testSshEnvironment: (environment: SshEnvironment, secrets?: SshSecretInput) => Promise<SshTestResult>;
   resolveCronRelaunchCommand: (profile: TerminalProfile) => Promise<ResolvedCronRelaunchCommand>;
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
-  onSessionState: (listener: (session: SessionState) => void) => () => void;
+  onSessionState: (listener: (payload: SessionState | SessionState[]) => void) => () => void;
   onBoardUpdate: (listener: (document: BoardDocument) => void) => () => void;
   listSkills: (location: AgentPathLocation, options?: SkillListOptions) => Promise<SkillListResult>;
   readSkillContent: (skillPath: string) => Promise<string>;

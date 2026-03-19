@@ -40,16 +40,27 @@ type SessionRecord = {
   outputBytes: number;
   outputPerfWindowStartedAt: number;
   backlog: string;
+  activitySuppressionState: PtyActivitySuppressionState;
 };
 
 const ACTIVE_THRESHOLD_MS = 15_000;
 const IDLE_THRESHOLD_MS = 5 * 60_000;
+const ACTIVE_STATUS_JITTER_MAX_MS = 5_000;
+const REPEATED_LOW_SIGNAL_WINDOW_MS = 20_000;
+const REPEATED_LOW_SIGNAL_HISTORY_LIMIT = 6;
 type SupervisorMessageLogger = {
   warn(message: string, details?: unknown): void;
 };
 
 type SupervisorErrorLogger = {
   error(message: string, details?: unknown): void;
+};
+
+type PtyActivitySuppressionState = {
+  recentLowSignalEntries: Array<{
+    normalized: string;
+    observedAtMs: number;
+  }>;
 };
 
 function truncateForDebugLog(value: string, maxLength = 512): string {
@@ -80,13 +91,26 @@ function summarizeProfileForSpawnLog(profile: TerminalProfile): Record<string, u
   };
 }
 
-export function applyPtyActivityStatus(state: SessionState, data: string): boolean {
+export function createPtyActivitySuppressionState(): PtyActivitySuppressionState {
+  return {
+    recentLowSignalEntries: []
+  };
+}
+
+export function applyPtyActivityStatus(
+  state: SessionState,
+  data: string,
+  suppressionState: PtyActivitySuppressionState = createPtyActivitySuppressionState()
+): boolean {
   if (state.endedAt) {
     return false;
   }
 
   const activity = assessTerminalActivity(data);
   if (!activity.isMeaningfulActivity) {
+    return false;
+  }
+  if (shouldSuppressRepeatedLowSignalActivity(activity, suppressionState)) {
     return false;
   }
 
@@ -379,7 +403,8 @@ class SupervisorServer {
         outputChunks: 0,
         outputBytes: 0,
         outputPerfWindowStartedAt: performance.now(),
-        backlog: ""
+        backlog: "",
+        activitySuppressionState: createPtyActivitySuppressionState()
       };
       this.sessions.set(sessionId, record);
 
@@ -388,7 +413,7 @@ class SupervisorServer {
         if (!session) {
           return;
         }
-        const didPromoteState = applyPtyActivityStatus(session.state, data);
+        const didPromoteState = applyPtyActivityStatus(session.state, data, session.activitySuppressionState);
         session.outputChunks += 1;
         session.outputBytes += Buffer.byteLength(data, "utf8");
         session.backlog = appendSessionBacklogChunk(session.backlog, data);
@@ -493,7 +518,7 @@ class SupervisorServer {
   }
 
   private refreshStatuses(): void {
-    let changed = false;
+    const changedSessions: SessionState[] = [];
     for (const record of this.sessions.values()) {
       const next = classifyStatus(record.state, record.profile.logAdapter?.staleAfterMs);
       if (record.state.status !== next) {
@@ -503,11 +528,11 @@ class SupervisorServer {
           to: next
         });
         record.state.status = next;
-        this.broadcastState(record.state);
-        changed = true;
+        changedSessions.push(record.state);
       }
     }
-    if (changed) {
+    if (changedSessions.length > 0) {
+      this.broadcastStates(changedSessions);
       void this.persistSnapshot();
     }
   }
@@ -541,6 +566,17 @@ class SupervisorServer {
       status: session.status
     });
     this.broadcast({ type: "session-state", session });
+  }
+
+  private broadcastStates(sessions: SessionState[]): void {
+    this.recordPerf("session", "state-broadcast-bulk", undefined, {
+      sessionCount: sessions.length,
+      sessions: sessions.map((session) => ({
+        sessionId: session.sessionId,
+        status: session.status
+      }))
+    });
+    this.broadcast({ type: "session-state-bulk", sessions });
   }
 
   private maybeFlushOutputPerf(sessionId: string, workspaceId: string, force = false): void {
@@ -600,27 +636,68 @@ export function createSessionAttachResult(session: SessionState, backlog: string
   };
 }
 
-function classifyStatus(state: SessionState, staleAfterMs = IDLE_THRESHOLD_MS): SessionStatus {
+export function classifyStatus(state: SessionState, _staleAfterMs = IDLE_THRESHOLD_MS, nowMs = Date.now()): SessionStatus {
   if (state.endedAt) {
     return "stopped";
   }
 
-  const now = Date.now();
   const ptyAt = state.lastPtyActivityAt ? new Date(state.lastPtyActivityAt).getTime() : 0;
-  const logAt = state.lastLogHeartbeatAt ? new Date(state.lastLogHeartbeatAt).getTime() : 0;
-  const ptyAge = now - ptyAt;
-  const logAge = logAt > 0 ? now - logAt : Number.POSITIVE_INFINITY;
+  const ptyAge = nowMs - ptyAt;
+  const activeThresholdMs = resolveSessionActiveThresholdMs(state.sessionId);
 
-  if (ptyAge <= ACTIVE_THRESHOLD_MS) {
+  if (ptyAge <= activeThresholdMs) {
     return "running-active";
   }
-  if (ptyAge <= IDLE_THRESHOLD_MS) {
-    return "running-idle";
+  return "running-idle";
+}
+
+export function resolveSessionActiveThresholdMs(sessionId: string): number {
+  return ACTIVE_THRESHOLD_MS + computeDeterministicJitterMs(sessionId, ACTIVE_STATUS_JITTER_MAX_MS);
+}
+
+function shouldSuppressRepeatedLowSignalActivity(
+  activity: ReturnType<typeof assessTerminalActivity>,
+  suppressionState: PtyActivitySuppressionState,
+  nowMs = Date.now()
+): boolean {
+  const recentLowSignalEntries = suppressionState.recentLowSignalEntries.filter(
+    (entry) => nowMs - entry.observedAtMs <= REPEATED_LOW_SIGNAL_WINDOW_MS
+  );
+  suppressionState.recentLowSignalEntries = recentLowSignalEntries;
+
+  if (!isRepeatedLowSignalMeaningfulCandidate(activity)) {
+    recentLowSignalEntries.length = 0;
+    return false;
   }
-  if (logAge <= staleAfterMs) {
-    return "running-idle";
+
+  const normalized = activity.normalized.trim();
+  const hasRecentDuplicate = recentLowSignalEntries.some((entry) => entry.normalized === normalized);
+  recentLowSignalEntries.push({
+    normalized,
+    observedAtMs: nowMs
+  });
+  if (recentLowSignalEntries.length > REPEATED_LOW_SIGNAL_HISTORY_LIMIT) {
+    recentLowSignalEntries.splice(0, recentLowSignalEntries.length - REPEATED_LOW_SIGNAL_HISTORY_LIMIT);
   }
-  return "running-stalled";
+  return hasRecentDuplicate;
+}
+
+function isRepeatedLowSignalMeaningfulCandidate(activity: ReturnType<typeof assessTerminalActivity>): boolean {
+  const lineCount = activity.normalized.split("\n").filter(Boolean).length;
+  return (
+    lineCount <= 1 &&
+    activity.normalized.length <= 32 &&
+    activity.visibleCharacterCount <= 24 &&
+    activity.uniqueTokenCount <= 3
+  );
+}
+
+function computeDeterministicJitterMs(seed: string, maxInclusive: number): number {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+  return hash % (maxInclusive + 1);
 }
 
 function buildSpawnConfig(profile: TerminalProfile): {

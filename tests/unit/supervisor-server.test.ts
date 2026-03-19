@@ -4,15 +4,19 @@ import assert from "node:assert/strict";
 import {
   appendSessionBacklogChunk,
   applyPtyActivityStatus,
+  classifyStatus,
+  createPtyActivitySuppressionState,
   createAttachSessionEvent,
   createSessionAttachResult,
   isSupervisorEntrypoint,
   observeSupervisorMessageTask,
   parseSupervisorCommandPayload,
+  resolveSessionActiveThresholdMs,
   shouldReuseLiveSession
 } from "../../src/main/supervisor/server";
 import type { SessionState } from "../../src/shared/schema";
 import { assessTerminalActivity } from "../../src/shared/terminalActivity";
+import { CODEX_IDLE_SAMPLE_CHUNKS } from "../fixtures/codexIdleSample";
 
 function makeSession(status: SessionState["status"]): SessionState {
   return {
@@ -94,7 +98,7 @@ test("assessTerminalActivity rejects cursor-noise payloads after stripping contr
   const assessment = assessTerminalActivity("\u001b[?2004h\u001b[?25l\u001b[2 q");
 
   assert.equal(assessment.isMeaningfulActivity, false);
-  assert.equal(assessment.reason, "empty");
+  assert.equal(assessment.reason, "control-noise");
   assert.equal(assessment.visibleCharacterCount, 0);
 });
 
@@ -109,7 +113,6 @@ test("assessTerminalActivity rejects payloads dominated by replacement and squar
 test("shouldReuseLiveSession keeps running skills sessions attached instead of replacing them", () => {
   assert.equal(shouldReuseLiveSession(makeSession("running-active")), true);
   assert.equal(shouldReuseLiveSession(makeSession("running-idle")), true);
-  assert.equal(shouldReuseLiveSession(makeSession("running-stalled")), true);
 
   const stopped = {
     ...makeSession("stopped"),
@@ -197,4 +200,103 @@ test("observeSupervisorMessageTask logs rejected fire-and-forget handlers", asyn
 
   assert.equal(errors.length, 1);
   assert.equal(errors[0]?.message, "message-handler-error");
+});
+
+test("applyPtyActivityStatus ignores Codex idle-sample handshake and chrome redraw chunks", () => {
+  const session = makeSession("running-idle");
+
+  for (const chunk of CODEX_IDLE_SAMPLE_CHUNKS) {
+    const didPromote = applyPtyActivityStatus(session, chunk);
+    assert.equal(didPromote, false);
+    assert.equal(session.status, "running-idle");
+    assert.equal(session.lastPtyActivityAt, "2026-03-14T00:00:00.000Z");
+  }
+});
+
+test("applyPtyActivityStatus still promotes after ignored Codex idle-sample noise once readable progress arrives", () => {
+  const session = makeSession("running-idle");
+
+  for (const chunk of CODEX_IDLE_SAMPLE_CHUNKS) {
+    applyPtyActivityStatus(session, chunk);
+  }
+
+  const didPromote = applyPtyActivityStatus(session, "Reviewing files and preparing the next patch");
+  assert.equal(didPromote, true);
+  assert.equal(session.status, "running-active");
+  assert.notEqual(session.lastPtyActivityAt, "2026-03-14T00:00:00.000Z");
+});
+
+test("applyPtyActivityStatus suppresses repeated low-signal status refreshes within the short history window", () => {
+  const session = makeSession("running-idle");
+  const suppressionState = createPtyActivitySuppressionState();
+
+  const firstPromotion = applyPtyActivityStatus(session, "● high · /effort", suppressionState);
+  const firstActivityAt = session.lastPtyActivityAt;
+  session.status = "running-idle";
+
+  const secondPromotion = applyPtyActivityStatus(session, "● high · /effort", suppressionState);
+
+  assert.equal(firstPromotion, true);
+  assert.equal(secondPromotion, false);
+  assert.equal(session.status, "running-idle");
+  assert.equal(session.lastPtyActivityAt, firstActivityAt);
+});
+
+test("applyPtyActivityStatus does not suppress longer readable work-progress output even when it repeats", () => {
+  const session = makeSession("running-idle");
+  const suppressionState = createPtyActivitySuppressionState();
+
+  const firstPromotion = applyPtyActivityStatus(session, "Reviewing src/main/supervisor/server.ts", suppressionState);
+  session.status = "running-idle";
+  const secondPromotion = applyPtyActivityStatus(session, "Reviewing src/main/supervisor/server.ts", suppressionState);
+
+  assert.equal(firstPromotion, true);
+  assert.equal(secondPromotion, true);
+  assert.equal(session.status, "running-active");
+});
+
+test("resolveSessionActiveThresholdMs adds deterministic jitter so active-to-idle transitions do not align on one tick", () => {
+  const candidateIds = ["session-alpha", "session-beta", "session-gamma", "session-delta", "session-epsilon"];
+  const thresholds = candidateIds.map((sessionId) => ({
+    sessionId,
+    thresholdMs: resolveSessionActiveThresholdMs(sessionId)
+  }));
+  const uniqueThresholds = new Set(thresholds.map((entry) => entry.thresholdMs));
+
+  assert.equal(uniqueThresholds.size > 1, true);
+  for (const entry of thresholds) {
+    assert.equal(entry.thresholdMs >= 15_000, true);
+    assert.equal(entry.thresholdMs <= 20_000, true);
+  }
+});
+
+test("classifyStatus can separate sessions with the same last activity onto different active/idle ticks via jitter", () => {
+  const baseNowMs = Date.parse("2026-03-19T02:40:00.000Z");
+  const candidates = ["session-alpha", "session-beta", "session-gamma", "session-delta", "session-epsilon"];
+  const ranked = candidates
+    .map((sessionId) => ({
+      sessionId,
+      thresholdMs: resolveSessionActiveThresholdMs(sessionId)
+    }))
+    .sort((left, right) => left.thresholdMs - right.thresholdMs);
+
+  const earliest = ranked[0];
+  const latest = ranked.at(-1);
+  assert.ok(earliest);
+  assert.ok(latest);
+  assert.notEqual(earliest.thresholdMs, latest.thresholdMs);
+
+  const earlySession = {
+    ...makeSession("running-active"),
+    sessionId: earliest.sessionId,
+    lastPtyActivityAt: new Date(baseNowMs - earliest.thresholdMs - 1).toISOString()
+  };
+  const lateSession = {
+    ...makeSession("running-active"),
+    sessionId: latest.sessionId,
+    lastPtyActivityAt: new Date(baseNowMs - earliest.thresholdMs - 1).toISOString()
+  };
+
+  assert.equal(classifyStatus(earlySession, 5 * 60_000, baseNowMs), "running-idle");
+  assert.equal(classifyStatus(lateSession, 5 * 60_000, baseNowMs), "running-active");
 });

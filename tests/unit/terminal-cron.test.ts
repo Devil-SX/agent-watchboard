@@ -9,10 +9,14 @@ import {
   type TerminalProfile
 } from "../../src/shared/schema";
 import {
+  buildCronPromptText,
   buildCodexExplicitResumeCommand,
   buildCronRelaunchCommand,
   buildCronRelaunchProfile,
+  CRON_AUTONOMY_PROMPT_PREFIX,
   getCronCountdownLabel,
+  hasCronRelaunchConfigChanged,
+  markCronDueNow,
   scheduleCronAfterStart,
   syncCronTemplateToInstance
 } from "../../src/shared/terminalCron";
@@ -43,7 +47,7 @@ function createInstance(profileOverrides: Partial<TerminalProfile> = {}): Termin
 test("buildCronRelaunchCommand appends the cron user prompt onto a Codex continue command", () => {
   assert.equal(
     buildCronRelaunchCommand(createProfile()),
-    "codex resume --last 'summarize repo health'"
+    `codex resume --last ${quotePosixShellArgument(buildCronPromptText("summarize repo health"))}`
   );
 });
 
@@ -55,7 +59,7 @@ test("buildCronRelaunchCommand appends the cron user prompt onto a Claude contin
         startupCommand: "claude -c"
       })
     ),
-    "claude -c 'summarize repo health'"
+    `claude -c ${quotePosixShellArgument(buildCronPromptText("summarize repo health"))}`
   );
 });
 
@@ -80,15 +84,22 @@ test("buildCronRelaunchCommand preserves bash-safe quoting for mixed prompt payl
           }
         })
       ),
-      `claude -c ${quotePosixShellArgument(prompt)}`
+      `claude -c ${quotePosixShellArgument(buildCronPromptText(prompt))}`
     );
   }
+});
+
+test("buildCronPromptText prepends the hidden autonomy instruction without mutating the saved prompt", () => {
+  assert.equal(
+    buildCronPromptText("summarize repo health"),
+    `${CRON_AUTONOMY_PROMPT_PREFIX}\n\nsummarize repo health`
+  );
 });
 
 test("buildCodexExplicitResumeCommand replaces --last with an explicit session id", () => {
   assert.equal(
     buildCodexExplicitResumeCommand(createProfile(), "session-123"),
-    "codex resume 'session-123' 'summarize repo health'"
+    `codex resume 'session-123' ${quotePosixShellArgument(buildCronPromptText("summarize repo health"))}`
   );
 });
 
@@ -101,7 +112,7 @@ test("buildCodexExplicitResumeCommand keeps skip flags ahead of the resolved ses
       }),
       "session-123"
     ),
-    "codex resume --dangerously-bypass-approvals-and-sandbox 'session-123' 'summarize repo health'"
+    `codex resume --dangerously-bypass-approvals-and-sandbox 'session-123' ${quotePosixShellArgument(buildCronPromptText("summarize repo health"))}`
   );
 });
 
@@ -118,16 +129,17 @@ test("buildCodexExplicitResumeCommand preserves prompt text that contains both q
       }),
       "session-123"
     ),
-    `codex resume 'session-123' ${quotePosixShellArgument(prompt)}`
+    `codex resume 'session-123' ${quotePosixShellArgument(buildCronPromptText(prompt))}`
   );
 });
 
 test("buildCronRelaunchProfile uses an explicit command override when provided", () => {
-  const profile = buildCronRelaunchProfile(createProfile(), "codex resume 'session-123' 'summarize repo health'");
+  const command = `codex resume 'session-123' ${quotePosixShellArgument(buildCronPromptText("summarize repo health"))}`;
+  const profile = buildCronRelaunchProfile(createProfile(), command);
 
   assert.equal(profile.startupMode, "custom");
   assert.equal(profile.startupPresetId, undefined);
-  assert.equal(profile.startupCustomCommand, "codex resume 'session-123' 'summarize repo health'");
+  assert.equal(profile.startupCustomCommand, command);
 });
 
 test("buildCronRelaunchProfile still appends the prompt for Claude continue flows", () => {
@@ -138,7 +150,7 @@ test("buildCronRelaunchProfile still appends the prompt for Claude continue flow
     })
   );
 
-  assert.equal(profile.startupCustomCommand, "claude -c 'summarize repo health'");
+  assert.equal(profile.startupCustomCommand, `claude -c ${quotePosixShellArgument(buildCronPromptText("summarize repo health"))}`);
 });
 
 test("syncCronTemplateToInstance resets the countdown when the interval changes", () => {
@@ -191,6 +203,43 @@ test("syncCronTemplateToInstance preserves the countdown when only the prompt ch
 
   assert.equal(next.cronState.nextTriggerAt, "2026-03-18T08:15:00.000Z");
   assert.equal(next.terminalProfileSnapshot.cron.prompt, "run the next audit");
+});
+
+test("hasCronRelaunchConfigChanged detects prompt edits that should trigger an immediate relaunch", () => {
+  assert.equal(
+    hasCronRelaunchConfigChanged(
+      createProfile(),
+      createProfile({
+        cron: {
+          enabled: true,
+          intervalMinutes: 15,
+          prompt: "run the next audit"
+        }
+      })
+    ),
+    true
+  );
+});
+
+test("hasCronRelaunchConfigChanged ignores saves that do not change the cron relaunch config", () => {
+  assert.equal(hasCronRelaunchConfigChanged(createProfile(), createProfile()), false);
+});
+
+test("markCronDueNow forces the next cron check to fire immediately", () => {
+  const next = markCronDueNow(
+    {
+      ...createInstance(),
+      cronState: {
+        nextTriggerAt: "2026-03-18T08:15:00.000Z",
+        pendingOnIdle: true,
+        lastTriggeredAt: "2026-03-18T08:00:00.000Z"
+      }
+    },
+    "2026-03-18T09:00:00.000Z"
+  );
+
+  assert.equal(next.cronState.nextTriggerAt, "2026-03-18T09:00:00.000Z");
+  assert.equal(next.cronState.pendingOnIdle, false);
 });
 
 test("syncCronTemplateToInstance clears the timer when cron is disabled", () => {

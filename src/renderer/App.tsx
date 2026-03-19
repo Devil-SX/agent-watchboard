@@ -24,7 +24,9 @@ import { appendSessionBacklogChunk } from "@shared/sessionBacklog";
 import {
   buildCronRelaunchProfile,
   getCronCountdownLabel,
+  hasCronRelaunchConfigChanged,
   isCronEnabledForInstance,
+  markCronDueNow,
   markCronPendingOnIdle,
   scheduleCronAfterStart,
   syncCronTemplateToInstance
@@ -226,52 +228,66 @@ export function App(): ReactElement {
         })
       );
     });
-    unsubscribeState = window.watchboard.onSessionState((session) => {
-      const requestStartedAt = sessionRequestStartedAtRef.current.get(session.sessionId);
-      if (requestStartedAt !== undefined) {
-        reportRendererPerf({
-          category: "session",
-          name: "state-received",
-          durationMs: performance.now() - requestStartedAt,
-          sessionId: session.sessionId,
-          workspaceId: session.workspaceId,
-          extra: {
-            status: session.status
-          }
-        });
-        sessionRequestStartedAtRef.current.delete(session.sessionId);
+    unsubscribeState = window.watchboard.onSessionState((payload) => {
+      const nextSessions = Array.isArray(payload) ? payload : [payload];
+      for (const session of nextSessions) {
+        const requestStartedAt = sessionRequestStartedAtRef.current.get(session.sessionId);
+        if (requestStartedAt !== undefined) {
+          reportRendererPerf({
+            category: "session",
+            name: "state-received",
+            durationMs: performance.now() - requestStartedAt,
+            sessionId: session.sessionId,
+            workspaceId: session.workspaceId,
+            extra: {
+              status: session.status,
+              batchSize: nextSessions.length
+            }
+          });
+          sessionRequestStartedAtRef.current.delete(session.sessionId);
+        }
       }
       setSessions((current) => {
-        const previous = current[session.sessionId];
-        if (previous && shallowSessionEquals(previous, session)) {
-          return current;
+        let next = current;
+        for (const session of nextSessions) {
+          const previous = next[session.sessionId];
+          if (previous && shallowSessionEquals(previous, session)) {
+            continue;
+          }
+          const didRestart = previous?.startedAt && previous.startedAt !== session.startedAt;
+          if (session.status === "stopped" || didRestart) {
+            delete sessionBacklogsRef.current[session.sessionId];
+          }
+          if (next === current) {
+            next = { ...current };
+          }
+          next[session.sessionId] = session;
         }
-        const didRestart = previous?.startedAt && previous.startedAt !== session.startedAt;
-        if (session.status === "stopped" || didRestart) {
-          delete sessionBacklogsRef.current[session.sessionId];
-        }
-        return {
-          ...current,
-          [session.sessionId]: session
-        };
+        return next;
       });
       setTerminalViewStates((current) => {
-        const previous = current[session.sessionId];
-        if (session.status === "stopped") {
-          if (!previous) {
-            return current;
+        let next = current;
+        for (const session of nextSessions) {
+          const previous = next[session.sessionId];
+          if (session.status === "stopped") {
+            if (!previous) {
+              continue;
+            }
+            if (next === current) {
+              next = { ...current };
+            }
+            delete next[session.sessionId];
+            continue;
           }
-          const next = { ...current };
-          delete next[session.sessionId];
-          return next;
+          if (previous?.startedAt === session.startedAt) {
+            continue;
+          }
+          if (next === current) {
+            next = { ...current };
+          }
+          next[session.sessionId] = createTerminalViewState(session.startedAt);
         }
-        if (previous?.startedAt === session.startedAt) {
-          return current;
-        }
-        return {
-          ...current,
-          [session.sessionId]: createTerminalViewState(session.startedAt)
-        };
+        return next;
       });
     });
     unsubscribeBoard = window.watchboard.onBoardUpdate((document) => {
@@ -882,7 +898,18 @@ export function App(): ReactElement {
         if (currentWorkbench) {
           const savedTerminal = normalizeTerminal(saved, diagnostics, settingsDraft);
           const nextWorkbench = updateWorkbenchWorkspaceInstances(currentWorkbench, saved.id, (instance) =>
-            syncCronTemplateToInstance(instance, savedTerminal, saved.updatedAt)
+            {
+              const syncedInstance = syncCronTemplateToInstance(instance, savedTerminal, saved.updatedAt);
+              const currentSession = sessionsRef.current[instance.sessionId];
+              if (
+                currentSession &&
+                currentSession.status !== "stopped" &&
+                hasCronRelaunchConfigChanged(instance.terminalProfileSnapshot, savedTerminal)
+              ) {
+                return markCronDueNow(syncedInstance, saved.updatedAt);
+              }
+              return syncedInstance;
+            }
           );
           if (nextWorkbench !== currentWorkbench) {
             stageWorkbench(nextWorkbench);

@@ -1586,9 +1586,55 @@ textarea::placeholder {
 
 .board-panel-expand-button {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 5;
+  top: 50%;
+  right: -2px;
+  z-index: 7;
+  width: 22px;
+  height: 66px;
+  border: 1px solid rgba(151, 203, 224, 0.18);
+  border-right: 0;
+  border-radius: 14px 0 0 14px;
+  background: linear-gradient(180deg, rgba(8, 18, 27, 0.96), rgba(7, 13, 21, 0.9));
+  color: #dcebf2;
+  transform: translateY(-50%);
+  clip-path: polygon(100% 0, 100% 100%, 28% 100%, 0 50%, 28% 0);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.board-panel-expand-button:hover:not(:disabled),
+.board-panel-expand-button:focus-visible:not(:disabled),
+.board-panel-expand-button.is-active {
+  transform: translateY(-50%);
+  border-color: rgba(151, 203, 224, 0.36);
+  background: linear-gradient(180deg, rgba(18, 38, 54, 0.98), rgba(11, 24, 35, 0.94));
+  color: #f6fbfd;
+}
+
+.board-panel-expand-button::after {
+  left: auto;
+  right: calc(100% + 10px);
+  bottom: 50%;
+  transform: translate(6px, 50%);
+}
+
+.board-panel-expand-button:hover::after,
+.board-panel-expand-button:focus-visible::after {
+  transform: translate(0, 50%);
+}
+
+.board-panel-expand-button .icon-button-glyph {
+  width: 11px;
+  height: 18px;
+  flex-basis: 11px;
+  margin-left: -3px;
+}
+
+.board-panel-toggle .icon-button-glyph {
+  width: 12px;
+  height: 12px;
+  flex-basis: 12px;
 }
 
 .panel-empty {

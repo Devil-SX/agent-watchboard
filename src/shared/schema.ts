@@ -49,7 +49,10 @@ export const BoardDocumentSchema = z.object({
 
 export type BoardDocument = z.infer<typeof BoardDocumentSchema>;
 
-export const SessionStatusSchema = z.enum(["running-active", "running-idle", "running-stalled", "stopped"]);
+export const SessionStatusSchema = z.preprocess(
+  (value) => (value === "running-stalled" ? "running-idle" : value),
+  z.enum(["running-active", "running-idle", "stopped"])
+);
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
 export const LogAdapterSchema = z.object({
@@ -615,6 +618,7 @@ export type SupervisorEvent =
   | { type: "snapshot"; snapshot: SupervisorSnapshot }
   | { type: "session-data"; sessionId: string; data: string }
   | { type: "session-state"; session: SessionState }
+  | { type: "session-state-bulk"; sessions: SessionState[] }
   | { type: "session-attached"; payload: SessionAttachResult }
   | { type: "session-error"; sessionId: string; error: string };
 

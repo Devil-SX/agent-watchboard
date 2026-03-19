@@ -446,6 +446,14 @@ function setupSupervisorEventRelay(): void {
       emit("session-state", event.session);
       return;
     }
+    if (event.type === "session-state-bulk") {
+      for (const session of event.sessions) {
+        sessionStates.set(session.sessionId, session);
+        settlePendingSessionStart(pendingSessionStarts, session, logSessionStartBarrier);
+      }
+      emit("session-state-bulk", event.sessions);
+      return;
+    }
     if (event.type === "session-data") {
       emit("session-data", {
         sessionId: event.sessionId,

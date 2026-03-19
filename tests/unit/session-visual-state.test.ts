@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { resolveSessionVisualState, resolveWorkspaceVisualState, visualStateClassName } from "../../src/renderer/components/sessionVisualState";
-import type { SessionState, TerminalInstance } from "../../src/shared/schema";
+import { SessionStatusSchema, type SessionState, type TerminalInstance } from "../../src/shared/schema";
 
 function makeInstance(instanceId: string, sessionId: string): TerminalInstance {
   return {
@@ -47,10 +47,9 @@ function makeSession(sessionId: string, status: SessionState["status"]): Session
   };
 }
 
-test("resolveSessionVisualState maps idle active stalled and stopped into green blue gray UI states", () => {
+test("resolveSessionVisualState maps idle active and stopped into green blue gray UI states", () => {
   assert.equal(resolveSessionVisualState("running-idle"), "chat-ready");
   assert.equal(resolveSessionVisualState("running-active"), "working");
-  assert.equal(resolveSessionVisualState("running-stalled"), "working");
   assert.equal(resolveSessionVisualState("stopped"), "stopped");
   assert.equal(resolveSessionVisualState(undefined), "stopped");
   assert.equal(visualStateClassName("chat-ready"), "is-chat-ready");
@@ -79,11 +78,15 @@ test("resolveWorkspaceVisualState prioritizes working over chat-ready and stoppe
 
   assert.equal(
     resolveWorkspaceVisualState(instances, {
-      s1: makeSession("s1", "running-stalled"),
+      s1: makeSession("s1", "running-active"),
       s2: makeSession("s2", "stopped")
     }),
     "working"
   );
 
   assert.equal(resolveWorkspaceVisualState(instances, {}), "stopped");
+});
+
+test("SessionStatusSchema normalizes legacy running-stalled snapshots into running-idle", () => {
+  assert.equal(SessionStatusSchema.parse("running-stalled"), "running-idle");
 });

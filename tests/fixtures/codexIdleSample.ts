@@ -1,0 +1,19 @@
+// Real Codex idle sample captured on 2026-03-19 from Codex CLI v0.115.0.
+// The session was started in "~" and observed for 20 seconds without any user input.
+// Home paths are intentionally redacted so this fixture can stay repo-safe.
+
+export const CODEX_IDLE_SAMPLE_VERSION = "v0.115.0";
+
+export const CODEX_IDLE_SAMPLE_CHUNKS = [
+  "\u001b[?2004h\u001b[>7u\u001b[?1004h\u001b[6n",
+  "\u001b[?u\u001b[c",
+  "\u001b]10;?\u001b\\",
+  "\u001b[?2026h\u001b[1;2H\u001b[0m\u001b[m\u001b[K\u001b[2;42H\u001b[0m\u001b[m\u001b[K\u001b[3;42H\u001b[0m\u001b[m\u001b[K\u001b[4;42H\u001b[0m\u001b[m\u001b[K\u001b[5;42H\u001b[0m\u001b[m\u001b[K\u001b[6;42H\u001b[0m\u001b[m\u001b[K\u001b[7;42H\u001b[0m\u001b[m\u001b[K\u001b[8;2H\u001b[0m\u001b[m\u001b[K\u001b[9;2H\u001b[0m\u001b[m\u001b[K\u001b[10;39H\u001b[0m\u001b[m\u001b[K\u001b[11;2H\u001b[0m\u001b[m\u001b[K\u001b[12;2H\u001b[0m\u001b[m\u001b[K\u001b[2;1H\u001b[2m╭───────────────────────────────────────╮\u001b[3;1H│ >_ \u001b[22m\u001b[1mOpenAI Codex\u001b[22m\u001b[2m\u001b[2m (v0.115.0)            │\u001b[4;1H│                                       │\u001b[5;1H│ model:     \u001b[3mloading\u001b[23m   \u001b[22m\u001b[;m/model\u001b[2m\u001b[;m to change │\u001b[6;1H│ directory: \u001b[22m~\u001b[2m                          │\u001b[7;1H╰───────────────────────────────────────╯\u001b[10;1H\u001b[22m\u001b[1m›\u001b[10;3H\u001b[22m\u001b[2m\u001b[2mUse /skills to list available skills\u001b[m\u001b[m\u001b[0m\u001b[?25h\u001b[10;3H\u001b[?2026l",
+  "\u001b[?2026h\u001b[1;1H\u001b[J",
+  "\u001b[1;40r\u001b[1;1H\u001bM\u001bM\u001bM\u001bM\u001bM\u001bM\u001bM\u001bM\u001b[r\u001b[1;8r\u001b[1;1H\r\n",
+  "\u001b[;m\u001b[K\u001b[2m╭────────────────────────────────────────────╮\u001b[m\u001b[m\u001b[0m\r\n\u001b[;m\u001b[K\u001b[2m│ >_ \u001b[22m\u001b[1mOpenAI Codex\u001b[22m\u001b[2m\u001b[2m (v0.115.0)                 │\u001b[m\u001b[m\u001b[0m\r\n\u001b[;m\u001b[K\u001b[2m│                                            │\u001b[m\u001b[m\u001b[0m\r\n",
+  "\u001b[;m\u001b[K\u001b[2m│ model:     \u001b[22mgpt-5.4 high\u001b[2m   \u001b[22m\u001b[;m/model\u001b[2m\u001b[;m to change │\u001b[m\u001b[m\u001b[0m\r\n\u001b[;m\u001b[K\u001b[2m│ directory: \u001b[22m~\u001b[2m                               │\u001b[m\u001b[m\u001b[0m\r\n\u001b[;m\u001b[K\u001b[2m╰────────────────────────────────────────────╯\u001b[m\u001b[m\u001b[0m\r\n\u001b[;m\u001b[K\u001b[m\u001b[m\u001b[0m\r\n",
+  "\u001b[;m\u001b[K  \u001b[1mTip:\u001b[22m \u001b[3mNew\u001b[23m Build faster with Codex.\u001b[m\u001b[m\u001b[0m\u001b[r\u001b[10;3H\u001b[9;2H\u001b[0m\u001b[m\u001b[K\u001b[10;2H\u001b[0m\u001b[m\u001b[K\u001b[11;39H\u001b[0m\u001b[m\u001b[K\u001b[12;2H\u001b[0m\u001b[m\u001b[K\u001b[13;31H\u001b[0m\u001b[m\u001b[K\u001b[11;1H\u001b[1m›\u001b[11;3H\u001b[22m\u001b[2m\u001b[2mUse /skills to list available skills\u001b[13;1H  gpt-5.4 high · 100% left · ~\u001b[m\u001b[m\u001b[0m\u001b[?25h\u001b[11;3H\u001b[?2026l",
+  "\u001b[?2026h\u001b[9;2H\u001b[0m\u001b[m\u001b[K\u001b[10;2H\u001b[0m\u001b[m\u001b[K\u001b[11;39H\u001b[0m\u001b[m\u001b[K\u001b[12;2H\u001b[0m\u001b[m\u001b[K\u001b[13;31H\u001b[0m\u001b[m\u001b[K\u001b[m\u001b[m\u001b[0m\u001b[?25h\u001b[11;3H\u001b[?2026l",
+  "\u001b[?2026h\u001b[9;2H\u001b[0m\u001b[m\u001b[K\u001b[10;2H\u001b[0m\u001b[m\u001b[K\u001b[11;39H\u001b[0m\u001b[m\u001b[K\u001b[12;2H\u001b[0m\u001b[m\u001b[K\u001b[13;31H\u001b[0m\u001b[m\u001b[K\u001b[m\u001b[m\u001b[0m\u001b[?25h\u001b[11;3H\u001b[?2026l"
+] as const;

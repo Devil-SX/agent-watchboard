@@ -7,7 +7,6 @@ export function resolveSessionVisualState(status: SessionState["status"] | undef
     case "running-idle":
       return "chat-ready";
     case "running-active":
-    case "running-stalled":
       return "working";
     default:
       return "stopped";

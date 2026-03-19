@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { createWorkspaceTemplate, type TerminalProfile } from "../../src/shared/schema";
+import { buildCronPromptText } from "../../src/shared/terminalCron";
+import { quotePosixShellArgument } from "../../src/shared/posixShell";
 import { findLatestCodexSessionIdForCwd, resolveCronRelaunchCommand } from "../../src/main/codexSessionResolver";
 
 function createProfile(overrides: Partial<TerminalProfile> = {}): TerminalProfile {
@@ -78,7 +80,7 @@ test("resolveCronRelaunchCommand expands codex resume --last into an explicit se
 
   assert.equal(resolved.resolution, "codex-explicit-session");
   assert.equal(resolved.sessionId, "session-host");
-  assert.equal(resolved.command, "codex resume 'session-host' 'summarize repo health'");
+  assert.equal(resolved.command, `codex resume 'session-host' ${quotePosixShellArgument(buildCronPromptText("summarize repo health"))}`);
 });
 
 test("resolveCronRelaunchCommand falls back to prompt append when no saved codex session matches", async () => {
@@ -91,7 +93,7 @@ test("resolveCronRelaunchCommand falls back to prompt append when no saved codex
 
   assert.equal(resolved.resolution, "codex-session-fallback");
   assert.equal(resolved.sessionId, null);
-  assert.equal(resolved.command, "codex resume --last 'summarize repo health'");
+  assert.equal(resolved.command, `codex resume --last ${quotePosixShellArgument(buildCronPromptText("summarize repo health"))}`);
 });
 
 test("resolveCronRelaunchCommand can resolve WSL codex sessions without exposing a real user home", async () => {
@@ -120,5 +122,5 @@ test("resolveCronRelaunchCommand can resolve WSL codex sessions without exposing
   assert.equal(resolved.resolution, "codex-explicit-session");
   assert.equal(resolved.sessionId, "session-wsl");
   assert.equal(resolved.normalizedCwd, "/home/tester/project");
-  assert.equal(resolved.command, "codex resume 'session-wsl' 'summarize repo health'");
+  assert.equal(resolved.command, `codex resume 'session-wsl' ${quotePosixShellArgument(buildCronPromptText("summarize repo health"))}`);
 });

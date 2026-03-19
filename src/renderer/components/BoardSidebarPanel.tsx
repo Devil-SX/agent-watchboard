@@ -1,7 +1,7 @@
 import { Profiler, type ReactElement, type ProfilerOnRenderCallback } from "react";
 
 import { BoardTree } from "@renderer/components/BoardTree";
-import { IconButton, ListIcon } from "@renderer/components/IconButton";
+import { IconButton, TriangleLeftIcon, TriangleRightIcon } from "@renderer/components/IconButton";
 import type { AgentPathLocation, BoardDocument } from "@shared/schema";
 
 type Props = {
@@ -54,7 +54,7 @@ export function BoardSidebarPanel({
               <IconButton
                 className="board-panel-toggle"
                 label="Collapse Todo Board"
-                icon={<ListIcon />}
+                icon={<TriangleRightIcon />}
                 onClick={onToggleCollapsed}
               />
             </div>
@@ -68,7 +68,7 @@ export function BoardSidebarPanel({
         <IconButton
           className="board-panel-expand-button"
           label="Expand Todo Board"
-          icon={<ListIcon />}
+          icon={<TriangleLeftIcon />}
           onClick={onToggleCollapsed}
         />
       ) : null}

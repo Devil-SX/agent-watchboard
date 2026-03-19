@@ -129,6 +129,22 @@ export function ChevronDownIcon({ className }: IconProps): ReactElement {
   );
 }
 
+export function TriangleLeftIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="currentColor">
+      <path d="M11.75 2.5 4.25 8l7.5 5.5Z" />
+    </svg>
+  );
+}
+
+export function TriangleRightIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="currentColor">
+      <path d="M4.25 2.5 11.75 8l-7.5 5.5Z" />
+    </svg>
+  );
+}
+
 export function HostIcon({ className }: IconProps): ReactElement {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
