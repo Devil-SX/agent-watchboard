@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.13.0] - 2026-03-21
 
-> **Code Stats** | Total: TBD lines | Delta: TBD | Change: TBD vs v0.12.3
+> **Code Stats** | Total: 48,705 lines | Delta: +5,290 (-671) = **+4,619 net** | Change: **+10.48%** vs v0.12.3
 
 ### Added
 - Added a worker-backed analysis read path, WSL-safe path-resolution logging, and focused regression coverage so large profiler databases can be queried without freezing the Electron main thread or leaking user home paths into logs.
