@@ -1,74 +1,43 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { compareWorkspaces, deriveVisibleWorkspaces, getContextMenuStyle, getPreviewStyle, matchesWorkspaceFilter } from "../../src/renderer/components/WorkspaceSidebar";
+import {
+  compareWorkspaces,
+  deriveVisibleWorkspaceGroups,
+  deriveVisibleWorkspaces,
+  getContextMenuStyle,
+  getPreviewStyle,
+  matchesWorkspaceFilter
+} from "../../src/renderer/components/WorkspaceSidebar";
 import { createTerminalPreviewSnippet } from "../../src/renderer/components/terminalFallback";
-import type { TerminalInstance, Workspace } from "../../src/shared/schema";
+import { createTerminalInstance, createWorkspaceTemplate, type TerminalInstance, type Workspace } from "../../src/shared/schema";
 
 function makeWorkspace(
   name: string,
   target: "linux" | "windows" | "wsl",
   command: string,
+  cwd = "~",
   lastLaunchedAt?: string
 ): Workspace {
-  const now = "2026-03-13T00:00:00.000Z";
-  return {
-    id: `${name.toLowerCase()}-${target}`,
-    name,
-    autoReconnect: true,
-    terminals: [
-      {
-        id: `${name.toLowerCase()}-terminal`,
-        title: name,
-        target,
-        cwd: "~",
-        shellOrProgram: "bash",
-        args: [],
-        startupCommand: command,
-        startupMode: "custom",
-        startupCustomCommand: command,
-        env: {},
-        autoStart: true,
-        cron: {
-          enabled: false,
-          intervalMinutes: 30,
-          prompt: ""
-        }
-      }
-    ],
-    layoutTree: {
-      id: `${name.toLowerCase()}-layout`,
-      terminalId: `${name.toLowerCase()}-terminal`,
-      split: null
-    },
-    lastLaunchedAt,
-    createdAt: now,
-    updatedAt: now
-  };
+  const workspace = createWorkspaceTemplate(name, { platform: "linux" });
+  const terminal = workspace.terminals[0]!;
+  workspace.terminals = [
+    {
+      ...terminal,
+      title: name,
+      target,
+      cwd,
+      startupCommand: command,
+      startupMode: "custom",
+      startupCustomCommand: command
+    }
+  ];
+  workspace.lastLaunchedAt = lastLaunchedAt;
+  return workspace;
 }
 
-function makeInstance(workspace: Workspace, ordinal = 0, collapsed = false): TerminalInstance {
-  const now = "2026-03-14T00:00:00.000Z";
-  return {
-    instanceId: `${workspace.id}-instance-${ordinal}`,
-    workspaceId: workspace.id,
-    sessionId: `${workspace.id}-session-${ordinal}`,
-    paneId: `${workspace.id}-pane-${ordinal}`,
-    title: `${workspace.name} ${ordinal + 1}`,
-    ordinal,
-    collapsed,
-    autoStart: true,
-    terminalProfileSnapshot: {
-      ...workspace.terminals[0]!
-    },
-    cronState: {
-      nextTriggerAt: null,
-      pendingOnIdle: false,
-      lastTriggeredAt: null
-    },
-    createdAt: now,
-    updatedAt: now
-  };
+function makeInstance(workspace: Workspace, ordinal = 1): TerminalInstance {
+  return createTerminalInstance(workspace, [], { ordinal });
 }
 
 test("matchesWorkspaceFilter combines agent and environment filters", () => {
@@ -82,8 +51,8 @@ test("matchesWorkspaceFilter combines agent and environment filters", () => {
 });
 
 test("compareWorkspaces keeps last-launch ordering ahead of alphabetical fallback", () => {
-  const older = makeWorkspace("Bravo", "linux", "codex", "2026-03-12T10:00:00.000Z");
-  const newer = makeWorkspace("Alpha", "linux", "codex", "2026-03-13T10:00:00.000Z");
+  const older = makeWorkspace("Bravo", "linux", "codex", "~", "2026-03-12T10:00:00.000Z");
+  const newer = makeWorkspace("Alpha", "linux", "codex", "~", "2026-03-13T10:00:00.000Z");
   const noLaunch = makeWorkspace("Zulu", "linux", "codex");
 
   assert.ok(compareWorkspaces(newer, older, "last-launch") < 0);
@@ -95,7 +64,7 @@ test("deriveVisibleWorkspaces keeps instance-owning workspaces visible across ag
   const codexWorkspace = makeWorkspace("Codex WSL", "wsl", "codex");
   const claudeWorkspace = makeWorkspace("Claude Host", "linux", "claude");
   const workspaces = [codexWorkspace, claudeWorkspace];
-  const instancesByWorkspace = new Map([[codexWorkspace.id, [makeInstance(codexWorkspace, 0, true)]]]);
+  const instancesByWorkspace = new Map([[codexWorkspace.id, [makeInstance(codexWorkspace)]]]);
 
   const visible = deriveVisibleWorkspaces(workspaces, instancesByWorkspace, "claude", "all", "alphabetical");
 
@@ -105,30 +74,48 @@ test("deriveVisibleWorkspaces keeps instance-owning workspaces visible across ag
   );
 });
 
-test("deriveVisibleWorkspaces keeps instance-owning workspaces visible across environment filters", () => {
-  const wslWorkspace = makeWorkspace("Codex WSL", "wsl", "codex");
-  const hostWorkspace = makeWorkspace("Claude Host", "linux", "claude");
-  const workspaces = [wslWorkspace, hostWorkspace];
-  const instancesByWorkspace = new Map([[wslWorkspace.id, [makeInstance(wslWorkspace)]]]);
+test("deriveVisibleWorkspaceGroups groups templates by cwd path", () => {
+  const alpha = makeWorkspace("Alpha", "linux", "codex", "/repo/a");
+  const beta = makeWorkspace("Beta", "linux", "claude", "/repo/a");
+  const gamma = makeWorkspace("Gamma", "linux", "codex", "/repo/b");
 
-  const visible = deriveVisibleWorkspaces(workspaces, instancesByWorkspace, "all", "host", "alphabetical");
+  const grouped = deriveVisibleWorkspaceGroups([gamma, alpha, beta], new Map(), "all", "all", "alphabetical", false);
 
-  assert.deepEqual(
-    visible.map((workspace) => workspace.id),
-    [hostWorkspace.id, wslWorkspace.id]
-  );
+  assert.deepEqual(grouped.map((group) => group.label), ["/repo/a", "/repo/b"]);
+  assert.deepEqual(grouped[0]?.templates.map((template) => template.workspace.name), ["Alpha", "Beta"]);
+  assert.deepEqual(grouped[1]?.templates.map((template) => template.workspace.name), ["Gamma"]);
 });
 
-test("deriveVisibleWorkspaces still excludes filtered-out workspaces with no instances", () => {
-  const codexWorkspace = makeWorkspace("Codex WSL", "wsl", "codex");
-  const claudeWorkspace = makeWorkspace("Claude Host", "linux", "claude");
+test("deriveVisibleWorkspaceGroups uses a fallback label when cwd is blank", () => {
+  const workspace = makeWorkspace("Alpha", "linux", "codex", "   ");
 
-  const visible = deriveVisibleWorkspaces([codexWorkspace, claudeWorkspace], new Map(), "claude", "host", "alphabetical");
+  const grouped = deriveVisibleWorkspaceGroups([workspace], new Map(), "all", "all", "alphabetical", false);
 
-  assert.deepEqual(
-    visible.map((workspace) => workspace.id),
-    [claudeWorkspace.id]
-  );
+  assert.equal(grouped[0]?.label, "No path");
+});
+
+test("deriveVisibleWorkspaceGroups hides empty templates and paths when instance filter is enabled", () => {
+  const alpha = makeWorkspace("Alpha", "linux", "codex", "/repo/a");
+  const beta = makeWorkspace("Beta", "linux", "codex", "/repo/b");
+  const instancesByWorkspace = new Map<string, TerminalInstance[]>([[beta.id, [makeInstance(beta)]]]);
+
+  const grouped = deriveVisibleWorkspaceGroups([alpha, beta], instancesByWorkspace, "all", "all", "alphabetical", true);
+
+  assert.deepEqual(grouped.map((group) => group.label), ["/repo/b"]);
+  assert.deepEqual(grouped[0]?.templates.map((template) => template.workspace.name), ["Beta"]);
+});
+
+test("deriveVisibleWorkspaceGroups applies agent filter before instance-only visibility", () => {
+  const codex = makeWorkspace("Codex", "linux", "codex", "/repo/a");
+  const claude = makeWorkspace("Claude", "linux", "claude", "/repo/a");
+  const instancesByWorkspace = new Map<string, TerminalInstance[]>([
+    [codex.id, [makeInstance(codex)]],
+    [claude.id, [makeInstance(claude)]]
+  ]);
+
+  const grouped = deriveVisibleWorkspaceGroups([codex, claude], instancesByWorkspace, "claude", "all", "alphabetical", true);
+
+  assert.deepEqual(grouped[0]?.templates.map((template) => template.workspace.name), ["Claude"]);
 });
 
 test("getContextMenuStyle keeps instance context menu within the viewport", () => {

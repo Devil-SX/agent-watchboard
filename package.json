@@ -1,6 +1,6 @@
 {
   "name": "agent-watchboard",
-  "version": "0.12.3",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "Desktop watchboard for orchestrating multiple code agents with PTY-backed terminals and JSON todo boards.",
@@ -29,7 +29,8 @@
     "test:e2e:ci": "node scripts/e2e-gate.mjs --ci",
     "test:sample:activity": "tsx scripts/capture-agent-idle-sample.ts --agent codex",
     "test:perf:terminal": "tsx tests/perf/render-terminal-profile.ts",
-    "test:perf:analysis": "tsx tests/perf/render-analysis-profile.ts"
+    "test:perf:analysis": "tsx tests/perf/render-analysis-profile.ts",
+    "test:perf:analysis:bottleneck": "tsx tests/perf/profile-analysis-bottleneck.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

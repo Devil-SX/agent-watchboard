@@ -3,7 +3,15 @@ import { createPortal } from "react-dom";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
-import { ChevronDownIcon, ClaudeIcon, CodexIcon, IconButton, PlusIcon, TrashIcon } from "@renderer/components/IconButton";
+import {
+  ChevronDownIcon,
+  ClaudeIcon,
+  CodexIcon,
+  EyeIcon,
+  IconButton,
+  PlusIcon,
+  TrashIcon
+} from "@renderer/components/IconButton";
 import { LocationBadge } from "@renderer/components/LocationBadge";
 import { StatusOrbit } from "@renderer/components/StatusOrbit";
 import { createTerminalPreviewSnippet } from "@renderer/components/terminalFallback";
@@ -31,12 +39,14 @@ type Props = {
   sortMode: WorkspaceSortMode;
   filterMode: WorkspaceFilterMode;
   environmentFilterMode: WorkspaceEnvironmentFilterMode;
+  instanceVisibilityFilterEnabled: boolean;
   isDeleteMode: boolean;
   selectedDeleteIds: string[];
   onCreateWorkspace: () => void;
   onSortModeChange: (mode: WorkspaceSortMode) => void;
   onFilterModeChange: (mode: WorkspaceFilterMode) => void;
   onEnvironmentFilterModeChange: (mode: WorkspaceEnvironmentFilterMode) => void;
+  onInstanceVisibilityFilterChange: (enabled: boolean) => void;
   onToggleDeleteMode: () => void;
   onCancelDeleteMode: () => void;
   onDeleteSelected: () => void;
@@ -50,6 +60,17 @@ type Props = {
   onDragInstanceStart?: (instanceId: string) => void;
 };
 
+export type WorkspaceTemplateNode = {
+  workspace: Workspace;
+  instances: TerminalInstance[];
+};
+
+export type WorkspacePathGroup = {
+  key: string;
+  label: string;
+  templates: WorkspaceTemplateNode[];
+};
+
 export function WorkspaceSidebar({
   workspaces,
   selectedWorkspaceId,
@@ -60,12 +81,14 @@ export function WorkspaceSidebar({
   sortMode,
   filterMode,
   environmentFilterMode,
+  instanceVisibilityFilterEnabled,
   isDeleteMode,
   selectedDeleteIds,
   onCreateWorkspace,
   onSortModeChange,
   onFilterModeChange,
   onEnvironmentFilterModeChange,
+  onInstanceVisibilityFilterChange,
   onToggleDeleteMode,
   onCancelDeleteMode,
   onDeleteSelected,
@@ -89,9 +112,17 @@ export function WorkspaceSidebar({
     content: string;
   } | null>(null);
   const instancesByWorkspace = useMemo(() => groupInstances(workbench.instances), [workbench.instances]);
-  const visibleWorkspaces = useMemo(
-    () => deriveVisibleWorkspaces(workspaces, instancesByWorkspace, filterMode, environmentFilterMode, sortMode),
-    [environmentFilterMode, filterMode, instancesByWorkspace, sortMode, workspaces]
+  const visiblePathGroups = useMemo(
+    () =>
+      deriveVisibleWorkspaceGroups(
+        workspaces,
+        instancesByWorkspace,
+        filterMode,
+        environmentFilterMode,
+        sortMode,
+        instanceVisibilityFilterEnabled
+      ),
+    [environmentFilterMode, filterMode, instanceVisibilityFilterEnabled, instancesByWorkspace, sortMode, workspaces]
   );
 
   useEffect(() => {
@@ -127,7 +158,7 @@ export function WorkspaceSidebar({
                 onClick={() => onSortModeChange(sortMode === "last-launch" ? "alphabetical" : "last-launch")}
               />
               <CompactDropdown
-                label="Filter"
+                label="Agent"
                 value={filterMode}
                 options={WORKSPACE_FILTER_OPTIONS}
                 onChange={onFilterModeChange}
@@ -137,6 +168,13 @@ export function WorkspaceSidebar({
                 value={environmentFilterMode}
                 options={WORKSPACE_ENVIRONMENT_FILTER_OPTIONS}
                 onChange={onEnvironmentFilterModeChange}
+              />
+              <IconButton
+                className={instanceVisibilityFilterEnabled ? "workspace-instance-filter-toggle is-active" : "workspace-instance-filter-toggle"}
+                label="Show Templates With Instances Only"
+                icon={<EyeIcon />}
+                isActive={instanceVisibilityFilterEnabled}
+                onClick={() => onInstanceVisibilityFilterChange(!instanceVisibilityFilterEnabled)}
               />
             </div>
           ) : null}
@@ -166,191 +204,193 @@ export function WorkspaceSidebar({
       </header>
 
       <div className="workspace-list" role="list">
-        {visibleWorkspaces.map((workspace) => {
-          const instances = instancesByWorkspace.get(workspace.id) ?? [];
-          const workspaceStatus = resolveWorkspaceVisualState(instances, sessions);
-          const isSelected = workspace.id === selectedWorkspaceId;
-          const hasInstances = instances.length > 0;
-          const environment = resolveWorkspaceEnvironment(workspace);
-          // Sidebar disclosure is explicit. Terminal focus changes should not mutate expansion state.
-          const isExpanded = hasInstances && Boolean(expandedGroups[workspace.id]);
-          const isMarkedForDelete = selectedDeleteIds.includes(workspace.id);
+        {visiblePathGroups.map((group) => (
+          <section key={group.key} className="workspace-path-group">
+            <div className="workspace-path-row" title={group.label}>
+              <span className="workspace-path-label">{group.label}</span>
+            </div>
+            {group.templates.map(({ workspace, instances }) => {
+              const workspaceStatus = resolveWorkspaceVisualState(instances, sessions);
+              const isSelected = workspace.id === selectedWorkspaceId;
+              const hasInstances = instances.length > 0;
+              const environment = resolveWorkspaceEnvironment(workspace);
+              // Sidebar disclosure is explicit. Terminal focus changes should not mutate expansion state.
+              const isExpanded = hasInstances && Boolean(expandedGroups[workspace.id]);
+              const isMarkedForDelete = selectedDeleteIds.includes(workspace.id);
 
-          return (
-            <div
-              key={workspace.id}
-              className={
-                isDeleteMode
-                  ? isMarkedForDelete
-                    ? `workspace-list-item is-delete-selected ${visualStateClassName(workspaceStatus)}`
-                    : "workspace-list-item is-delete-mode"
-                  : isSelected
-                    ? `workspace-list-item is-active ${visualStateClassName(workspaceStatus)}`
-                    : `workspace-list-item ${visualStateClassName(workspaceStatus)}`
-              }
-              role="listitem"
-            >
-              <StatusOrbit active={workspaceStatus === "working"} />
-              <div className="workspace-list-row">
-                <button
-                  type="button"
-                  className="workspace-list-main"
-                  draggable={!isDeleteMode}
-                  onClick={() => {
-                    if (isDeleteMode) {
-                      onToggleDeleteSelection(workspace.id);
-                      return;
-                    }
-                    onSelectWorkspace(workspace.id);
-                  }}
-                  onDragStart={(event) => {
-                    if (isDeleteMode) {
-                      event.preventDefault();
-                      return;
-                    }
-                    event.dataTransfer.effectAllowed = "copy";
-                    event.dataTransfer.setData("application/x-watchboard-workspace-id", workspace.id);
-                    event.dataTransfer.setData("text/plain", workspace.id);
-                  }}
+              return (
+                <div
+                  key={workspace.id}
+                  className={
+                    isDeleteMode
+                      ? isMarkedForDelete
+                        ? `workspace-list-item is-delete-selected ${visualStateClassName(workspaceStatus)}`
+                        : "workspace-list-item is-delete-mode"
+                      : isSelected
+                        ? `workspace-list-item is-active ${visualStateClassName(workspaceStatus)}`
+                        : `workspace-list-item ${visualStateClassName(workspaceStatus)}`
+                  }
+                  role="listitem"
                 >
-                  <span className="workspace-identity-stack">
-                    <span className="workspace-env-rail">
-                      <LocationBadge location={environment} tone="strong" orientation="vertical-compact" />
-                    </span>
-                    {(() => {
-                      const terminal = workspace.terminals[0];
-                      const agentKind = terminal ? detectAgentKind(terminal) : "unknown";
-                      if (agentKind === "claude") {
-                        return <span className="workspace-agent-icon"><ClaudeIcon /></span>;
-                      }
-                      if (agentKind === "codex") {
-                        return <span className="workspace-agent-icon"><CodexIcon /></span>;
-                      }
-                      return <span className="workspace-agent-icon is-placeholder" aria-hidden="true" />;
-                    })()}
-                  </span>
-                  <span className="workspace-list-copy">
-                    <span className="workspace-list-title-row">
-                      <strong>{workspace.name}</strong>
-                    </span>
-                    <span>{describeWorkspaceLine(workspace)}</span>
-                  </span>
-                  <span className="workspace-list-status">
-                    {isDeleteMode ? (
-                      <span className={isMarkedForDelete ? "workspace-delete-check is-selected" : "workspace-delete-check"}>
-                        {isMarkedForDelete ? "✓" : ""}
+                  <StatusOrbit active={workspaceStatus === "working"} />
+                  <div className="workspace-list-row">
+                    <button
+                      type="button"
+                      className="workspace-list-main"
+                      draggable={!isDeleteMode}
+                      onClick={() => {
+                        if (isDeleteMode) {
+                          onToggleDeleteSelection(workspace.id);
+                          return;
+                        }
+                        onSelectWorkspace(workspace.id);
+                      }}
+                      onDragStart={(event) => {
+                        if (isDeleteMode) {
+                          event.preventDefault();
+                          return;
+                        }
+                        event.dataTransfer.effectAllowed = "copy";
+                        event.dataTransfer.setData("application/x-watchboard-workspace-id", workspace.id);
+                        event.dataTransfer.setData("text/plain", workspace.id);
+                      }}
+                    >
+                      <span className="workspace-identity-stack">
+                        <span className="workspace-env-rail">
+                          <LocationBadge location={environment} tone="strong" orientation="vertical-compact" />
+                        </span>
+                        {(() => {
+                          const terminal = workspace.terminals[0];
+                          const agentKind = terminal ? detectAgentKind(terminal) : "unknown";
+                          if (agentKind === "claude") {
+                            return <span className="workspace-agent-icon"><ClaudeIcon /></span>;
+                          }
+                          if (agentKind === "codex") {
+                            return <span className="workspace-agent-icon"><CodexIcon /></span>;
+                          }
+                          return <span className="workspace-agent-icon is-placeholder" aria-hidden="true" />;
+                        })()}
                       </span>
-                    ) : (
-                      <>
-                        {hasInstances ? (
+                      <span className="workspace-list-copy">
+                        <span className="workspace-list-title-row">
+                          <strong>{workspace.name}</strong>
+                        </span>
+                        <span>{describeWorkspaceLine(workspace)}</span>
+                      </span>
+                      <span className="workspace-list-status">
+                        {isDeleteMode ? (
+                          <span className={isMarkedForDelete ? "workspace-delete-check is-selected" : "workspace-delete-check"}>
+                            {isMarkedForDelete ? "✓" : ""}
+                          </span>
+                        ) : hasInstances ? (
                           <span className="workspace-instance-count">{instances.length}</span>
                         ) : null}
-                      </>
+                      </span>
+                    </button>
+
+                    {!isDeleteMode ? (
+                      <div className="workspace-list-actions">
+                        {hasInstances ? (
+                          <button
+                            type="button"
+                            className="workspace-list-action icon-button"
+                            aria-label={isExpanded ? "Hide runtime panes" : "Show runtime panes"}
+                            title={isExpanded ? "Hide runtime panes" : "Show runtime panes"}
+                            data-tooltip={isExpanded ? "Hide runtime panes" : "Show runtime panes"}
+                            onClick={(event) =>
+                              handleAction(event, () =>
+                                setExpandedGroups((current) => ({
+                                  ...current,
+                                  [workspace.id]: !isExpanded
+                                }))
+                              )
+                            }
+                          >
+                            <span className={isExpanded ? "workspace-list-action-glyph is-expanded" : "workspace-list-action-glyph"}>
+                              <ChevronDownIcon />
+                            </span>
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="workspace-list-actions workspace-list-actions-placeholder" aria-hidden="true" />
                     )}
-                  </span>
-                </button>
-
-                {!isDeleteMode ? (
-                  <div className="workspace-list-actions">
-                    {hasInstances ? (
-                      <button
-                        type="button"
-                        className="workspace-list-action icon-button"
-                        aria-label={isExpanded ? "Hide runtime panes" : "Show runtime panes"}
-                        title={isExpanded ? "Hide runtime panes" : "Show runtime panes"}
-                        data-tooltip={isExpanded ? "Hide runtime panes" : "Show runtime panes"}
-                        onClick={(event) =>
-                          handleAction(event, () =>
-                            setExpandedGroups((current) => ({
-                              ...current,
-                              [workspace.id]: !isExpanded
-                            }))
-                          )
-                        }
-                      >
-                        <span className={isExpanded ? "workspace-list-action-glyph is-expanded" : "workspace-list-action-glyph"}>
-                          <ChevronDownIcon />
-                        </span>
-                      </button>
-                    ) : null}
                   </div>
-                ) : (
-                  <div className="workspace-list-actions workspace-list-actions-placeholder" aria-hidden="true" />
-                )}
-              </div>
 
-              {isExpanded && !isDeleteMode ? (
-                <div className="workspace-instance-list">
-                  <div className="workspace-instance-list-header">
-                    <span className="workspace-instance-list-title">Runtime</span>
-                    <span className="workspace-instance-list-count">{instances.length}</span>
-                  </div>
-                  {instances.map((instance) => {
-                    const status = resolveSessionVisualState(sessions[instance.sessionId]?.status);
-                    const isPaneActive = !instance.collapsed && instance.paneId === activePaneId;
-                    const itemClass = instance.collapsed
-                      ? `workspace-instance-item is-collapsed ${visualStateClassName(status)}`
-                      : isPaneActive
-                        ? `workspace-instance-item is-active ${visualStateClassName(status)}`
-                        : `workspace-instance-item ${visualStateClassName(status)}`;
-                    return (
-                      <button
-                        key={instance.instanceId}
-                        type="button"
-                        className={itemClass}
-                        draggable
-                        onClick={() => instance.collapsed ? onRestorePane(instance.instanceId) : onFocusPane(instance.paneId)}
-                        onDragStart={(event) => {
-                          event.dataTransfer.effectAllowed = "move";
-                          event.dataTransfer.setData("application/x-watchboard-instance-id", instance.instanceId);
-                          event.dataTransfer.setData("text/plain", instance.title);
-                          onDragInstanceStart?.(instance.instanceId);
-                        }}
-                        onContextMenu={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setContextMenu({
-                            instanceId: instance.instanceId,
-                            style: getContextMenuStyle(event.clientX, event.clientY)
-                          });
-                        }}
-                        onMouseEnter={(event) => {
-                          if (!instance.collapsed) {
-                            return;
-                          }
-                          const bounds = event.currentTarget.getBoundingClientRect();
-                          setHoverPreview({
-                            instanceId: instance.instanceId,
-                            style: getPreviewStyle(bounds),
-                            content: createTerminalPreviewSnippet(getSessionBacklogPreview(instance.sessionId))
-                          });
-                        }}
-                        onMouseLeave={() => {
-                          setHoverPreview((current) => (current?.instanceId === instance.instanceId ? null : current));
-                        }}
-                        title={instance.collapsed ? "Click to restore" : undefined}
-                      >
-                        <StatusOrbit active={status === "working"} />
-                        <span className={`workspace-instance-rail ${visualStateClassName(status)}`} />
-                        <span className="workspace-instance-copy">
-                          <strong>{instance.title}</strong>
-                          <span>{instance.terminalProfileSnapshot.cwd}</span>
-                          {cronCountdownByInstanceId.get(instance.instanceId) ? (
-                            <span className="workspace-instance-countdown">{cronCountdownByInstanceId.get(instance.instanceId)}</span>
-                          ) : null}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  {isExpanded && !isDeleteMode ? (
+                    <div className="workspace-instance-list">
+                      <div className="workspace-instance-list-header">
+                        <span className="workspace-instance-list-title">Runtime</span>
+                        <span className="workspace-instance-list-count">{instances.length}</span>
+                      </div>
+                      {instances.map((instance) => {
+                        const status = resolveSessionVisualState(sessions[instance.sessionId]?.status);
+                        const isPaneActive = !instance.collapsed && instance.paneId === activePaneId;
+                        const itemClass = instance.collapsed
+                          ? `workspace-instance-item is-collapsed ${visualStateClassName(status)}`
+                          : isPaneActive
+                            ? `workspace-instance-item is-active ${visualStateClassName(status)}`
+                            : `workspace-instance-item ${visualStateClassName(status)}`;
+                        return (
+                          <button
+                            key={instance.instanceId}
+                            type="button"
+                            className={itemClass}
+                            draggable
+                            onClick={() => instance.collapsed ? onRestorePane(instance.instanceId) : onFocusPane(instance.paneId)}
+                            onDragStart={(event) => {
+                              event.dataTransfer.effectAllowed = "move";
+                              event.dataTransfer.setData("application/x-watchboard-instance-id", instance.instanceId);
+                              event.dataTransfer.setData("text/plain", instance.title);
+                              onDragInstanceStart?.(instance.instanceId);
+                            }}
+                            onContextMenu={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setContextMenu({
+                                instanceId: instance.instanceId,
+                                style: getContextMenuStyle(event.clientX, event.clientY)
+                              });
+                            }}
+                            onMouseEnter={(event) => {
+                              if (!instance.collapsed) {
+                                return;
+                              }
+                              const bounds = event.currentTarget.getBoundingClientRect();
+                              setHoverPreview({
+                                instanceId: instance.instanceId,
+                                style: getPreviewStyle(bounds),
+                                content: createTerminalPreviewSnippet(getSessionBacklogPreview(instance.sessionId))
+                              });
+                            }}
+                            onMouseLeave={() => {
+                              setHoverPreview((current) => (current?.instanceId === instance.instanceId ? null : current));
+                            }}
+                            title={instance.collapsed ? "Click to restore" : undefined}
+                          >
+                            <StatusOrbit active={status === "working"} />
+                            <span className={`workspace-instance-rail ${visualStateClassName(status)}`} />
+                            <span className="workspace-instance-copy">
+                              <strong>{instance.title}</strong>
+                              <span>{instance.terminalProfileSnapshot.cwd}</span>
+                              {cronCountdownByInstanceId.get(instance.instanceId) ? (
+                                <span className="workspace-instance-countdown">{cronCountdownByInstanceId.get(instance.instanceId)}</span>
+                              ) : null}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
-          );
-        })}
-        {!isDeleteMode && visibleWorkspaces.length === 0 ? (
+              );
+            })}
+          </section>
+        ))}
+        {!isDeleteMode && visiblePathGroups.length === 0 ? (
           <div className="workspace-list-empty">
             <p>No workspaces match the current filter.</p>
-            <span>Switch to another agent filter or create a new workspace.</span>
+            <span>Switch filters or create a new workspace.</span>
           </div>
         ) : null}
       </div>
@@ -452,14 +492,71 @@ export function deriveVisibleWorkspaces(
   environmentFilterMode: WorkspaceEnvironmentFilterMode,
   sortMode: WorkspaceSortMode
 ): Workspace[] {
-  return [...workspaces]
-    .filter((workspace) => {
-      if (matchesWorkspaceFilter(workspace, filterMode, environmentFilterMode)) {
-        return true;
-      }
-      return (instancesByWorkspace.get(workspace.id)?.length ?? 0) > 0;
-    })
-    .sort((left, right) => compareWorkspaces(left, right, sortMode));
+  return deriveVisibleWorkspaceGroups(workspaces, instancesByWorkspace, filterMode, environmentFilterMode, sortMode, false).flatMap(
+    (group) => group.templates.map((template) => template.workspace)
+  );
+}
+
+export function deriveVisibleWorkspaceGroups(
+  workspaces: Workspace[],
+  instancesByWorkspace: ReadonlyMap<string, TerminalInstance[]>,
+  filterMode: WorkspaceFilterMode,
+  environmentFilterMode: WorkspaceEnvironmentFilterMode,
+  sortMode: WorkspaceSortMode,
+  instanceVisibilityFilterEnabled: boolean
+): WorkspacePathGroup[] {
+  const grouped = new Map<string, WorkspacePathGroup>();
+
+  for (const workspace of workspaces) {
+    const instances = instancesByWorkspace.get(workspace.id) ?? [];
+    const hasInstances = instances.length > 0;
+    const matchesFilters = matchesWorkspaceFilter(workspace, filterMode, environmentFilterMode);
+    const shouldInclude = instanceVisibilityFilterEnabled ? matchesFilters && hasInstances : matchesFilters || hasInstances;
+
+    if (!shouldInclude) {
+      continue;
+    }
+
+    const pathMetadata = getWorkspacePathGroupMetadata(workspace);
+    const existingGroup = grouped.get(pathMetadata.key);
+    const nextTemplate: WorkspaceTemplateNode = {
+      workspace,
+      instances
+    };
+
+    if (existingGroup) {
+      existingGroup.templates.push(nextTemplate);
+      continue;
+    }
+
+    grouped.set(pathMetadata.key, {
+      key: pathMetadata.key,
+      label: pathMetadata.label,
+      templates: [nextTemplate]
+    });
+  }
+
+  return [...grouped.values()]
+    .map((group) => ({
+      ...group,
+      templates: [...group.templates].sort((left, right) => compareWorkspaces(left.workspace, right.workspace, sortMode))
+    }))
+    .filter((group) => group.templates.length > 0)
+    .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base", numeric: true }));
+}
+
+type WorkspacePathGroupMetadata = {
+  key: string;
+  label: string;
+};
+
+function getWorkspacePathGroupMetadata(workspace: Workspace): WorkspacePathGroupMetadata {
+  const rawPath = workspace.terminals[0]?.cwd ?? "";
+  const label = rawPath.trim() || "No path";
+  return {
+    key: label.toLocaleLowerCase(),
+    label
+  };
 }
 
 export function getPreviewStyle(bounds: Pick<DOMRect, "right" | "top" | "width">): CSSProperties {

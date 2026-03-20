@@ -17,6 +17,8 @@ debug-bundle/
 test-results/
 playwright-report/
 tests/artifacts/
+# Generated local profiling outputs
+tests/artifacts/perf/
 
 # Project-level agent configs (may contain local paths)
 .claude/

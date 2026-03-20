@@ -37,6 +37,7 @@ import {
   type AppSettings,
   createSshEnvironment,
   createTerminalInstance,
+  duplicateWorkspaceTemplate,
   createWorkspaceTemplate,
   type BoardDocument,
   type DiagnosticsInfo,
@@ -955,8 +956,8 @@ export function App(): ReactElement {
     update: Partial<
       Pick<
         AppSettings,
-        "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "boardPanelCollapsed"
-        | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
+        "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "workspaceInstanceVisibilityFilterEnabled"
+        | "activeMainTab" | "boardPanelCollapsed" | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
       >
     >
   ): Promise<void> {
@@ -984,9 +985,21 @@ export function App(): ReactElement {
   }
 
   async function handleWorkspaceSidebarPreferenceChange(
-    update: Partial<Pick<AppSettings, "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode">>
+    update: Partial<
+      Pick<AppSettings, "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "workspaceInstanceVisibilityFilterEnabled">
+    >
   ): Promise<void> {
     await persistSettingsPreference(update);
+  }
+
+  async function handleDuplicateWorkspace(): Promise<void> {
+    if (!workspaceList || !selectedWorkspace) {
+      return;
+    }
+    const duplicateName = getNextDuplicateWorkspaceName(selectedWorkspace.name, workspaceList.workspaces);
+    const duplicatedWorkspace = duplicateWorkspaceTemplate(selectedWorkspace, duplicateName);
+    await handleWorkspaceSave(duplicatedWorkspace);
+    setIsConfigOpen(true);
   }
 
   async function handleSkillsPaneStateChange(state: SkillsPaneState): Promise<void> {
@@ -1554,6 +1567,7 @@ export function App(): ReactElement {
               sortMode={settingsDraft.workspaceSortMode}
               filterMode={settingsDraft.workspaceFilterMode}
               environmentFilterMode={settingsDraft.workspaceEnvironmentFilterMode}
+              instanceVisibilityFilterEnabled={settingsDraft.workspaceInstanceVisibilityFilterEnabled}
               isDeleteMode={isDeleteMode}
               selectedDeleteIds={deleteSelection}
               onCreateWorkspace={() => void handleCreateWorkspace()}
@@ -1563,6 +1577,9 @@ export function App(): ReactElement {
               }
               onEnvironmentFilterModeChange={(environmentFilterMode: WorkspaceEnvironmentFilterMode) =>
                 void handleWorkspaceSidebarPreferenceChange({ workspaceEnvironmentFilterMode: environmentFilterMode })
+              }
+              onInstanceVisibilityFilterChange={(enabled: boolean) =>
+                void handleWorkspaceSidebarPreferenceChange({ workspaceInstanceVisibilityFilterEnabled: enabled })
               }
               onToggleDeleteMode={() => {
                 setIsDeleteMode(true);
@@ -1755,6 +1772,7 @@ export function App(): ReactElement {
         isDeleting={isDeletingWorkspace}
         onClose={() => setIsConfigOpen(false)}
         onSaveWorkspace={() => void handleWorkspaceSave()}
+        onDuplicateWorkspace={() => void handleDuplicateWorkspace()}
         onResetWorkspace={handleResetWorkspace}
         onDeleteWorkspace={() => void handleDeleteWorkspace()}
         onWorkspaceFieldChange={handleWorkspaceFieldChange}
@@ -1802,6 +1820,20 @@ function clearWorkspaceEditor(
   setWorkspaceId("");
   setDraftWorkspace(null);
   setIsDirty(false);
+}
+
+function getNextDuplicateWorkspaceName(baseName: string, workspaces: Workspace[]): string {
+  const trimmedBaseName = baseName.trim() || "Workspace";
+  const existingNames = new Set(workspaces.map((workspace) => workspace.name.trim().toLocaleLowerCase()));
+  const initialCandidate = `${trimmedBaseName} Copy`;
+  if (!existingNames.has(initialCandidate.toLocaleLowerCase())) {
+    return initialCandidate;
+  }
+  let suffix = 2;
+  while (existingNames.has(`${trimmedBaseName} Copy ${suffix}`.toLocaleLowerCase())) {
+    suffix += 1;
+  }
+  return `${trimmedBaseName} Copy ${suffix}`;
 }
 
 function normalizeTerminal(workspace: Workspace, diagnostics: DiagnosticsInfo | null, settings: AppSettings | null): TerminalProfile {

@@ -52,11 +52,18 @@ const api: WatchboardApi = {
   readAgentConfig: (configId, location) => ipcRenderer.invoke("watchboard:read-agent-config", configId, location),
   writeAgentConfig: (configId, location, content) => ipcRenderer.invoke("watchboard:write-agent-config", configId, location, content),
   getAnalysisDatabase: (location) => ipcRenderer.invoke("watchboard:get-analysis-database", location),
-  getAnalysisBootstrap: (location, selectedSessionId, limit) =>
-    ipcRenderer.invoke("watchboard:get-analysis-bootstrap", location, selectedSessionId, limit),
+  getAnalysisBootstrap: (location, selectedProjectKey, selectedSessionId, limit) =>
+    ipcRenderer.invoke("watchboard:get-analysis-bootstrap", location, selectedProjectKey, selectedSessionId, limit),
   runAnalysisQuery: (location, sql) => ipcRenderer.invoke("watchboard:run-analysis-query", location, sql),
   listAnalysisSessions: (location, limit) => ipcRenderer.invoke("watchboard:list-analysis-sessions", location, limit),
+  listAnalysisProjects: (location, limit) => ipcRenderer.invoke("watchboard:list-analysis-projects", location, limit),
+  listAnalysisProjectSessions: (location, projectKey, limit) =>
+    ipcRenderer.invoke("watchboard:list-analysis-project-sessions", location, projectKey, limit),
+  listAnalysisSessionSections: (location, sessionId, limit) =>
+    ipcRenderer.invoke("watchboard:list-analysis-session-sections", location, sessionId, limit),
   getAnalysisSessionDetail: (location, sessionId) => ipcRenderer.invoke("watchboard:get-analysis-session-detail", location, sessionId),
+  getAnalysisSectionDetail: (location, sessionId, sectionId) =>
+    ipcRenderer.invoke("watchboard:get-analysis-section-detail", location, sessionId, sectionId),
   getAnalysisSessionStatistics: (location, sessionId) =>
     ipcRenderer.invoke("watchboard:get-analysis-session-statistics", location, sessionId),
   getAnalysisCrossSessionMetrics: (location, limit) =>

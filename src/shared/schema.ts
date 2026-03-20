@@ -140,14 +140,19 @@ export const AgentConfigPaneStateSchema = z.object({
   })
 });
 export type AgentConfigPaneState = z.infer<typeof AgentConfigPaneStateSchema>;
-export const AnalysisPaneSectionSchema = z.enum(["overview", "sessions", "cross-session", "query"]);
+export const AnalysisPaneSectionSchema = z.preprocess(
+  (value) => (value === "sessions" ? "session-detail" : value),
+  z.enum(["overview", "session-detail", "cross-session", "query"])
+);
 export type AnalysisPaneSection = z.infer<typeof AnalysisPaneSectionSchema>;
 export const DEFAULT_ANALYSIS_QUERY =
   "select session_id, ecosystem, total_tokens, total_tool_calls, parsed_at from sessions order by parsed_at desc limit 20;";
 export const AnalysisPaneStateSchema = z.object({
   location: z.enum(["host", "wsl"]).default("host"),
   activeSection: AnalysisPaneSectionSchema.default("overview"),
+  selectedProjectKey: z.string().nullable().default(null),
   selectedSessionId: z.string().nullable().default(null),
+  selectedSectionId: z.string().nullable().default(null),
   queryText: z.string().default(DEFAULT_ANALYSIS_QUERY),
   executedQueryText: z.string().default(DEFAULT_ANALYSIS_QUERY)
 });
@@ -188,6 +193,7 @@ export const AppSettingsSchema = z.object({
   workspaceSortMode: WorkspaceSortModeSchema.default("last-launch"),
   workspaceFilterMode: WorkspaceFilterModeSchema.default("all"),
   workspaceEnvironmentFilterMode: WorkspaceEnvironmentFilterModeSchema.default("all"),
+  workspaceInstanceVisibilityFilterEnabled: z.boolean().default(false),
   sshEnvironments: z.array(SshEnvironmentSchema).default([]),
   activeMainTab: MainViewTabSchema.default("terminal"),
   skillsPane: SkillsPaneStateSchema.default({
@@ -228,7 +234,9 @@ export const AppSettingsSchema = z.object({
   analysisPane: AnalysisPaneStateSchema.default({
     location: "host",
     activeSection: "overview",
+    selectedProjectKey: null,
     selectedSessionId: null,
+    selectedSectionId: null,
     queryText: DEFAULT_ANALYSIS_QUERY,
     executedQueryText: DEFAULT_ANALYSIS_QUERY
   }),
@@ -868,6 +876,32 @@ export function createWorkspaceTemplate(
     autoReconnect: true,
     terminals: [terminal],
     layoutTree: createSingleTerminalLayout(terminal),
+    createdAt,
+    updatedAt: createdAt
+  });
+}
+
+export function duplicateWorkspaceTemplate(
+  workspace: Workspace,
+  nextName?: string
+): Workspace {
+  const sourceTerminal = workspace.terminals[0];
+  if (!sourceTerminal) {
+    throw new Error(`Workspace ${workspace.id} has no terminal profile`);
+  }
+  const createdAt = nowIso();
+  const duplicatedTerminal = createTerminalProfile({
+    ...sourceTerminal,
+    id: globalThis.crypto.randomUUID(),
+    title: nextName ?? workspace.name
+  });
+  return WorkspaceSchema.parse({
+    ...workspace,
+    id: globalThis.crypto.randomUUID(),
+    name: nextName ?? workspace.name,
+    terminals: [duplicatedTerminal],
+    layoutTree: createSingleTerminalLayout(duplicatedTerminal),
+    lastLaunchedAt: undefined,
     createdAt,
     updatedAt: createdAt
   });

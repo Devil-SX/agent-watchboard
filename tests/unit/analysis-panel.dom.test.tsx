@@ -64,6 +64,19 @@ function createSessionStatistics(totalTokens: number) {
   };
 }
 
+function createProjectSummary(totalTokens: number) {
+  return [
+    {
+      projectKey: "/tmp/demo",
+      projectPath: "/tmp/demo",
+      sessionCount: 1,
+      latestActivityAt: "2026-03-19T00:00:05.000Z",
+      totalTokens,
+      totalToolCalls: 4
+    }
+  ];
+}
+
 async function flushMicrotasks() {
   await act(async () => {
     for (let index = 0; index < 10; index += 1) {
@@ -86,7 +99,9 @@ async function renderAnalysisPanel(setupWatchboard?: () => void) {
         viewState={{
           location: "host",
           activeSection: "overview",
+          selectedProjectKey: "/tmp/demo",
           selectedSessionId: "session-1",
+          selectedSectionId: null,
           queryText: "select * from sessions",
           executedQueryText: "select * from sessions"
         }}
@@ -124,6 +139,9 @@ test("AnalysisPanel reuses cached derived data across remount when database fres
         return {
           databaseInfo: createDatabaseInfo("2026-03-19T00:00:00.000Z"),
           sessions: createSessionSummary(1024),
+          projects: createProjectSummary(1024),
+          selectedProjectKey: "/tmp/demo",
+          projectSessions: createSessionSummary(1024),
           selectedSessionId: "session-1",
           sessionStatistics: createSessionStatistics(1024)
         };
@@ -136,6 +154,8 @@ test("AnalysisPanel reuses cached derived data across remount when database fres
         calls.listSessions += 1;
         return createSessionSummary(1024);
       },
+      listAnalysisProjects: async () => createProjectSummary(1024),
+      listAnalysisProjectSessions: async () => createSessionSummary(1024),
       getAnalysisSessionStatistics: async () => {
         calls.sessionStatistics += 1;
         return createSessionStatistics(1024);
@@ -168,6 +188,9 @@ test("AnalysisPanel reuses cached derived data across remount when database fres
         return {
           databaseInfo: createDatabaseInfo("2026-03-19T00:00:00.000Z"),
           sessions: createSessionSummary(1024),
+          projects: createProjectSummary(1024),
+          selectedProjectKey: "/tmp/demo",
+          projectSessions: createSessionSummary(1024),
           selectedSessionId: "session-1",
           sessionStatistics: createSessionStatistics(1024)
         };
@@ -180,6 +203,8 @@ test("AnalysisPanel reuses cached derived data across remount when database fres
         calls.listSessions += 1;
         return createSessionSummary(1024);
       },
+      listAnalysisProjects: async () => createProjectSummary(1024),
+      listAnalysisProjectSessions: async () => createSessionSummary(1024),
       getAnalysisSessionStatistics: async () => {
         calls.sessionStatistics += 1;
         return createSessionStatistics(1024);
@@ -231,6 +256,9 @@ test("AnalysisPanel invalidates cached derived data when profiler freshness chan
         const payload = {
           databaseInfo: inspectResponses[inspectIndex],
           sessions: sessionResponses[inspectIndex],
+          projects: createProjectSummary([1024, 2048][inspectIndex] ?? 1024),
+          selectedProjectKey: "/tmp/demo",
+          projectSessions: sessionResponses[inspectIndex],
           selectedSessionId: "session-1",
           sessionStatistics: statisticsResponses[inspectIndex]
         };
@@ -247,6 +275,8 @@ test("AnalysisPanel invalidates cached derived data when profiler freshness chan
         calls.listSessions += 1;
         return next;
       },
+      listAnalysisProjects: async () => createProjectSummary(2048),
+      listAnalysisProjectSessions: async () => createSessionSummary(2048),
       getAnalysisSessionStatistics: async () => {
         const next = statisticsResponses[Math.min(calls.sessionStatistics + 1, statisticsResponses.length - 1)];
         calls.sessionStatistics += 1;
@@ -276,6 +306,9 @@ test("AnalysisPanel invalidates cached derived data when profiler freshness chan
         const payload = {
           databaseInfo: inspectResponses[inspectIndex],
           sessions: sessionResponses[inspectIndex],
+          projects: createProjectSummary([1024, 2048][inspectIndex] ?? 1024),
+          selectedProjectKey: "/tmp/demo",
+          projectSessions: sessionResponses[inspectIndex],
           selectedSessionId: "session-1",
           sessionStatistics: statisticsResponses[inspectIndex]
         };
@@ -292,6 +325,8 @@ test("AnalysisPanel invalidates cached derived data when profiler freshness chan
         calls.listSessions += 1;
         return next;
       },
+      listAnalysisProjects: async () => createProjectSummary(2048),
+      listAnalysisProjectSessions: async () => createSessionSummary(2048),
       getAnalysisSessionStatistics: async () => {
         const next = statisticsResponses[Math.min(calls.sessionStatistics + 1, statisticsResponses.length - 1)];
         calls.sessionStatistics += 1;

@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-03-21
+
+> **Code Stats** | Total: TBD lines | Delta: TBD | Change: TBD vs v0.12.3
+
+### Added
+- Added a worker-backed analysis read path, WSL-safe path-resolution logging, and focused regression coverage so large profiler databases can be queried without freezing the Electron main thread or leaking user home paths into logs.
+- Added a project-first analysis browser with project/session/section navigation, transcript content browsing, section detail reads, and bottleneck profiling scripts that can persist reusable analysis performance reports locally.
+- Added a path-grouped workspace sidebar with a dedicated instance-visibility filter and template duplication support, plus regression coverage for the new grouping and duplication flows.
+
+### Changed
+- Changed analysis selection and bootstrap flows to load around `project -> session -> section` instead of a flat session-only browser, reducing redundant cold reads when navigating profiler data.
+
+### Fixed
+- Fixed analysis startup and navigation responsiveness by moving synchronous SQLite work off the main thread while preserving redacted telemetry and snapshot-fallback behavior.
+
 ## [0.12.3] - 2026-03-19
 
 > **Code Stats** | Total: 44063 lines | Delta: +39 (-2) = **+37 net** | Change: **+0.08%** vs v0.12.2

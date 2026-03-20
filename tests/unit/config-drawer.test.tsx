@@ -36,6 +36,7 @@ test("ConfigDrawer resolved command reflects the cron relaunch prompt", () => {
       isSaving={false}
       onClose={() => undefined}
       onSaveWorkspace={() => undefined}
+      onDuplicateWorkspace={() => undefined}
       onResetWorkspace={() => undefined}
       onDeleteWorkspace={() => undefined}
       onWorkspaceFieldChange={() => undefined}
@@ -46,4 +47,5 @@ test("ConfigDrawer resolved command reflects the cron relaunch prompt", () => {
   assert.match(html, /Resolved Command/);
   assert.match(html, /codex resume --last/);
   assert.match(html, /check the repo and report drift/);
+  assert.match(html, /Duplicate/);
 });

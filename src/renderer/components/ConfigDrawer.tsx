@@ -30,6 +30,7 @@ type Props = {
   isDeleting?: boolean;
   onClose: () => void;
   onSaveWorkspace: () => void;
+  onDuplicateWorkspace: () => void;
   onResetWorkspace: () => void;
   onDeleteWorkspace: () => void;
   onWorkspaceFieldChange: (field: "name", value: string) => void;
@@ -46,6 +47,7 @@ export function ConfigDrawer({
   isDeleting = false,
   onClose,
   onSaveWorkspace,
+  onDuplicateWorkspace,
   onResetWorkspace,
   onDeleteWorkspace,
   onWorkspaceFieldChange,
@@ -190,6 +192,9 @@ export function ConfigDrawer({
           <div className="toolbar-actions">
             <button type="button" className="primary-button" disabled={isSaving || !isDirty} onClick={onSaveWorkspace}>
               {isSaving ? "Saving..." : "Save"}
+            </button>
+            <button type="button" className="secondary-button" onClick={onDuplicateWorkspace}>
+              Duplicate
             </button>
             <button type="button" className="secondary-button" disabled={!isDirty} onClick={onResetWorkspace}>
               Discard

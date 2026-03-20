@@ -3,7 +3,8 @@ import type { AppSettings } from "@shared/schema";
 type SettingsPreferenceUpdate = Partial<
   Pick<
     AppSettings,
-    "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "boardPanelCollapsed"
+    "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "workspaceInstanceVisibilityFilterEnabled"
+    | "activeMainTab" | "boardPanelCollapsed"
     | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
   >
 >;
@@ -11,7 +12,8 @@ type SettingsPreferenceUpdate = Partial<
 export function applyOptimisticSettingsPreference<
   K extends keyof Pick<
     AppSettings,
-    "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "activeMainTab" | "boardPanelCollapsed"
+    "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "workspaceInstanceVisibilityFilterEnabled"
+    | "activeMainTab" | "boardPanelCollapsed"
     | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
   >
 >(baseSettings: AppSettings, update: Pick<AppSettings, K> | Partial<Pick<AppSettings, K>>): AppSettings {
@@ -44,7 +46,9 @@ const SETTINGS_PANE_KEYS = ["activeCategory"] as const satisfies readonly (keyof
 const ANALYSIS_PANE_KEYS = [
   "location",
   "activeSection",
+  "selectedProjectKey",
   "selectedSessionId",
+  "selectedSectionId",
   "queryText",
   "executedQueryText"
 ] as const satisfies readonly (keyof AppSettings["analysisPane"])[];

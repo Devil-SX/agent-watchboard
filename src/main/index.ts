@@ -19,16 +19,11 @@ import {
 } from "@main/skillScanCache";
 import {
   buildAnalysisDatabasePath,
-  type AnalysisDatabaseLogger,
   createMissingAnalysisDatabaseInfo,
-  getAnalysisBootstrapAtPath,
-  getAnalysisCrossSessionMetricsAtPath,
-  getAnalysisSessionDetailAtPath,
-  getAnalysisSessionStatisticsAtPath,
-  inspectAnalysisDatabaseAtPath,
-  listAnalysisSessionsAtPath,
-  runAnalysisQueryAtPath
+  type AnalysisDatabaseLogger
 } from "@main/analysisDatabase";
+import { AnalysisWorkerClient } from "@main/analysisWorkerClient";
+import type { AnalysisWorkerLogEvent, AnalysisWorkerRequestWithoutId, AnalysisWorkerResult } from "@main/analysisWorkerProtocol";
 import {
   createSessionStartWaiterMap,
   rejectPendingSessionStart,
@@ -43,6 +38,8 @@ import {
 import { openDebugPath } from "@main/openDebugPath";
 import { completeTerminalPath } from "@main/pathCompletion";
 import { resolveCronRelaunchCommand } from "@main/codexSessionResolver";
+import { sanitizePathForLogs, sanitizePayloadPaths } from "@main/pathRedaction";
+import { resolveAnalysisWslHomePath } from "@main/analysisWslResolution";
 import { resolveSessionAttachOutcome } from "@main/sessionAttach";
 import { testSshConnection } from "@main/sshConnection";
 import { attachSshSecretFlags, loadSshSecrets, mergeSshSecretsIntoSettings } from "@main/sshSecrets";
@@ -84,7 +81,19 @@ import { SupervisorClient } from "@shared/supervisorClient";
 import { readWorkbenchDocument, readWorkbenchDocumentWithHealth, writeWorkbenchDocument } from "@shared/workbench";
 import { deleteWorkspace, readWorkspaceList, readWorkspaceListWithHealth, upsertWorkspace } from "@shared/workspaces";
 import { updateWorkspace } from "@shared/workspaces";
-import { type SkillListResult } from "@shared/ipc";
+import type {
+  AnalysisBootstrapPayload,
+  AnalysisCrossSessionMetrics,
+  AnalysisDatabaseInfo,
+  AnalysisProjectSummary,
+  AnalysisQueryResult,
+  AnalysisSectionDetail,
+  AnalysisSessionDetail,
+  AnalysisSessionSectionSummary,
+  AnalysisSessionStatistics,
+  AnalysisSessionSummary,
+  SkillListResult
+} from "@shared/ipc";
 
 let mainWindow: BrowserWindow | null = null;
 let stopWatchingBoard: (() => void) | null = null;
@@ -115,6 +124,22 @@ const analysisDatabaseLogger: AnalysisDatabaseLogger = {
     log.error(event, payload);
   }
 };
+const analysisWorkerClient = new AnalysisWorkerClient({
+  onPerfEvent: (event) => {
+    const extra = event.extra as { location?: AgentPathLocation; operation?: string; filePath?: string } | undefined;
+    if (!extra?.location || !extra?.operation || !extra?.filePath) {
+      return;
+    }
+    createAnalysisPerfReporter(extra.location, extra.operation, extra.filePath)({
+      name: event.name,
+      durationMs: event.durationMs,
+      extra: event.extra
+    });
+  },
+  onLogEvent: (event) => {
+    replayAnalysisWorkerLog(event);
+  }
+});
 
 function createAnalysisPerfReporter(location: AgentPathLocation, operation: string, filePath: string) {
   return (event: { name: string; durationMs: number; extra?: Record<string, unknown> }) => {
@@ -125,11 +150,32 @@ function createAnalysisPerfReporter(location: AgentPathLocation, operation: stri
       extra: {
         location,
         operation,
-        filePath,
-        ...event.extra
+        filePath: sanitizePathForLogs(filePath),
+        ...sanitizePayloadPaths(event.extra ?? {})
       }
     });
   };
+}
+
+function replayAnalysisWorkerLog(event: AnalysisWorkerLogEvent): void {
+  const payload = sanitizePayloadPaths(event.payload);
+  switch (event.level) {
+    case "info":
+      log.info(event.event, payload);
+      return;
+    case "warn":
+      log.warn(event.event, payload);
+      return;
+    case "error":
+      log.error(event.event, payload);
+      return;
+  }
+}
+
+async function runAnalysisWorkerRequest<T extends AnalysisWorkerResult>(
+  request: AnalysisWorkerRequestWithoutId
+): Promise<T> {
+  return (await analysisWorkerClient.run(request)) as T;
 }
 
 function defaultWorkspaceSeed(): { platform: NodeJS.Platform } {
@@ -277,6 +323,7 @@ function cleanupAppResources(): void {
   mainPerfRecorder = null;
   rendererPerfRecorder?.close();
   rendererPerfRecorder = null;
+  void analysisWorkerClient.terminate();
 }
 
 function upsertPersistenceHealth(nextHealth: PersistenceStoreHealth): void {
@@ -999,19 +1046,20 @@ function setupIpc(): void {
     log.info("analysis-db-resolve", {
       operation: "inspect",
       location,
-      filePath
+      filePath: filePath ? sanitizePathForLogs(filePath) : null
     });
     if (!filePath) {
       return createMissingAnalysisDatabaseInfo(location);
     }
-    const info = inspectAnalysisDatabaseAtPath(location, filePath, {
-      logger: analysisDatabaseLogger,
-      onPerf: createAnalysisPerfReporter(location, "inspect", filePath)
+    const info = await runAnalysisWorkerRequest<AnalysisDatabaseInfo>({
+      operation: "inspect",
+      location,
+      filePath
     });
     log.info("analysis-db-result", {
       operation: "inspect",
       location,
-      filePath,
+      filePath: sanitizePathForLogs(filePath),
       status: info.status,
       sessionCount: info.sessionCount,
       totalFiles: info.totalFiles,
@@ -1022,12 +1070,13 @@ function setupIpc(): void {
 
   ipcMain.handle(
     "watchboard:get-analysis-bootstrap",
-    async (_event, location: AgentPathLocation, selectedSessionId?: string | null, limit?: number) => {
+    async (_event, location: AgentPathLocation, selectedProjectKey?: string | null, selectedSessionId?: string | null, limit?: number) => {
       const filePath = await resolveAnalysisDatabasePath(location);
       log.info("analysis-db-resolve", {
         operation: "bootstrap",
         location,
-        filePath,
+        filePath: filePath ? sanitizePathForLogs(filePath) : null,
+        selectedProjectKey: selectedProjectKey ?? null,
         selectedSessionId: selectedSessionId ?? null,
         limit: limit ?? null
       });
@@ -1035,14 +1084,20 @@ function setupIpc(): void {
         return {
           databaseInfo: createMissingAnalysisDatabaseInfo(location),
           sessions: [],
+          projects: [],
+          selectedProjectKey: null,
+          projectSessions: [],
           selectedSessionId: null,
           sessionStatistics: null
-        };
+        } satisfies AnalysisBootstrapPayload;
       }
-      return getAnalysisBootstrapAtPath(location, filePath, selectedSessionId ?? null, limit, {
+      return await runAnalysisWorkerRequest<AnalysisBootstrapPayload>({
+        operation: "bootstrap",
         location,
-        logger: analysisDatabaseLogger,
-        onPerf: createAnalysisPerfReporter(location, "bootstrap", filePath)
+        filePath,
+        selectedProjectKey: selectedProjectKey ?? null,
+        selectedSessionId: selectedSessionId ?? null,
+        limit
       });
     }
   );
@@ -1052,12 +1107,14 @@ function setupIpc(): void {
     log.info("analysis-db-resolve", {
       operation: "query",
       location,
-      filePath,
+      filePath: sanitizePathForLogs(filePath),
       queryPreview: sql.trim().slice(0, 160)
     });
-    return runAnalysisQueryAtPath(location, filePath, sql, {
-      logger: analysisDatabaseLogger,
-      onPerf: createAnalysisPerfReporter(location, "query", filePath)
+    return await runAnalysisWorkerRequest<AnalysisQueryResult>({
+      operation: "query",
+      location,
+      filePath,
+      sql
     });
   });
 
@@ -1066,13 +1123,69 @@ function setupIpc(): void {
     log.info("analysis-db-resolve", {
       operation: "list-sessions",
       location,
-      filePath,
+      filePath: sanitizePathForLogs(filePath),
       limit: limit ?? null
     });
-    return listAnalysisSessionsAtPath(filePath, limit, {
+    return await runAnalysisWorkerRequest<AnalysisSessionSummary[]>({
+      operation: "list-sessions",
       location,
-      logger: analysisDatabaseLogger,
-      onPerf: createAnalysisPerfReporter(location, "list-sessions", filePath)
+      filePath,
+      limit
+    });
+  });
+
+  ipcMain.handle("watchboard:list-analysis-projects", async (_event, location: AgentPathLocation, limit?: number) => {
+    const filePath = await requireAnalysisDatabasePath(location);
+    log.info("analysis-db-resolve", {
+      operation: "list-projects",
+      location,
+      filePath: sanitizePathForLogs(filePath),
+      limit: limit ?? null
+    });
+    return await runAnalysisWorkerRequest<AnalysisProjectSummary[]>({
+      operation: "list-projects",
+      location,
+      filePath,
+      limit
+    });
+  });
+
+  ipcMain.handle(
+    "watchboard:list-analysis-project-sessions",
+    async (_event, location: AgentPathLocation, projectKey: string, limit?: number) => {
+      const filePath = await requireAnalysisDatabasePath(location);
+      log.info("analysis-db-resolve", {
+        operation: "list-project-sessions",
+        location,
+        filePath: sanitizePathForLogs(filePath),
+        projectKey,
+        limit: limit ?? null
+      });
+      return await runAnalysisWorkerRequest<AnalysisSessionSummary[]>({
+        operation: "list-project-sessions",
+        location,
+        filePath,
+        projectKey,
+        limit
+      });
+    }
+  );
+
+  ipcMain.handle("watchboard:list-analysis-session-sections", async (_event, location: AgentPathLocation, sessionId: string, limit?: number) => {
+    const filePath = await requireAnalysisDatabasePath(location);
+    log.info("analysis-db-resolve", {
+      operation: "list-session-sections",
+      location,
+      filePath: sanitizePathForLogs(filePath),
+      sessionId,
+      limit: limit ?? null
+    });
+    return await runAnalysisWorkerRequest<AnalysisSessionSectionSummary[]>({
+      operation: "list-session-sections",
+      location,
+      filePath,
+      sessionId,
+      limit
     });
   });
 
@@ -1081,13 +1194,32 @@ function setupIpc(): void {
     log.info("analysis-db-resolve", {
       operation: "session-detail",
       location,
+      filePath: sanitizePathForLogs(filePath),
+      sessionId
+    });
+    return await runAnalysisWorkerRequest<AnalysisSessionDetail | null>({
+      operation: "session-detail",
+      location,
       filePath,
       sessionId
     });
-    return getAnalysisSessionDetailAtPath(filePath, sessionId, {
+  });
+
+  ipcMain.handle("watchboard:get-analysis-section-detail", async (_event, location: AgentPathLocation, sessionId: string, sectionId: string) => {
+    const filePath = await requireAnalysisDatabasePath(location);
+    log.info("analysis-db-resolve", {
+      operation: "section-detail",
       location,
-      logger: analysisDatabaseLogger,
-      onPerf: createAnalysisPerfReporter(location, "session-detail", filePath)
+      filePath: sanitizePathForLogs(filePath),
+      sessionId,
+      sectionId
+    });
+    return await runAnalysisWorkerRequest<AnalysisSectionDetail | null>({
+      operation: "section-detail",
+      location,
+      filePath,
+      sessionId,
+      sectionId
     });
   });
 
@@ -1096,13 +1228,14 @@ function setupIpc(): void {
     log.info("analysis-db-resolve", {
       operation: "session-statistics",
       location,
-      filePath,
+      filePath: sanitizePathForLogs(filePath),
       sessionId
     });
-    return getAnalysisSessionStatisticsAtPath(filePath, sessionId, {
+    return await runAnalysisWorkerRequest<AnalysisSessionStatistics | null>({
+      operation: "session-statistics",
       location,
-      logger: analysisDatabaseLogger,
-      onPerf: createAnalysisPerfReporter(location, "session-statistics", filePath)
+      filePath,
+      sessionId
     });
   });
 
@@ -1111,13 +1244,14 @@ function setupIpc(): void {
     log.info("analysis-db-resolve", {
       operation: "cross-session-metrics",
       location,
-      filePath,
+      filePath: sanitizePathForLogs(filePath),
       limit: limit ?? null
     });
-    return getAnalysisCrossSessionMetricsAtPath(location, filePath, limit, {
+    return await runAnalysisWorkerRequest<AnalysisCrossSessionMetrics>({
+      operation: "cross-session-metrics",
       location,
-      logger: analysisDatabaseLogger,
-      onPerf: createAnalysisPerfReporter(location, "cross-session-metrics", filePath)
+      filePath,
+      limit
     });
   });
 }
@@ -1192,11 +1326,69 @@ async function buildAgentConfigEntry(configId: AgentConfigFileId, location: Agen
 }
 
 async function resolveAnalysisDatabasePath(location: AgentPathLocation): Promise<string | null> {
-  const home = await resolveAgentHome(location);
-  if (!home) {
+  const startedAt = performance.now();
+  const nativeHome = homedir();
+  if (location === "host") {
+    const filePath = buildAnalysisDatabasePath(nativeHome);
+    recordMainPerf({
+      category: "analysis",
+      name: "analysis-path-resolve",
+      durationMs: performance.now() - startedAt,
+      extra: {
+        location,
+        result: "resolved",
+        filePath: sanitizePathForLogs(filePath)
+      }
+    });
+    return filePath;
+  }
+
+  const wslHome = await resolveAnalysisWslHomePath({
+    platform: process.platform,
+    onPerf: (event) => {
+      recordMainPerf({
+        category: "analysis",
+        name: event.name,
+        durationMs: event.durationMs,
+        extra: {
+          location,
+          ...sanitizePayloadPaths(event.extra ?? {})
+        }
+      });
+    },
+    onLog: (event) => {
+      if (event.level === "info") {
+        log.info(event.event, sanitizePayloadPaths(event.payload));
+        return;
+      }
+      log.warn(event.event, sanitizePayloadPaths(event.payload));
+    }
+  });
+  if (!wslHome) {
+    recordMainPerf({
+      category: "analysis",
+      name: "analysis-path-resolve",
+      durationMs: performance.now() - startedAt,
+      extra: {
+        location,
+        result: "unresolved"
+      }
+    });
     return null;
   }
-  return buildAnalysisDatabasePath(home);
+
+  const filePath = buildAnalysisDatabasePath(wslHome);
+  recordMainPerf({
+    category: "analysis",
+    name: "analysis-path-resolve",
+    durationMs: performance.now() - startedAt,
+    extra: {
+      location,
+      result: "resolved",
+      filePath: sanitizePathForLogs(filePath)
+    }
+  });
+  return filePath;
 }
 
 async function requireAnalysisDatabasePath(location: AgentPathLocation): Promise<string> {

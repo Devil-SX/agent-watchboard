@@ -69,6 +69,15 @@ export function AlarmIcon({ className }: IconProps): ReactElement {
   );
 }
 
+export function EyeIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1.5 8s2.3-4 6.5-4 6.5 4 6.5 4-2.3 4-6.5 4-6.5-4-6.5-4Z" />
+      <circle cx="8" cy="8" r="2.1" />
+    </svg>
+  );
+}
+
 export function PlusIcon({ className }: IconProps): ReactElement {
   return (
     <svg

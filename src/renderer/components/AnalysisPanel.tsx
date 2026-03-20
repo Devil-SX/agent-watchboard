@@ -23,27 +23,32 @@ import {
   YAxis
 } from "recharts";
 
-import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
+import { CompactToggleButton } from "@renderer/components/CompactControls";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
 import { areAnalysisPaneStatesEqual } from "@renderer/components/settingsDraft";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import type {
+  AnalysisContentEntry,
   AnalysisCrossSessionMetrics,
   AnalysisDatabaseInfo,
   AnalysisMetricDatum,
+  AnalysisProjectSummary,
   AnalysisQueryResult,
+  AnalysisSectionDetail,
   AnalysisSessionDetail,
+  AnalysisSessionSectionSummary,
   AnalysisSessionStatistics,
   AnalysisSessionSummary,
+  AnalysisTokenUsage,
   AnalysisToolMetric
 } from "@shared/ipc";
 import type { AnalysisPaneSection, AnalysisPaneState, AgentPathLocation, DiagnosticsInfo } from "@shared/schema";
 
-const SECTION_OPTIONS: Array<{ label: string; value: AnalysisPaneSection }> = [
-  { label: "Overview", value: "overview" },
-  { label: "Sessions", value: "sessions" },
-  { label: "Cross-Session", value: "cross-session" },
-  { label: "Query", value: "query" }
+const ANALYSIS_PAGE_OPTIONS: Array<{ label: string; copy: string; value: AnalysisPaneSection }> = [
+  { label: "Overview", copy: "Quick health snapshot and recent activity.", value: "overview" },
+  { label: "Session Detail", copy: "Browse project, session, and section detail.", value: "session-detail" },
+  { label: "Cross-Session", copy: "Compare trends across projects and sessions.", value: "cross-session" },
+  { label: "Query", copy: "Run read-only SQL against the profiler DB.", value: "query" }
 ];
 
 const CHART_COLORS = [
@@ -57,11 +62,17 @@ const CHART_COLORS = [
   "#c3e88d"
 ];
 
+const AGENT_TRAJECTORY_PROFILER_REPO_URL = "https://github.com/Devil-SX/agent-trajectory-profiler";
+
 type AnalysisLocationCache = {
   databaseInfo: AnalysisDatabaseInfo | null;
   sessions: AnalysisSessionSummary[] | null;
+  projects: AnalysisProjectSummary[] | null;
+  projectSessionsByKey: Map<string, AnalysisSessionSummary[]>;
+  sessionSectionsById: Map<string, AnalysisSessionSectionSummary[]>;
   sessionStatisticsById: Map<string, AnalysisSessionStatistics | null>;
-  rawSessionDetailById: Map<string, AnalysisSessionDetail | null>;
+  sessionDetailById: Map<string, AnalysisSessionDetail | null>;
+  sectionDetailByKey: Map<string, AnalysisSectionDetail | null>;
   crossSessionMetrics: AnalysisCrossSessionMetrics | null;
   queryResultsBySql: Map<string, AnalysisQueryResult | null>;
 };
@@ -84,7 +95,22 @@ type SurfaceProps = {
   sessions: AnalysisSessionSummary[];
   sessionsLoading: boolean;
   sessionError: string;
+  projects: AnalysisProjectSummary[];
+  projectsLoading: boolean;
+  projectError: string;
+  selectedProjectKey: string | null;
+  projectSessions: AnalysisSessionSummary[];
+  projectSessionsLoading: boolean;
   selectedSessionId: string | null;
+  sessionSections: AnalysisSessionSectionSummary[];
+  sessionSectionsLoading: boolean;
+  selectedSectionId: string | null;
+  sessionDetail: AnalysisSessionDetail | null;
+  sessionDetailLoading: boolean;
+  sessionDetailError: string;
+  sectionDetail: AnalysisSectionDetail | null;
+  sectionDetailLoading: boolean;
+  sectionDetailError: string;
   sessionStatistics: AnalysisSessionStatistics | null;
   sessionStatisticsLoading: boolean;
   sessionStatisticsError: string;
@@ -94,15 +120,13 @@ type SurfaceProps = {
   queryResult: AnalysisQueryResult | null;
   queryError: string;
   queryRunning: boolean;
-  rawSessionDetail: AnalysisSessionDetail | null;
-  rawSessionDetailLoading: boolean;
-  showRawStatistics: boolean;
   onLocationChange: (location: AgentPathLocation) => void;
   onSectionChange: (section: AnalysisPaneSection) => void;
   onQueryTextChange: (value: string) => void;
   onRunQuery: () => void;
+  onSelectProject: (projectKey: string) => void;
   onSelectSession: (sessionId: string) => void;
-  onToggleRawStatistics: () => void;
+  onSelectSection: (sectionId: string) => void;
 };
 
 export function resetAnalysisPanelCacheForTests(): void {
@@ -112,9 +136,14 @@ export function resetAnalysisPanelCacheForTests(): void {
 export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Props): ReactElement {
   const initialCache = getAnalysisLocationCache(viewState.location);
   const initialExecutedQuery = normalizeAnalysisQueryCacheKey(viewState.executedQueryText);
+  const initialSelectedSessionSections = viewState.selectedSessionId
+    ? initialCache.sessionSectionsById.get(viewState.selectedSessionId) ?? []
+    : [];
   const [location, setLocation] = useState<AgentPathLocation>(viewState.location);
   const [activeSection, setActiveSection] = useState<AnalysisPaneSection>(viewState.activeSection);
+  const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(viewState.selectedProjectKey);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(viewState.selectedSessionId);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(viewState.selectedSectionId);
   const [queryText, setQueryText] = useState(viewState.queryText);
   const [executedQueryText, setExecutedQueryText] = useState(viewState.executedQueryText);
   const [databaseInfo, setDatabaseInfo] = useState<AnalysisDatabaseInfo | null>(initialCache.databaseInfo);
@@ -122,6 +151,27 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   const [sessions, setSessions] = useState<AnalysisSessionSummary[]>(initialCache.sessions ?? []);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionError, setSessionError] = useState("");
+  const [projects, setProjects] = useState<AnalysisProjectSummary[]>(initialCache.projects ?? []);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectError, setProjectError] = useState("");
+  const [projectSessions, setProjectSessions] = useState<AnalysisSessionSummary[]>(
+    viewState.selectedProjectKey ? initialCache.projectSessionsByKey.get(viewState.selectedProjectKey) ?? [] : []
+  );
+  const [projectSessionsLoading, setProjectSessionsLoading] = useState(false);
+  const [sessionSections, setSessionSections] = useState<AnalysisSessionSectionSummary[]>(initialSelectedSessionSections);
+  const [sessionSectionsLoading, setSessionSectionsLoading] = useState(false);
+  const [sessionDetail, setSessionDetail] = useState<AnalysisSessionDetail | null>(
+    viewState.selectedSessionId ? initialCache.sessionDetailById.get(viewState.selectedSessionId) ?? null : null
+  );
+  const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
+  const [sessionDetailError, setSessionDetailError] = useState("");
+  const [sectionDetail, setSectionDetail] = useState<AnalysisSectionDetail | null>(
+    viewState.selectedSessionId && viewState.selectedSectionId
+      ? initialCache.sectionDetailByKey.get(`${viewState.selectedSessionId}:${viewState.selectedSectionId}`) ?? null
+      : null
+  );
+  const [sectionDetailLoading, setSectionDetailLoading] = useState(false);
+  const [sectionDetailError, setSectionDetailError] = useState("");
   const [sessionStatistics, setSessionStatistics] = useState<AnalysisSessionStatistics | null>(
     viewState.selectedSessionId ? initialCache.sessionStatisticsById.get(viewState.selectedSessionId) ?? null : null
   );
@@ -135,11 +185,6 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   );
   const [queryError, setQueryError] = useState("");
   const [queryRunning, setQueryRunning] = useState(false);
-  const [showRawStatistics, setShowRawStatistics] = useState(false);
-  const [rawSessionDetail, setRawSessionDetail] = useState<AnalysisSessionDetail | null>(
-    viewState.selectedSessionId ? initialCache.rawSessionDetailById.get(viewState.selectedSessionId) ?? null : null
-  );
-  const [rawSessionDetailLoading, setRawSessionDetailLoading] = useState(false);
   const persistReadyRef = useRef(false);
   const isApplyingViewStateRef = useRef(false);
   const isWindows = diagnostics?.platform === "win32";
@@ -151,11 +196,13 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     () => ({
       location,
       activeSection,
+      selectedProjectKey,
       selectedSessionId,
+      selectedSectionId,
       queryText,
       executedQueryText
     }),
-    [activeSection, executedQueryText, location, queryText, selectedSessionId]
+    [activeSection, executedQueryText, location, queryText, selectedProjectKey, selectedSectionId, selectedSessionId]
   );
   const databaseSignature = getAnalysisDatabaseSignature(databaseInfo);
 
@@ -163,7 +210,9 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     isApplyingViewStateRef.current = true;
     setLocation(viewState.location);
     setActiveSection(viewState.activeSection);
+    setSelectedProjectKey(viewState.selectedProjectKey);
     setSelectedSessionId(viewState.selectedSessionId);
+    setSelectedSectionId(viewState.selectedSectionId);
     setQueryText(viewState.queryText);
     setExecutedQueryText(viewState.executedQueryText);
   }, [viewState]);
@@ -195,16 +244,21 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   useEffect(() => {
     const locationCache = getAnalysisLocationCache(location);
     const normalizedExecutedQuery = normalizeAnalysisQueryCacheKey(executedQueryText);
+    const sectionDetailCacheKey = selectedSessionId && selectedSectionId ? `${selectedSessionId}:${selectedSectionId}` : null;
     startTransition(() => {
       setDatabaseInfo(locationCache.databaseInfo);
       setIsLoadingDatabase(locationCache.databaseInfo == null);
       setSessions(locationCache.sessions ?? []);
+      setProjects(locationCache.projects ?? []);
+      setProjectSessions(selectedProjectKey ? locationCache.projectSessionsByKey.get(selectedProjectKey) ?? [] : []);
+      setSessionSections(selectedSessionId ? locationCache.sessionSectionsById.get(selectedSessionId) ?? [] : []);
       setCrossSessionMetrics(locationCache.crossSessionMetrics);
       setSessionStatistics(selectedSessionId ? locationCache.sessionStatisticsById.get(selectedSessionId) ?? null : null);
-      setRawSessionDetail(selectedSessionId ? locationCache.rawSessionDetailById.get(selectedSessionId) ?? null : null);
+      setSessionDetail(selectedSessionId ? locationCache.sessionDetailById.get(selectedSessionId) ?? null : null);
+      setSectionDetail(sectionDetailCacheKey ? locationCache.sectionDetailByKey.get(sectionDetailCacheKey) ?? null : null);
       setQueryResult(normalizedExecutedQuery ? locationCache.queryResultsBySql.get(normalizedExecutedQuery) ?? null : null);
     });
-  }, [executedQueryText, location, selectedSessionId]);
+  }, [executedQueryText, location, selectedProjectKey, selectedSectionId, selectedSessionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -213,6 +267,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     const shouldBootstrap =
       locationCache.databaseInfo == null &&
       locationCache.sessions == null &&
+      locationCache.projects == null &&
       activeSection !== "cross-session" &&
       activeSection !== "query";
     setIsLoadingDatabase(locationCache.databaseInfo == null);
@@ -224,7 +279,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       void measureRendererAsync(
         "analysis",
         "bootstrap",
-        () => window.watchboard.getAnalysisBootstrap(location, selectedSessionId, 36),
+        () => window.watchboard.getAnalysisBootstrap(location, selectedProjectKey, selectedSessionId, 36),
         { location, section: activeSection }
       )
         .then((payload) => {
@@ -236,13 +291,21 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
           }
           locationCache.databaseInfo = payload.databaseInfo;
           locationCache.sessions = payload.sessions;
+          locationCache.projects = payload.projects;
+          if (payload.selectedProjectKey) {
+            locationCache.projectSessionsByKey.set(payload.selectedProjectKey, payload.projectSessions);
+          }
           if (payload.selectedSessionId) {
             locationCache.sessionStatisticsById.set(payload.selectedSessionId, payload.sessionStatistics);
           }
           startTransition(() => {
             setDatabaseInfo(payload.databaseInfo);
             setSessions(payload.sessions);
+            setProjects(payload.projects);
+            setSelectedProjectKey(payload.selectedProjectKey);
+            setProjectSessions(payload.projectSessions);
             setSelectedSessionId(payload.selectedSessionId);
+            setSelectedSectionId(null);
             setSessionStatistics(payload.sessionStatistics);
           });
         })
@@ -329,7 +392,6 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     if (databaseInfo?.status !== "ready") {
       getAnalysisLocationCache(location).sessions = null;
       setSessions([]);
-      setSelectedSessionId(null);
       return;
     }
 
@@ -337,9 +399,6 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     if (locationCache.sessions) {
       startTransition(() => {
         setSessions(locationCache.sessions ?? []);
-        if (!selectedSessionId || !locationCache.sessions?.some((session) => session.sessionId === selectedSessionId)) {
-          setSelectedSessionId(locationCache.sessions?.[0]?.sessionId ?? null);
-        }
       });
       setSessionsLoading(false);
       return;
@@ -357,9 +416,6 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         locationCache.sessions = nextSessions;
         startTransition(() => {
           setSessions(nextSessions);
-          if (!selectedSessionId || !nextSessions.some((session) => session.sessionId === selectedSessionId)) {
-            setSelectedSessionId(nextSessions[0]?.sessionId ?? null);
-          }
         });
       })
       .catch((error: unknown) => {
@@ -377,6 +433,124 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       cancelled = true;
     };
   }, [databaseSignature, location]);
+
+  useEffect(() => {
+    if (databaseInfo?.status !== "ready") {
+      const locationCache = getAnalysisLocationCache(location);
+      locationCache.projects = null;
+      locationCache.projectSessionsByKey.clear();
+      setProjects([]);
+      setProjectSessions([]);
+      setSelectedProjectKey(null);
+      setProjectError("");
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    if (locationCache.projects) {
+      setProjects(locationCache.projects);
+      setProjectsLoading(false);
+      setProjectError("");
+      if (!selectedProjectKey || !locationCache.projects.some((project) => project.projectKey === selectedProjectKey)) {
+        setSelectedProjectKey(locationCache.projects[0]?.projectKey ?? null);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setProjectsLoading(true);
+    setProjectError("");
+
+    void measureRendererAsync("analysis", "project-list", () => window.watchboard.listAnalysisProjects(location, 36), { location })
+      .then((nextProjects) => {
+        if (cancelled) {
+          return;
+        }
+        locationCache.projects = nextProjects;
+        startTransition(() => {
+          setProjects(nextProjects);
+          if (!selectedProjectKey || !nextProjects.some((project) => project.projectKey === selectedProjectKey)) {
+            setSelectedProjectKey(nextProjects[0]?.projectKey ?? null);
+          }
+        });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setProjectError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setProjectsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [databaseSignature, location, selectedProjectKey, databaseInfo?.status]);
+
+  useEffect(() => {
+    if (databaseInfo?.status !== "ready" || !selectedProjectKey) {
+      setProjectSessions([]);
+      if (selectedProjectKey == null) {
+        setSelectedSessionId(null);
+        setSelectedSectionId(null);
+      }
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    const cachedProjectSessions = locationCache.projectSessionsByKey.get(selectedProjectKey);
+    if (cachedProjectSessions) {
+      setProjectSessions(cachedProjectSessions);
+      setProjectSessionsLoading(false);
+      setSessionError("");
+      if (!selectedSessionId || !cachedProjectSessions.some((session) => session.sessionId === selectedSessionId)) {
+        setSelectedSessionId(cachedProjectSessions[0]?.sessionId ?? null);
+        setSelectedSectionId(null);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setProjectSessionsLoading(true);
+    setSessionError("");
+
+    void measureRendererAsync(
+      "analysis",
+      "project-session-list",
+      () => window.watchboard.listAnalysisProjectSessions(location, selectedProjectKey, 36),
+      { location, projectKey: selectedProjectKey }
+    )
+      .then((nextProjectSessions) => {
+        if (cancelled) {
+          return;
+        }
+        locationCache.projectSessionsByKey.set(selectedProjectKey, nextProjectSessions);
+        startTransition(() => {
+          setProjectSessions(nextProjectSessions);
+          if (!selectedSessionId || !nextProjectSessions.some((session) => session.sessionId === selectedSessionId)) {
+            setSelectedSessionId(nextProjectSessions[0]?.sessionId ?? null);
+            setSelectedSectionId(null);
+          }
+        });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSessionError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setProjectSessionsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [databaseInfo?.status, databaseSignature, location, selectedProjectKey, selectedSessionId]);
 
   useEffect(() => {
     if (databaseInfo?.status !== "ready" || !selectedSessionId || activeSection === "cross-session" || activeSection === "query") {
@@ -426,6 +600,165 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       cancelled = true;
     };
   }, [activeSection, databaseSignature, location, selectedSessionId]);
+
+  useEffect(() => {
+    if (databaseInfo?.status !== "ready" || activeSection !== "session-detail" || !selectedSessionId) {
+      setSessionSections([]);
+      setSessionSectionsLoading(false);
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    if (locationCache.sessionSectionsById.has(selectedSessionId)) {
+      const cachedSections = locationCache.sessionSectionsById.get(selectedSessionId) ?? [];
+      setSessionSections(cachedSections);
+      setSessionSectionsLoading(false);
+      if (selectedSectionId && !cachedSections.some((section) => section.sectionId === selectedSectionId)) {
+        setSelectedSectionId(null);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setSessionSectionsLoading(true);
+
+    void measureRendererAsync(
+      "analysis",
+      "session-sections",
+      () => window.watchboard.listAnalysisSessionSections(location, selectedSessionId, 100),
+      { location, sessionId: selectedSessionId }
+    )
+      .then((sections) => {
+        if (cancelled) {
+          return;
+        }
+        locationCache.sessionSectionsById.set(selectedSessionId, sections);
+        startTransition(() => {
+          setSessionSections(sections);
+          if (selectedSectionId && !sections.some((section) => section.sectionId === selectedSectionId)) {
+            setSelectedSectionId(null);
+          }
+        });
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSessionSectionsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, databaseSignature, location, selectedSectionId, selectedSessionId]);
+
+  useEffect(() => {
+    if (databaseInfo?.status !== "ready" || activeSection !== "session-detail" || !selectedSessionId) {
+      setSessionDetail(null);
+      setSessionDetailError("");
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    if (locationCache.sessionDetailById.has(selectedSessionId)) {
+      const cachedDetail = locationCache.sessionDetailById.get(selectedSessionId) ?? null;
+      setSessionDetail(cachedDetail);
+      setSessionDetailLoading(false);
+      if (cachedDetail && !locationCache.sessionSectionsById.has(selectedSessionId)) {
+        locationCache.sessionSectionsById.set(selectedSessionId, cachedDetail.sections);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    setSessionDetailLoading(true);
+    setSessionDetailError("");
+
+    void measureRendererAsync(
+      "analysis",
+      "session-detail",
+      () => window.watchboard.getAnalysisSessionDetail(location, selectedSessionId),
+      { location, sessionId: selectedSessionId }
+    )
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+        locationCache.sessionDetailById.set(selectedSessionId, detail);
+        if (detail) {
+          locationCache.sessionSectionsById.set(selectedSessionId, detail.sections);
+        }
+        startTransition(() => {
+          setSessionDetail(detail);
+          if (detail) {
+            setSessionSections(detail.sections);
+          }
+        });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSessionDetailError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSessionDetailLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, databaseSignature, location, selectedSessionId]);
+
+  useEffect(() => {
+    if (databaseInfo?.status !== "ready" || activeSection !== "session-detail" || !selectedSessionId || !selectedSectionId) {
+      setSectionDetail(null);
+      setSectionDetailError("");
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    const cacheKey = `${selectedSessionId}:${selectedSectionId}`;
+    if (locationCache.sectionDetailByKey.has(cacheKey)) {
+      setSectionDetail(locationCache.sectionDetailByKey.get(cacheKey) ?? null);
+      setSectionDetailLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSectionDetailLoading(true);
+    setSectionDetailError("");
+
+    void measureRendererAsync(
+      "analysis",
+      "section-detail",
+      () => window.watchboard.getAnalysisSectionDetail(location, selectedSessionId, selectedSectionId),
+      { location, sessionId: selectedSessionId, sectionId: selectedSectionId }
+    )
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+        locationCache.sectionDetailByKey.set(cacheKey, detail);
+        startTransition(() => {
+          setSectionDetail(detail);
+        });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setSectionDetailError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSectionDetailLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, databaseSignature, location, selectedSectionId, selectedSessionId]);
 
   useEffect(() => {
     if (databaseInfo?.status !== "ready" || activeSection !== "cross-session") {
@@ -531,52 +864,9 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   }, [activeSection, databaseSignature, executedQueryText, location]);
 
   useEffect(() => {
-    if (databaseInfo?.status !== "ready" || activeSection !== "sessions" || !showRawStatistics || !selectedSessionId) {
-      setRawSessionDetail(null);
-      setRawSessionDetailLoading(false);
-      return;
-    }
-
-    const locationCache = getAnalysisLocationCache(location);
-    if (locationCache.rawSessionDetailById.has(selectedSessionId)) {
-      setRawSessionDetail(locationCache.rawSessionDetailById.get(selectedSessionId) ?? null);
-      setRawSessionDetailLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setRawSessionDetailLoading(true);
-
-    void measureRendererAsync(
-      "analysis",
-      "session-raw-detail",
-      () => window.watchboard.getAnalysisSessionDetail(location, selectedSessionId),
-      { location, sessionId: selectedSessionId }
-    )
-      .then((detail) => {
-        if (cancelled) {
-          return;
-        }
-        locationCache.rawSessionDetailById.set(selectedSessionId, detail);
-        startTransition(() => {
-          setRawSessionDetail(detail);
-        });
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setRawSessionDetailLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSection, databaseSignature, location, selectedSessionId, showRawStatistics]);
-
-  useEffect(() => {
     let signature = "";
     if (!isLoadingDatabase && databaseInfo?.status === "ready") {
-      if ((activeSection === "overview" || activeSection === "sessions") && deferredSessionStatistics) {
+      if ((activeSection === "overview" || activeSection === "session-detail") && deferredSessionStatistics) {
         signature = `${activeSection}:${deferredSessionStatistics.summary.sessionId}`;
       } else if (activeSection === "cross-session" && deferredCrossSessionMetrics) {
         signature = `${activeSection}:${deferredCrossSessionMetrics.totalSessions}`;
@@ -613,7 +903,22 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       sessions={sessions}
       sessionsLoading={sessionsLoading}
       sessionError={sessionError}
+      projects={projects}
+      projectsLoading={projectsLoading}
+      projectError={projectError}
+      selectedProjectKey={selectedProjectKey}
+      projectSessions={projectSessions}
+      projectSessionsLoading={projectSessionsLoading}
       selectedSessionId={selectedSessionId}
+      sessionSections={sessionSections}
+      sessionSectionsLoading={sessionSectionsLoading}
+      selectedSectionId={selectedSectionId}
+      sessionDetail={sessionDetail}
+      sessionDetailLoading={sessionDetailLoading}
+      sessionDetailError={sessionDetailError}
+      sectionDetail={sectionDetail}
+      sectionDetailLoading={sectionDetailLoading}
+      sectionDetailError={sectionDetailError}
       sessionStatistics={deferredSessionStatistics}
       sessionStatisticsLoading={sessionStatisticsLoading}
       sessionStatisticsError={sessionStatisticsError}
@@ -623,15 +928,20 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       queryResult={queryResult}
       queryError={queryError}
       queryRunning={queryRunning}
-      rawSessionDetail={rawSessionDetail}
-      rawSessionDetailLoading={rawSessionDetailLoading}
-      showRawStatistics={showRawStatistics}
       onLocationChange={setLocation}
       onSectionChange={setActiveSection}
       onQueryTextChange={setQueryText}
       onRunQuery={() => setExecutedQueryText(queryText)}
-      onSelectSession={setSelectedSessionId}
-      onToggleRawStatistics={() => setShowRawStatistics((value) => !value)}
+      onSelectProject={(projectKey) => {
+        setSelectedProjectKey(projectKey);
+        setSelectedSessionId(null);
+        setSelectedSectionId(null);
+      }}
+      onSelectSession={(sessionId) => {
+        setSelectedSessionId(sessionId);
+        setSelectedSectionId(null);
+      }}
+      onSelectSection={setSelectedSectionId}
     />
   );
 }
@@ -646,7 +956,22 @@ export function AnalysisPanelSurface({
   sessions,
   sessionsLoading,
   sessionError,
+  projects,
+  projectsLoading,
+  projectError,
+  selectedProjectKey,
+  projectSessions,
+  projectSessionsLoading,
   selectedSessionId,
+  sessionSections,
+  sessionSectionsLoading,
+  selectedSectionId,
+  sessionDetail,
+  sessionDetailLoading,
+  sessionDetailError,
+  sectionDetail,
+  sectionDetailLoading,
+  sectionDetailError,
   sessionStatistics,
   sessionStatisticsLoading,
   sessionStatisticsError,
@@ -656,21 +981,14 @@ export function AnalysisPanelSurface({
   queryResult,
   queryError,
   queryRunning,
-  rawSessionDetail,
-  rawSessionDetailLoading,
-  showRawStatistics,
   onLocationChange,
   onSectionChange,
   onQueryTextChange,
   onRunQuery,
+  onSelectProject,
   onSelectSession,
-  onToggleRawStatistics
+  onSelectSection
 }: SurfaceProps): ReactElement {
-  const rawPreview = useMemo(
-    () => (showRawStatistics ? JSON.stringify(limitRawPreview(rawSessionDetail?.statistics ?? null), null, 2) : ""),
-    [rawSessionDetail, showRawStatistics]
-  );
-
   return (
     <div className="analysis-panel">
       <header className="analysis-panel-header">
@@ -683,7 +1001,7 @@ export function AnalysisPanelSurface({
             <code>{databaseInfo?.displayPath ?? "~/.agent-vis/profiler.db"}</code>
           </div>
           <p className="analysis-panel-copy">
-            Analytics stay read-only and default to compact derived views so large profiler payloads do not block the UI.
+            Analytics stay read-only and load detailed transcript content lazily so large profiler payloads do not block the UI.
           </p>
         </div>
         <div className="analysis-panel-toolbar">
@@ -694,7 +1012,6 @@ export function AnalysisPanelSurface({
               onClick={() => onLocationChange(location === "host" ? "wsl" : "host")}
             />
           ) : null}
-          <CompactDropdown label="Section" value={activeSection} options={SECTION_OPTIONS} onChange={onSectionChange} />
         </div>
       </header>
 
@@ -707,59 +1024,88 @@ export function AnalysisPanelSurface({
       {!isLoadingDatabase && databaseInfo && databaseInfo.status !== "ready" ? (
         <div className="panel-empty panel-empty-large">
           <p>{renderDatabaseHeadline(databaseInfo.status)}</p>
-          <span>{databaseInfo.error ?? `Expected at ${databaseInfo.displayPath} in the ${getLocationLabel(location)} environment.`}</span>
+          <span>{renderDatabaseGuidance(databaseInfo, location)}</span>
         </div>
       ) : null}
 
       {!isLoadingDatabase && databaseInfo?.status === "ready" ? (
-        <div className="analysis-panel-body">
-          <section className="analysis-kpi-grid">
-            <MetricCard label="Sessions" value={formatMetric(databaseInfo.sessionCount)} />
-            <MetricCard label="Tracked Files" value={formatMetric(databaseInfo.totalFiles)} />
-            <MetricCard label="Tables" value={formatMetric(databaseInfo.tableNames.length)} />
-            <MetricCard label="Last Parsed" value={formatTimestamp(databaseInfo.lastParsedAt)} />
-          </section>
+        <div className="analysis-workspace">
+          <aside className="analysis-page-rail" role="tablist" aria-label="Analysis pages" aria-orientation="vertical">
+            {ANALYSIS_PAGE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={activeSection === option.value}
+                className={activeSection === option.value ? "analysis-page-tab is-active" : "analysis-page-tab"}
+                onClick={() => onSectionChange(option.value)}
+              >
+                <span className="analysis-page-tab-label">{option.label}</span>
+                <span className="analysis-page-tab-copy">{option.copy}</span>
+              </button>
+            ))}
+          </aside>
 
-          {activeSection === "overview" ? (
-            <OverviewSection
-              sessionStatistics={sessionStatistics}
-              loading={sessionStatisticsLoading}
-              error={sessionStatisticsError}
-              sessions={sessions}
-            />
-          ) : null}
+          <div className="analysis-panel-body">
+            <section className="analysis-kpi-grid">
+              <MetricCard label="Sessions" value={formatMetric(databaseInfo.sessionCount)} />
+              <MetricCard label="Tracked Files" value={formatMetric(databaseInfo.totalFiles)} />
+              <MetricCard label="Tables" value={formatMetric(databaseInfo.tableNames.length)} />
+              <MetricCard label="Last Parsed" value={formatTimestamp(databaseInfo.lastParsedAt)} />
+            </section>
 
-          {activeSection === "sessions" ? (
-            <SessionsSection
-              sessions={sessions}
-              sessionsLoading={sessionsLoading}
-              sessionError={sessionError}
-              selectedSessionId={selectedSessionId}
-              sessionStatistics={sessionStatistics}
-              sessionStatisticsLoading={sessionStatisticsLoading}
-              sessionStatisticsError={sessionStatisticsError}
-              rawPreview={rawPreview}
-              rawSessionDetailLoading={rawSessionDetailLoading}
-              showRawStatistics={showRawStatistics}
-              onSelectSession={onSelectSession}
-              onToggleRawStatistics={onToggleRawStatistics}
-            />
-          ) : null}
+            {activeSection === "overview" ? (
+              <OverviewSection
+                sessionStatistics={sessionStatistics}
+                loading={sessionStatisticsLoading}
+                error={sessionStatisticsError}
+                sessions={sessions}
+              />
+            ) : null}
 
-          {activeSection === "cross-session" ? (
-            <CrossSessionSection metrics={crossSessionMetrics} loading={crossSessionLoading} error={crossSessionError} />
-          ) : null}
+            {activeSection === "session-detail" ? (
+              <SessionDetailPage
+                projects={projects}
+                projectsLoading={projectsLoading}
+                projectError={projectError}
+                selectedProjectKey={selectedProjectKey}
+                projectSessions={projectSessions}
+                projectSessionsLoading={projectSessionsLoading}
+                sessionSections={sessionSections}
+                sessionSectionsLoading={sessionSectionsLoading}
+                sessionError={sessionError}
+                selectedSessionId={selectedSessionId}
+                selectedSectionId={selectedSectionId}
+                sessionDetail={sessionDetail}
+                sessionDetailLoading={sessionDetailLoading}
+                sessionDetailError={sessionDetailError}
+                sectionDetail={sectionDetail}
+                sectionDetailLoading={sectionDetailLoading}
+                sectionDetailError={sectionDetailError}
+                sessionStatistics={sessionStatistics}
+                sessionStatisticsLoading={sessionStatisticsLoading}
+                sessionStatisticsError={sessionStatisticsError}
+                onSelectProject={onSelectProject}
+                onSelectSession={onSelectSession}
+                onSelectSection={onSelectSection}
+              />
+            ) : null}
 
-          {activeSection === "query" ? (
-            <QuerySection
-              queryText={queryText}
-              queryResult={queryResult}
-              queryError={queryError}
-              queryRunning={queryRunning}
-              onQueryTextChange={onQueryTextChange}
-              onRunQuery={onRunQuery}
-            />
-          ) : null}
+            {activeSection === "cross-session" ? (
+              <CrossSessionSection metrics={crossSessionMetrics} loading={crossSessionLoading} error={crossSessionError} />
+            ) : null}
+
+            {activeSection === "query" ? (
+              <QuerySection
+                queryText={queryText}
+                queryResult={queryResult}
+                queryError={queryError}
+                queryRunning={queryRunning}
+                onQueryTextChange={onQueryTextChange}
+                onRunQuery={onRunQuery}
+              />
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>
@@ -774,8 +1120,12 @@ function getAnalysisLocationCache(location: AgentPathLocation): AnalysisLocation
   const next: AnalysisLocationCache = {
     databaseInfo: null,
     sessions: null,
+    projects: null,
+    projectSessionsByKey: new Map(),
+    sessionSectionsById: new Map(),
     sessionStatisticsById: new Map(),
-    rawSessionDetailById: new Map(),
+    sessionDetailById: new Map(),
+    sectionDetailByKey: new Map(),
     crossSessionMetrics: null,
     queryResultsBySql: new Map()
   };
@@ -786,8 +1136,12 @@ function getAnalysisLocationCache(location: AgentPathLocation): AnalysisLocation
 function resetAnalysisDerivedCache(location: AgentPathLocation): void {
   const locationCache = getAnalysisLocationCache(location);
   locationCache.sessions = null;
+  locationCache.projects = null;
+  locationCache.projectSessionsByKey.clear();
+  locationCache.sessionSectionsById.clear();
   locationCache.sessionStatisticsById.clear();
-  locationCache.rawSessionDetailById.clear();
+  locationCache.sessionDetailById.clear();
+  locationCache.sectionDetailByKey.clear();
   locationCache.crossSessionMetrics = null;
   locationCache.queryResultsBySql.clear();
 }
@@ -897,137 +1251,419 @@ function OverviewSection({
   );
 }
 
-function SessionsSection({
-  sessions,
-  sessionsLoading,
+function SessionDetailPage({
+  projects,
+  projectsLoading,
+  projectError,
+  selectedProjectKey,
+  projectSessions,
+  projectSessionsLoading,
+  sessionSections,
+  sessionSectionsLoading,
   sessionError,
   selectedSessionId,
+  selectedSectionId,
+  sessionDetail,
+  sessionDetailLoading,
+  sessionDetailError,
+  sectionDetail,
+  sectionDetailLoading,
+  sectionDetailError,
   sessionStatistics,
   sessionStatisticsLoading,
   sessionStatisticsError,
-  rawPreview,
-  rawSessionDetailLoading,
-  showRawStatistics,
+  onSelectProject,
   onSelectSession,
-  onToggleRawStatistics
+  onSelectSection
 }: {
-  sessions: AnalysisSessionSummary[];
-  sessionsLoading: boolean;
+  projects: AnalysisProjectSummary[];
+  projectsLoading: boolean;
+  projectError: string;
+  selectedProjectKey: string | null;
+  projectSessions: AnalysisSessionSummary[];
+  projectSessionsLoading: boolean;
+  sessionSections: AnalysisSessionSectionSummary[];
+  sessionSectionsLoading: boolean;
   sessionError: string;
   selectedSessionId: string | null;
+  selectedSectionId: string | null;
+  sessionDetail: AnalysisSessionDetail | null;
+  sessionDetailLoading: boolean;
+  sessionDetailError: string;
+  sectionDetail: AnalysisSectionDetail | null;
+  sectionDetailLoading: boolean;
+  sectionDetailError: string;
   sessionStatistics: AnalysisSessionStatistics | null;
   sessionStatisticsLoading: boolean;
   sessionStatisticsError: string;
-  rawPreview: string;
-  rawSessionDetailLoading: boolean;
-  showRawStatistics: boolean;
+  onSelectProject: (projectKey: string) => void;
   onSelectSession: (sessionId: string) => void;
-  onToggleRawStatistics: () => void;
+  onSelectSection: (sectionId: string) => void;
 }): ReactElement {
+  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const [collapsedSessions, setCollapsedSessions] = useState<Record<string, boolean>>({});
+  const activeEntries = selectedSectionId ? sectionDetail?.entries ?? [] : sessionDetail?.entries ?? [];
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(activeEntries[0]?.entryId ?? null);
+
+  useEffect(() => {
+    if (selectedProjectKey) {
+      setCollapsedProjects((current) => ({ ...current, [selectedProjectKey]: false }));
+    }
+  }, [selectedProjectKey]);
+
+  useEffect(() => {
+    if (selectedSessionId) {
+      setCollapsedSessions((current) => ({ ...current, [selectedSessionId]: false }));
+    }
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    setSelectedEntryId(activeEntries[0]?.entryId ?? null);
+  }, [selectedSectionId, selectedSessionId, activeEntries]);
+
+  const selectedEntry = activeEntries.find((entry) => entry.entryId === selectedEntryId) ?? activeEntries[0] ?? null;
+
   return (
     <section className="analysis-layout">
       <article className="analysis-card analysis-sidebar">
         <div className="analysis-card-header">
           <h3>Session Browser</h3>
-          {sessionsLoading ? <span className="entry-badge">Loading</span> : <span className="entry-badge">{sessions.length}</span>}
+          <span className="entry-badge">{projects.length}</span>
         </div>
+        {projectError ? <div className="toolbar-error">{projectError}</div> : null}
         {sessionError ? <div className="toolbar-error">{sessionError}</div> : null}
-        <div className="analysis-session-list">
-          {sessions.map((session) => (
-            <button
-              key={session.sessionId}
-              type="button"
-              className={session.sessionId === selectedSessionId ? "analysis-session-item is-active" : "analysis-session-item"}
-              onClick={() => onSelectSession(session.sessionId)}
-            >
-              <strong>{session.sessionId}</strong>
-              <span>{session.projectPath ?? "Unknown project"}</span>
-              <span>{session.ecosystem ?? "unknown"} · {formatMetric(session.totalTokens)} tokens · {formatDuration(session.durationSeconds)}</span>
-            </button>
-          ))}
+        <div className="analysis-tree">
+          {projectsLoading ? <div className="panel-empty"><p>Loading projects...</p></div> : null}
+          {projects.map((project) => {
+            const projectCollapsed = collapsedProjects[project.projectKey] ?? project.projectKey !== selectedProjectKey;
+            const showProjectSessions = selectedProjectKey === project.projectKey && !projectCollapsed;
+            return (
+              <div key={project.projectKey || "__unknown_project__"} className="analysis-tree-node">
+                <button
+                  type="button"
+                  className={project.projectKey === selectedProjectKey ? "analysis-tree-row is-active" : "analysis-tree-row"}
+                  onClick={() => {
+                    onSelectProject(project.projectKey);
+                    setCollapsedProjects((current) => ({
+                      ...current,
+                      [project.projectKey]: !(current[project.projectKey] ?? project.projectKey !== selectedProjectKey)
+                    }));
+                  }}
+                >
+                  <span className={projectCollapsed ? "board-toggle-caret is-collapsed" : "board-toggle-caret"} />
+                  <span className="analysis-tree-copy">
+                    <strong>{project.projectPath ?? "Unknown project"}</strong>
+                    <span>{project.sessionCount} sessions · {formatMetric(project.totalTokens)} tokens</span>
+                  </span>
+                </button>
+                {showProjectSessions ? (
+                  <div className="analysis-tree-children">
+                    {projectSessionsLoading ? <div className="analysis-tree-empty">Loading sessions...</div> : null}
+                    {projectSessions.map((session) => {
+                      const sessionCollapsed = collapsedSessions[session.sessionId] ?? session.sessionId !== selectedSessionId;
+                      const showSections = session.sessionId === selectedSessionId && !sessionCollapsed;
+                      return (
+                        <div key={session.sessionId} className="analysis-tree-node">
+                          <button
+                            type="button"
+                            className={session.sessionId === selectedSessionId ? "analysis-tree-row is-active" : "analysis-tree-row"}
+                            onClick={() => {
+                              onSelectSession(session.sessionId);
+                              setCollapsedSessions((current) => ({
+                                ...current,
+                                [session.sessionId]: !(current[session.sessionId] ?? session.sessionId !== selectedSessionId)
+                              }));
+                            }}
+                          >
+                            <span className={sessionCollapsed ? "board-toggle-caret is-collapsed" : "board-toggle-caret"} />
+                            <span className="analysis-tree-copy">
+                              <strong>{session.sessionId}</strong>
+                              <span>{formatDuration(session.durationSeconds)} · {formatMetric(session.totalTokens)} tokens</span>
+                            </span>
+                          </button>
+                          {showSections ? (
+                            <div className="analysis-tree-children">
+                              {sessionSectionsLoading ? <div className="analysis-tree-empty">Loading sections...</div> : null}
+                              {!sessionSectionsLoading && sessionSections.length === 0 ? (
+                                <div className="analysis-tree-empty">No materialized sections.</div>
+                              ) : null}
+                              {sessionSections.map((section) => (
+                                <button
+                                  key={section.sectionId}
+                                  type="button"
+                                  className={section.sectionId === selectedSectionId ? "analysis-tree-leaf is-active" : "analysis-tree-leaf"}
+                                  onClick={() => onSelectSection(section.sectionId)}
+                                >
+                                  <strong>{section.title}</strong>
+                                  <span>{section.totalMessages} msgs · {formatMetric(section.totalTokens)} tokens</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </article>
 
       <div className="analysis-main">
-        {sessionStatisticsLoading ? (
-          <div className="panel-empty">
-            <p>Loading session statistics...</p>
-          </div>
-        ) : sessionStatisticsError ? (
-          <div className="panel-empty">
-            <p>{sessionStatisticsError}</p>
-          </div>
-        ) : sessionStatistics ? (
-          <>
-            <section className="analysis-kpi-grid">
-              <MetricCard label="Project" value={sessionStatistics.summary.projectPath ?? "N/A"} dense />
-              <MetricCard label="Tokens" value={formatMetric(sessionStatistics.summary.totalTokens)} />
-              <MetricCard label="Tool Calls" value={formatMetric(sessionStatistics.summary.totalToolCalls)} />
-              <MetricCard label="Bottleneck" value={sessionStatistics.summary.bottleneck ?? "N/A"} />
-            </section>
-
-            <section className="analysis-grid analysis-grid-2">
-              <InfoCard title="Tool Breakdown">
-                <ToolMetricTable rows={sessionStatistics.toolCalls} />
-              </InfoCard>
-              <InfoCard title="Error Categories">
-                {sessionStatistics.errorCategories.length > 0 ? (
-                  <PieMetricChart data={sessionStatistics.errorCategories} valueFormatter={(value) => formatMetric(value)} />
-                ) : (
-                  <div className="panel-empty"><p>No categorized tool errors.</p></div>
-                )}
-              </InfoCard>
-              <InfoCard title="Character Breakdown">
-                <BarMetricChart data={sessionStatistics.characterBreakdown} valueFormatter={(value) => formatMetric(value)} />
-              </InfoCard>
-              <InfoCard title="Top Bash Commands">
-                {sessionStatistics.bashCommands.length > 0 ? (
-                  <MetricDatumList
-                    data={sessionStatistics.bashCommands.map((entry) => ({ label: entry.command, value: entry.count, hint: null }))}
-                    formatter={(value) => formatMetric(value)}
-                  />
-                ) : (
-                  <div className="panel-empty"><p>No bash command summary for this session.</p></div>
-                )}
-              </InfoCard>
-            </section>
-
-            <section className="analysis-card">
-              <div className="analysis-card-header">
-                <h3>Recent Tool Errors</h3>
-                <button type="button" className="secondary-button" onClick={onToggleRawStatistics}>
-                  {showRawStatistics ? "Hide Raw" : "Show Raw"}
-                </button>
-              </div>
-              {sessionStatistics.errorRecords.length > 0 ? (
-                <div className="analysis-error-table">
-                  {sessionStatistics.errorRecords.map((entry, index) => (
-                    <div key={`${entry.toolName}-${index}`} className="analysis-error-row">
-                      <strong>{entry.toolName}</strong>
-                      <span>{entry.category}</span>
-                      <span>{entry.timestamp ? formatTimestamp(entry.timestamp) : "Unknown time"}</span>
-                      <p>{entry.summary}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="panel-empty"><p>No tool error records in this session.</p></div>
-              )}
-              {showRawStatistics ? (
-                rawSessionDetailLoading ? (
-                  <div className="panel-empty"><p>Loading raw statistics preview...</p></div>
-                ) : (
-                  <pre className="analysis-json-preview">{rawPreview}</pre>
-                )
-              ) : null}
-            </section>
-          </>
+        {selectedSectionId ? (
+          <SectionDetailSurface
+            detail={sectionDetail}
+            loading={sectionDetailLoading}
+            error={sectionDetailError}
+            selectedEntry={selectedEntry}
+            entries={activeEntries}
+            selectedEntryId={selectedEntryId}
+            onSelectEntry={setSelectedEntryId}
+          />
         ) : (
-          <div className="panel-empty">
-            <p>Select a session to inspect persisted statistics.</p>
-          </div>
+          <SessionDetailSurface
+            detail={sessionDetail}
+            loading={sessionDetailLoading || sessionStatisticsLoading}
+            error={sessionDetailError || sessionStatisticsError}
+            statistics={sessionStatistics}
+            selectedEntry={selectedEntry}
+            entries={activeEntries}
+            selectedEntryId={selectedEntryId}
+            onSelectEntry={setSelectedEntryId}
+          />
         )}
       </div>
+    </section>
+  );
+}
+
+function SessionDetailSurface({
+  detail,
+  loading,
+  error,
+  statistics,
+  entries,
+  selectedEntryId,
+  selectedEntry,
+  onSelectEntry
+}: {
+  detail: AnalysisSessionDetail | null;
+  loading: boolean;
+  error: string;
+  statistics: AnalysisSessionStatistics | null;
+  entries: AnalysisContentEntry[];
+  selectedEntryId: string | null;
+  selectedEntry: AnalysisContentEntry | null;
+  onSelectEntry: (entryId: string) => void;
+}): ReactElement {
+  if (loading) {
+    return <div className="panel-empty"><p>Loading session detail...</p></div>;
+  }
+  if (error) {
+    return <div className="panel-empty"><p>{error}</p></div>;
+  }
+  if (!detail) {
+    return <div className="panel-empty"><p>Select a session to inspect persisted detail.</p></div>;
+  }
+
+  return (
+    <>
+      <section className="analysis-kpi-grid">
+        <MetricCard label="Project" value={detail.summary.projectPath ?? "N/A"} dense />
+        <MetricCard label="Tokens" value={formatMetric(detail.summary.totalTokens)} />
+        <MetricCard label="Tool Calls" value={formatMetric(detail.summary.totalToolCalls)} />
+        <MetricCard label="Sections" value={formatMetric(detail.sections.length)} />
+        <MetricCard label="Bottleneck" value={detail.summary.bottleneck ?? "N/A"} />
+      </section>
+
+      <section className="analysis-grid analysis-grid-2">
+        <InfoCard title="Session Synopsis">
+          <p>{detail.synopsisText ?? "No generated synopsis for this session."}</p>
+        </InfoCard>
+        <InfoCard title="Section Coverage">
+          <MetricDatumList
+            data={[
+              { label: "Sections", value: detail.sections.length, hint: null },
+              { label: "Transcript Entries", value: entries.length, hint: null }
+            ]}
+            formatter={(value) => formatMetric(value)}
+          />
+        </InfoCard>
+        <InfoCard title="Tool Breakdown">
+          {statistics ? <ToolMetricTable rows={statistics.toolCalls} /> : <div className="panel-empty"><p>No tool summary available.</p></div>}
+        </InfoCard>
+        <InfoCard title="Message Mix">
+          {statistics ? (
+            <PieMetricChart data={statistics.messageBreakdown} valueFormatter={(value) => formatMetric(value)} />
+          ) : (
+            <div className="panel-empty"><p>No message composition available.</p></div>
+          )}
+        </InfoCard>
+      </section>
+
+      <ContentBrowser entries={entries} selectedEntryId={selectedEntryId} selectedEntry={selectedEntry} onSelectEntry={onSelectEntry} />
+    </>
+  );
+}
+
+function SectionDetailSurface({
+  detail,
+  loading,
+  error,
+  entries,
+  selectedEntryId,
+  selectedEntry,
+  onSelectEntry
+}: {
+  detail: AnalysisSectionDetail | null;
+  loading: boolean;
+  error: string;
+  entries: AnalysisContentEntry[];
+  selectedEntryId: string | null;
+  selectedEntry: AnalysisContentEntry | null;
+  onSelectEntry: (entryId: string) => void;
+}): ReactElement {
+  if (loading) {
+    return <div className="panel-empty"><p>Loading section detail...</p></div>;
+  }
+  if (error) {
+    return <div className="panel-empty"><p>{error}</p></div>;
+  }
+  if (!detail) {
+    return <div className="panel-empty"><p>Select a section to inspect materialized content.</p></div>;
+  }
+
+  const messageMix: AnalysisMetricDatum[] = [
+    { label: "User", value: detail.section.userMessageCount, hint: null },
+    { label: "Assistant", value: detail.section.assistantMessageCount, hint: null },
+    { label: "Tool Calls", value: detail.section.toolCallCount, hint: null }
+  ].filter((entry) => entry.value > 0);
+  const tokenMix: AnalysisMetricDatum[] = [
+    { label: "Input", value: detail.section.inputTokens, hint: null },
+    { label: "Output", value: detail.section.outputTokens, hint: null }
+  ].filter((entry) => entry.value > 0);
+
+  return (
+    <>
+      <section className="analysis-kpi-grid">
+        <MetricCard label="Section" value={detail.section.title} dense />
+        <MetricCard label="Messages" value={formatMetric(detail.section.totalMessages)} />
+        <MetricCard label="Tokens" value={formatMetric(detail.section.totalTokens)} />
+        <MetricCard label="Chars" value={formatMetric(detail.section.charCount)} />
+        <MetricCard label="Duration" value={formatDuration(detail.section.durationSeconds)} />
+      </section>
+
+      <section className="analysis-grid analysis-grid-2">
+        <InfoCard title="Section Summary">
+          <p>{detail.section.summaryText ?? "No generated section summary available."}</p>
+        </InfoCard>
+        <InfoCard title="Section Metadata">
+          <MetricDatumList
+            data={[
+              { label: "Index", value: detail.section.sectionIndex + 1, hint: null },
+              { label: "Messages", value: detail.section.totalMessages, hint: null },
+              { label: "Entries", value: entries.length, hint: null }
+            ]}
+            formatter={(value) => formatMetric(value)}
+          />
+        </InfoCard>
+        <InfoCard title="Message Mix">
+          {messageMix.length > 0 ? (
+            <PieMetricChart data={messageMix} valueFormatter={(value) => formatMetric(value)} />
+          ) : (
+            <div className="panel-empty"><p>No message mix available.</p></div>
+          )}
+        </InfoCard>
+        <InfoCard title="Token Mix">
+          {tokenMix.length > 0 ? (
+            <PieMetricChart data={tokenMix} valueFormatter={(value) => formatMetric(value)} />
+          ) : (
+            <div className="panel-empty"><p>No token mix available.</p></div>
+          )}
+        </InfoCard>
+      </section>
+
+      <ContentBrowser entries={entries} selectedEntryId={selectedEntryId} selectedEntry={selectedEntry} onSelectEntry={onSelectEntry} />
+    </>
+  );
+}
+
+function ContentBrowser({
+  entries,
+  selectedEntryId,
+  selectedEntry,
+  onSelectEntry
+}: {
+  entries: AnalysisContentEntry[];
+  selectedEntryId: string | null;
+  selectedEntry: AnalysisContentEntry | null;
+  onSelectEntry: (entryId: string) => void;
+}): ReactElement {
+  return (
+    <section className="analysis-content-browser">
+      <article className="analysis-card">
+        <div className="analysis-card-header">
+          <h3>Transcript</h3>
+          <span className="entry-badge">{entries.length}</span>
+        </div>
+        {entries.length > 0 ? (
+          <div className="analysis-content-list">
+            {entries.map((entry) => (
+              <button
+                key={entry.entryId}
+                type="button"
+                className={entry.entryId === selectedEntryId ? "analysis-content-row is-active" : "analysis-content-row"}
+                onClick={() => onSelectEntry(entry.entryId)}
+              >
+                <span className={`analysis-kind-pill is-${entry.kind}`}>{entry.kind}</span>
+                <span className="analysis-content-copy">
+                  <strong>{entry.title}</strong>
+                  <span>{entry.preview}</span>
+                </span>
+                <span className="analysis-content-meta">{formatTimestamp(entry.timestamp)}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="panel-empty"><p>No persisted transcript content available.</p></div>
+        )}
+      </article>
+
+      <article className="analysis-card">
+        <div className="analysis-card-header">
+          <h3>Entry Detail</h3>
+          {selectedEntry ? <span className="entry-badge">{selectedEntry.kind}</span> : null}
+        </div>
+        {selectedEntry ? (
+          <div className="analysis-content-detail">
+            <div className="entry-meta">
+              <span className="entry-meta-label">Role</span>
+              <code>{selectedEntry.role ?? "n/a"}</code>
+              {selectedEntry.model ? (
+                <>
+                  <span className="entry-meta-label">Model</span>
+                  <code>{selectedEntry.model}</code>
+                </>
+              ) : null}
+              {selectedEntry.toolName ? (
+                <>
+                  <span className="entry-meta-label">Tool</span>
+                  <code>{selectedEntry.toolName}</code>
+                </>
+              ) : null}
+            </div>
+            {selectedEntry.tokenUsage ? <TokenUsageLine usage={selectedEntry.tokenUsage} /> : null}
+            {selectedEntry.contentText ? <pre className="analysis-json-preview">{selectedEntry.contentText}</pre> : null}
+            {selectedEntry.payload ? (
+              <pre className="analysis-json-preview">{JSON.stringify(limitRawPreview(selectedEntry.payload), null, 2)}</pre>
+            ) : null}
+          </div>
+        ) : (
+          <div className="panel-empty"><p>Select a transcript entry to inspect its payload.</p></div>
+        )}
+      </article>
     </section>
   );
 }
@@ -1223,6 +1859,16 @@ function QuerySection({
   );
 }
 
+function TokenUsageLine({ usage }: { usage: AnalysisTokenUsage }): ReactElement {
+  return (
+    <div className="analysis-inline-note">
+      Input {formatMetric(usage.inputTokens)} · Output {formatMetric(usage.outputTokens)}
+      {usage.cacheReadTokens > 0 ? ` · Cache Read ${formatMetric(usage.cacheReadTokens)}` : ""}
+      {usage.cacheWriteTokens > 0 ? ` · Cache Create ${formatMetric(usage.cacheWriteTokens)}` : ""}
+    </div>
+  );
+}
+
 function MetricCard({ label, value, dense = false }: { label: string; value: string; dense?: boolean }): ReactElement {
   return (
     <article className={dense ? "analysis-metric-card is-dense" : "analysis-metric-card"}>
@@ -1404,6 +2050,14 @@ function renderDatabaseHeadline(status: AnalysisDatabaseInfo["status"]): string 
     default:
       return "Profiler database is unavailable.";
   }
+}
+
+function renderDatabaseGuidance(databaseInfo: AnalysisDatabaseInfo, location: AgentPathLocation): string {
+  if (databaseInfo.status === "missing") {
+    return `Install agent-trajectory-profiler to generate ${databaseInfo.displayPath} in the ${getLocationLabel(location)} environment: ${AGENT_TRAJECTORY_PROFILER_REPO_URL}`;
+  }
+
+  return databaseInfo.error ?? `Expected at ${databaseInfo.displayPath} in the ${getLocationLabel(location)} environment.`;
 }
 
 function formatTimestamp(value: string | null): string {

@@ -92,12 +92,25 @@ export type WatchboardApi = {
   getAnalysisDatabase: (location: AgentPathLocation) => Promise<AnalysisDatabaseInfo>;
   getAnalysisBootstrap: (
     location: AgentPathLocation,
+    selectedProjectKey?: string | null,
     selectedSessionId?: string | null,
     limit?: number
   ) => Promise<AnalysisBootstrapPayload>;
   runAnalysisQuery: (location: AgentPathLocation, sql: string) => Promise<AnalysisQueryResult>;
   listAnalysisSessions: (location: AgentPathLocation, limit?: number) => Promise<AnalysisSessionSummary[]>;
+  listAnalysisProjects: (location: AgentPathLocation, limit?: number) => Promise<AnalysisProjectSummary[]>;
+  listAnalysisProjectSessions: (
+    location: AgentPathLocation,
+    projectKey: string,
+    limit?: number
+  ) => Promise<AnalysisSessionSummary[]>;
+  listAnalysisSessionSections: (location: AgentPathLocation, sessionId: string, limit?: number) => Promise<AnalysisSessionSectionSummary[]>;
   getAnalysisSessionDetail: (location: AgentPathLocation, sessionId: string) => Promise<AnalysisSessionDetail | null>;
+  getAnalysisSectionDetail: (
+    location: AgentPathLocation,
+    sessionId: string,
+    sectionId: string
+  ) => Promise<AnalysisSectionDetail | null>;
   getAnalysisSessionStatistics: (location: AgentPathLocation, sessionId: string) => Promise<AnalysisSessionStatistics | null>;
   getAnalysisCrossSessionMetrics: (location: AgentPathLocation, limit?: number) => Promise<AnalysisCrossSessionMetrics>;
 };
@@ -134,6 +147,9 @@ export type AnalysisQueryValue = string | number | boolean | null;
 export type AnalysisBootstrapPayload = {
   databaseInfo: AnalysisDatabaseInfo;
   sessions: AnalysisSessionSummary[];
+  projects: AnalysisProjectSummary[];
+  selectedProjectKey: string | null;
+  projectSessions: AnalysisSessionSummary[];
   selectedSessionId: string | null;
   sessionStatistics: AnalysisSessionStatistics | null;
 };
@@ -161,9 +177,91 @@ export type AnalysisSessionSummary = {
   bottleneck: string | null;
 };
 
+export type AnalysisProjectSummary = {
+  projectKey: string;
+  projectPath: string | null;
+  sessionCount: number;
+  latestActivityAt: string | null;
+  totalTokens: number;
+  totalToolCalls: number;
+};
+
+export type AnalysisSectionSummaryStatus = "ready" | "missing" | "error";
+
+export type AnalysisSessionSectionSummary = {
+  sectionId: string;
+  sessionId: string;
+  sectionIndex: number;
+  title: string;
+  startMessageUuid: string;
+  endMessageUuid: string;
+  startTimestamp: string | null;
+  endTimestamp: string | null;
+  totalMessages: number;
+  userMessageCount: number;
+  assistantMessageCount: number;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  charCount: number;
+  durationSeconds: number | null;
+  summaryText: string | null;
+  summaryStatus: AnalysisSectionSummaryStatus;
+  summaryGeneratedAt: string | null;
+  summaryError: string | null;
+  summaryPayload: Record<string, unknown> | null;
+};
+
+export type AnalysisContentEntryKind =
+  | "user"
+  | "assistant"
+  | "tool-use"
+  | "tool-result"
+  | "system"
+  | "thinking"
+  | "other";
+
+export type AnalysisTokenUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+};
+
+export type AnalysisContentEntry = {
+  entryId: string;
+  sessionId: string;
+  sectionId: string | null;
+  sequence: number;
+  timestamp: string | null;
+  role: string | null;
+  kind: AnalysisContentEntryKind;
+  title: string;
+  preview: string;
+  contentText: string | null;
+  payload: unknown | null;
+  toolName: string | null;
+  toolUseId: string | null;
+  model: string | null;
+  isError: boolean | null;
+  tokenUsage: AnalysisTokenUsage | null;
+};
+
 export type AnalysisSessionDetail = {
   summary: AnalysisSessionSummary;
+  synopsisText: string | null;
+  synopsisStatus: AnalysisSectionSummaryStatus;
+  synopsisGeneratedAt: string | null;
   statistics: Record<string, unknown> | null;
+  sections: AnalysisSessionSectionSummary[];
+  entries: AnalysisContentEntry[];
+};
+
+export type AnalysisSectionDetail = {
+  session: AnalysisSessionSummary;
+  section: AnalysisSessionSectionSummary;
+  entries: AnalysisContentEntry[];
 };
 
 export type AnalysisMetricDatum = {

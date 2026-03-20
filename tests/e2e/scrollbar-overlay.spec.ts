@@ -142,7 +142,24 @@ test("can switch to analysis tab and see analysis panel guidance", async () => {
   await page.getByRole("navigation").getByRole("button", { name: "analysis", exact: true }).click();
   await expect(page.locator(".analysis-panel")).toBeVisible();
   await expect(page.getByText("Profiler database not found")).toBeVisible();
-  await expect(page.getByText(/Expected at .*profiler\.db/i)).toBeVisible();
+  await expect(page.getByText(/Install agent-trajectory-profiler to generate .*profiler\.db/i)).toBeVisible();
+});
+
+test("analysis pane keeps the body and session list scrollable inside the single-view shell", async () => {
+  await waitForAppReady();
+  await page.getByRole("navigation").getByRole("button", { name: "analysis", exact: true }).click();
+  await expect(page.locator(".single-view-panel")).toBeVisible();
+
+  await injectAnalysisScrollFixture(page);
+
+  const metrics = await measureAnalysisFixture(page);
+  expect(metrics.body.overflowY).toBe("auto");
+  expect(metrics.body.scrollHeight).toBeGreaterThan(metrics.body.clientHeight);
+  expect(metrics.body.scrollTop).toBeGreaterThan(0);
+  expect(metrics.body.lastVisible).toBe(true);
+  expect(metrics.sessions.scrollHeight).toBeGreaterThan(metrics.sessions.clientHeight);
+  expect(metrics.sessions.scrollTop).toBeGreaterThan(0);
+  expect(metrics.sessions.lastVisible).toBe(true);
 });
 
 test("can switch back to terminal tab", async () => {
@@ -199,4 +216,104 @@ function writeSkillFixture(homeDir: string, folderName: string, title: string, d
     `---\nname: ${title}\ndescription: ${description}\n---\n\n# ${title}\n`,
     "utf8"
   );
+}
+
+async function injectAnalysisScrollFixture(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const host = document.querySelector(".single-view-panel");
+    if (!(host instanceof HTMLElement)) {
+      throw new Error("single-view-panel host not found");
+    }
+
+    const kpis = Array.from({ length: 8 }, (_, index) => `<article class="analysis-card"><strong>KPI ${index + 1}</strong></article>`).join("");
+    const sessions = Array.from(
+      { length: 40 },
+      (_, index) => `
+        <button class="analysis-session-item"${index === 39 ? ' data-test-analysis-session="last"' : ""}>
+          <strong>Session ${index + 1}</strong>
+          <span>synthetic fixture</span>
+        </button>
+      `
+    ).join("");
+    const detailCards = Array.from(
+      { length: 14 },
+      (_, index) => `
+        <article class="analysis-card"${index === 13 ? ' data-test-analysis-card="last"' : ""}>
+          <div class="analysis-card-header"><strong>Section ${index + 1}</strong></div>
+          <div style="height: 160px"></div>
+        </article>
+      `
+    ).join("");
+
+    host.innerHTML = `
+      <div class="analysis-panel">
+        <header class="analysis-panel-header">
+          <div>
+            <p class="panel-eyebrow">Analysis</p>
+            <div class="analysis-panel-status">
+              <span class="analysis-status-pill is-ready">READY</span>
+              <code>~/.agent-vis/profiler.db</code>
+            </div>
+            <p class="analysis-panel-copy">Synthetic scroll fixture</p>
+          </div>
+          <div class="analysis-panel-toolbar">
+            <button class="compact-control-button" type="button">Overview</button>
+          </div>
+        </header>
+        <div class="analysis-panel-body">
+          <section class="analysis-kpi-grid">${kpis}</section>
+          <section class="analysis-layout">
+            <article class="analysis-card analysis-sidebar">
+              <div class="analysis-card-header">
+                <strong>Sessions</strong>
+              </div>
+              <div class="analysis-session-list">${sessions}</div>
+            </article>
+            <div class="analysis-main">${detailCards}</div>
+          </section>
+        </div>
+      </div>
+    `;
+  });
+}
+
+async function measureAnalysisFixture(page: Page): Promise<{
+  body: { clientHeight: number; overflowY: string; scrollHeight: number; scrollTop: number; lastVisible: boolean };
+  sessions: { clientHeight: number; scrollHeight: number; scrollTop: number; lastVisible: boolean };
+}> {
+  return page.evaluate(async () => {
+    const body = document.querySelector(".analysis-panel-body");
+    const sessionList = document.querySelector(".analysis-session-list");
+    const lastBodyCard = document.querySelector('[data-test-analysis-card="last"]');
+    const lastSession = document.querySelector('[data-test-analysis-session="last"]');
+
+    if (!(body instanceof HTMLElement) || !(sessionList instanceof HTMLElement) || !(lastBodyCard instanceof HTMLElement) || !(lastSession instanceof HTMLElement)) {
+      throw new Error("analysis fixture is incomplete");
+    }
+
+    body.scrollTop = body.scrollHeight;
+    sessionList.scrollTop = sessionList.scrollHeight;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    const bodyRect = body.getBoundingClientRect();
+    const sessionRect = sessionList.getBoundingClientRect();
+    const lastBodyRect = lastBodyCard.getBoundingClientRect();
+    const lastSessionRect = lastSession.getBoundingClientRect();
+
+    return {
+      body: {
+        clientHeight: body.clientHeight,
+        overflowY: getComputedStyle(body).overflowY,
+        scrollHeight: body.scrollHeight,
+        scrollTop: body.scrollTop,
+        lastVisible: lastBodyRect.bottom <= bodyRect.bottom + 1
+      },
+      sessions: {
+        clientHeight: sessionList.clientHeight,
+        scrollHeight: sessionList.scrollHeight,
+        scrollTop: sessionList.scrollTop,
+        lastVisible: lastSessionRect.bottom <= sessionRect.bottom + 1
+      }
+    };
+  });
 }
