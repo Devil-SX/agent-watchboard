@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - Added a syntax-aware config editor with JSON/TOML highlighting, validation feedback, and regression coverage for settings/config round-trips.
 - Added richer analysis session-browser coverage for project/session expansion state, browser metric rendering, and legacy analysis state normalization.
+- Added analysis session-browser sort controls with progressive metric-driven reordering, plus DOM regressions that keep expanded branches open while lazy statistics arrive.
 
 ### Changed
 - Changed analysis navigation and browser state handling to support the current overview/session/cross-session layout, cached project-session snapshots, and stacked role breakdown rendering.

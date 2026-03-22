@@ -88,6 +88,27 @@ function assertApproxWidths(actual: string[] | undefined, expected: number[]): v
   }
 }
 
+function readTreeOrder(container: HTMLElement, kind: "project" | "session" | "section"): string[] {
+  const attribute = kind === "project" ? "data-analysis-project-key" : kind === "session" ? "data-analysis-session-id" : "data-analysis-section-id";
+  return [
+    ...new Set(
+      [...container.querySelectorAll(`[data-analysis-tree-kind="${kind}"]`)]
+        .map((node) => node.getAttribute(attribute))
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+    )
+  ];
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function createProjectSummary(totalTokens: number) {
   return [
     {
@@ -811,6 +832,392 @@ test("AnalysisPanel normalizes legacy query view state back to overview on mount
     assert.doesNotMatch(text, /Read-Only SQL/);
   } finally {
     await panel.unmount();
+    resetAnalysisPanelCacheForTests();
+  }
+});
+
+test("AnalysisPanel session browser toggles sort metric controls and applies alphabetic direction changes", async () => {
+  resetAnalysisPanelCacheForTests();
+
+  const sessionA = {
+    sessionId: "session-a",
+    logicalSessionId: "logical-a",
+    ecosystem: "codex",
+    projectPath: "/tmp/demo",
+    totalTokens: 900,
+    totalToolCalls: 2,
+    parsedAt: "2026-03-19T00:00:00.000Z",
+    updatedAt: "2026-03-19T00:01:00.000Z",
+    durationSeconds: 120,
+    automationRatio: 1.1,
+    bottleneck: "Tool"
+  };
+  const sessionB = {
+    sessionId: "session-b",
+    logicalSessionId: "logical-b",
+    ecosystem: "claude",
+    projectPath: "/tmp/demo",
+    totalTokens: 1200,
+    totalToolCalls: 5,
+    parsedAt: "2026-03-19T00:02:00.000Z",
+    updatedAt: "2026-03-19T00:03:00.000Z",
+    durationSeconds: 150,
+    automationRatio: 1.4,
+    bottleneck: "Tool"
+  };
+  const sections = [
+    {
+      sectionId: "section-z",
+      sessionId: "session-a",
+      sectionIndex: 1,
+      title: "Zeta",
+      startMessageUuid: "m-z-1",
+      endMessageUuid: "m-z-2",
+      startTimestamp: "2026-03-19T00:00:00.000Z",
+      endTimestamp: "2026-03-19T00:01:00.000Z",
+      totalMessages: 7,
+      userMessageCount: 1,
+      assistantMessageCount: 2,
+      toolCallCount: 4,
+      inputTokens: 50,
+      outputTokens: 70,
+      totalTokens: 120,
+      charCount: 200,
+      durationSeconds: 60,
+      summaryText: null,
+      summaryStatus: "missing" as const,
+      summaryGeneratedAt: null,
+      summaryError: null,
+      summaryPayload: null
+    },
+    {
+      sectionId: "section-a",
+      sessionId: "session-a",
+      sectionIndex: 0,
+      title: "Alpha",
+      startMessageUuid: "m-a-1",
+      endMessageUuid: "m-a-2",
+      startTimestamp: "2026-03-19T00:01:00.000Z",
+      endTimestamp: "2026-03-19T00:02:00.000Z",
+      totalMessages: 3,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      toolCallCount: 1,
+      inputTokens: 30,
+      outputTokens: 40,
+      totalTokens: 70,
+      charCount: 120,
+      durationSeconds: 60,
+      summaryText: null,
+      summaryStatus: "missing" as const,
+      summaryGeneratedAt: null,
+      summaryError: null,
+      summaryPayload: null
+    }
+  ];
+
+  const view = await renderAnalysisPanel(() => {
+    globalThis.window.watchboard = {
+      getAnalysisBootstrap: async () => ({
+        databaseInfo: createDatabaseInfo("2026-03-19T00:00:00.000Z"),
+        sessions: [sessionB, sessionA],
+        projects: createProjectSummary(2100),
+        selectedProjectKey: "/tmp/demo",
+        projectSessions: [sessionB, sessionA],
+        selectedSessionId: "session-a",
+        sessionStatistics: createSessionStatistics(900, {
+          messageBreakdown: [
+            { label: "User", value: 2, hint: null },
+            { label: "Assistant", value: 3, hint: null },
+            { label: "System", value: 1, hint: null }
+          ]
+        })
+      }),
+      getAnalysisDatabase: async () => createDatabaseInfo("2026-03-19T00:00:00.000Z"),
+      listAnalysisSessions: async () => [sessionB, sessionA],
+      listAnalysisProjects: async () => createProjectSummary(2100),
+      listAnalysisProjectSessions: async () => [sessionB, sessionA],
+      listAnalysisSessionSections: async () => sections,
+      getAnalysisSessionStatistics: async (_location: "host", sessionId: string) =>
+        createSessionStatistics(sessionId === "session-a" ? 900 : 1200, {
+          messageBreakdown:
+            sessionId === "session-a"
+              ? [
+                  { label: "User", value: 2, hint: null },
+                  { label: "Assistant", value: 3, hint: null },
+                  { label: "System", value: 1, hint: null }
+                ]
+              : [
+                  { label: "User", value: 1, hint: null },
+                  { label: "Assistant", value: 6, hint: null },
+                  { label: "System", value: 2, hint: null }
+                ]
+        }),
+      getAnalysisSessionDetail: async () => ({
+        summary: sessionA,
+        sections,
+        synopsisText: null,
+        totalEntries: 0,
+        entries: []
+      }),
+      getAnalysisSectionDetail: async () => null,
+      getAnalysisCrossSessionMetrics: async () => {
+        throw new Error("not used");
+      },
+      runAnalysisQuery: async () => {
+        throw new Error("not used");
+      },
+      reportPerfEvent: async () => undefined
+    } as never;
+  }, {
+    activeSection: "session-detail",
+    selectedProjectKey: "/tmp/demo",
+    selectedSessionId: "session-a"
+  });
+
+  try {
+    await flushMicrotasks();
+
+    assert.equal(view.container.querySelector('[aria-label="Session browser sort metric"]'), null);
+    assert.deepEqual(readTreeOrder(view.container, "session"), ["session-a", "session-b"]);
+    assert.deepEqual(readTreeOrder(view.container, "section"), ["section-a", "section-z"]);
+
+    const clickButton = async (label: string) => {
+      const button = [...view.container.querySelectorAll("button")].find((candidate) => (candidate.textContent ?? "").trim() === label);
+      assert.ok(button);
+      await act(async () => {
+        button.dispatchEvent(new view.harness.window.MouseEvent("click", { bubbles: true }));
+      });
+      await flushMicrotasks();
+    };
+
+    await clickButton("Desc");
+    assert.deepEqual(readTreeOrder(view.container, "session"), ["session-b", "session-a"]);
+    assert.deepEqual(readTreeOrder(view.container, "section"), ["section-z", "section-a"]);
+
+    await clickButton("Message");
+    const metricGroup = view.container.querySelector('[aria-label="Session browser sort metric"]');
+    assert.ok(metricGroup);
+    assert.match(metricGroup.textContent ?? "", /Assistant/);
+    assert.match(metricGroup.textContent ?? "", /Tool/);
+    assert.doesNotMatch(metricGroup.textContent ?? "", /Model/);
+
+    await clickButton("Tool");
+    assert.deepEqual(readTreeOrder(view.container, "section"), ["section-z", "section-a"]);
+
+    await clickButton("A-Z");
+    assert.equal(view.container.querySelector('[aria-label="Session browser sort metric"]'), null);
+  } finally {
+    await view.unmount();
+    resetAnalysisPanelCacheForTests();
+  }
+});
+
+test("AnalysisPanel session browser reorders lazily on metric arrival without losing expansion state", async () => {
+  resetAnalysisPanelCacheForTests();
+
+  const deferredSiblingStatistics = createDeferred<ReturnType<typeof createSessionStatistics>>();
+  const projectSessions = [
+    {
+      sessionId: "session-a",
+      logicalSessionId: "logical-a",
+      ecosystem: "codex",
+      projectPath: "/tmp/demo",
+      totalTokens: 1000,
+      totalToolCalls: 2,
+      parsedAt: "2026-03-19T00:00:00.000Z",
+      updatedAt: "2026-03-19T00:01:00.000Z",
+      durationSeconds: 120,
+      automationRatio: 1.2,
+      bottleneck: "Tool"
+    },
+    {
+      sessionId: "session-b",
+      logicalSessionId: "logical-b",
+      ecosystem: "claude",
+      projectPath: "/tmp/demo",
+      totalTokens: 1200,
+      totalToolCalls: 5,
+      parsedAt: "2026-03-19T00:02:00.000Z",
+      updatedAt: "2026-03-19T00:03:00.000Z",
+      durationSeconds: 180,
+      automationRatio: 1.5,
+      bottleneck: "Tool"
+    }
+  ];
+  const sections = [
+    {
+      sectionId: "section-a",
+      sessionId: "session-a",
+      sectionIndex: 0,
+      title: "Bootstrap",
+      startMessageUuid: "m-a-1",
+      endMessageUuid: "m-a-3",
+      startTimestamp: "2026-03-19T00:00:00.000Z",
+      endTimestamp: "2026-03-19T00:02:00.000Z",
+      totalMessages: 3,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      toolCallCount: 1,
+      inputTokens: 100,
+      outputTokens: 120,
+      totalTokens: 220,
+      charCount: 320,
+      durationSeconds: 120,
+      summaryText: null,
+      summaryStatus: "missing" as const,
+      summaryGeneratedAt: null,
+      summaryError: null,
+      summaryPayload: null
+    }
+  ];
+  const sessionEntries = [
+    {
+      entryId: "entry-a-1",
+      sessionId: "session-a",
+      sectionId: "section-a",
+      sequence: 0,
+      timestamp: "2026-03-19T00:00:10.000Z",
+      role: "user",
+      kind: "user" as const,
+      title: "User",
+      preview: "boot",
+      contentText: "boot",
+      payload: null,
+      toolName: null,
+      toolUseId: null,
+      model: null,
+      isError: null,
+      tokenUsage: null
+    },
+    {
+      entryId: "entry-a-2",
+      sessionId: "session-a",
+      sectionId: "section-a",
+      sequence: 1,
+      timestamp: "2026-03-19T00:00:40.000Z",
+      role: "assistant",
+      kind: "assistant" as const,
+      title: "Assistant",
+      preview: "plan",
+      contentText: "plan",
+      payload: null,
+      toolName: null,
+      toolUseId: null,
+      model: null,
+      isError: null,
+      tokenUsage: null
+    },
+    {
+      entryId: "entry-a-3",
+      sessionId: "session-a",
+      sectionId: "section-a",
+      sequence: 2,
+      timestamp: "2026-03-19T00:01:00.000Z",
+      role: "assistant",
+      kind: "tool-use" as const,
+      title: "Tool Use",
+      preview: "run",
+      contentText: null,
+      payload: null,
+      toolName: "exec_command",
+      toolUseId: "tool-1",
+      model: null,
+      isError: null,
+      tokenUsage: null
+    }
+  ];
+
+  const view = await renderAnalysisPanel(() => {
+    globalThis.window.watchboard = {
+      getAnalysisBootstrap: async () => ({
+        databaseInfo: createDatabaseInfo("2026-03-19T00:00:00.000Z"),
+        sessions: projectSessions,
+        projects: createProjectSummary(2200),
+        selectedProjectKey: "/tmp/demo",
+        projectSessions,
+        selectedSessionId: "session-a",
+        sessionStatistics: createSessionStatistics(1000, {
+          timeBreakdown: [
+            { label: "User", value: 30, hint: "s" },
+            { label: "Model", value: 30, hint: "s" },
+            { label: "Tool", value: 60, hint: "s" }
+          ]
+        })
+      }),
+      getAnalysisDatabase: async () => createDatabaseInfo("2026-03-19T00:00:00.000Z"),
+      listAnalysisSessions: async () => projectSessions,
+      listAnalysisProjects: async () => createProjectSummary(2200),
+      listAnalysisProjectSessions: async () => projectSessions,
+      listAnalysisSessionSections: async () => sections,
+      getAnalysisSessionStatistics: async (_location: "host", sessionId: string) => {
+        if (sessionId === "session-a") {
+          return createSessionStatistics(1000, {
+            timeBreakdown: [
+              { label: "User", value: 30, hint: "s" },
+              { label: "Model", value: 30, hint: "s" },
+              { label: "Tool", value: 60, hint: "s" }
+            ]
+          });
+        }
+        return deferredSiblingStatistics.promise;
+      },
+      getAnalysisSessionDetail: async () => ({
+        summary: projectSessions[0]!,
+        sections,
+        synopsisText: null,
+        totalEntries: sessionEntries.length,
+        entries: sessionEntries
+      }),
+      getAnalysisSectionDetail: async () => null,
+      getAnalysisCrossSessionMetrics: async () => {
+        throw new Error("not used");
+      },
+      runAnalysisQuery: async () => {
+        throw new Error("not used");
+      },
+      reportPerfEvent: async () => undefined
+    } as never;
+  }, {
+    activeSection: "session-detail",
+    selectedProjectKey: "/tmp/demo",
+    selectedSessionId: "session-a"
+  });
+
+  try {
+    await flushMicrotasks();
+
+    const clickButton = async (label: string) => {
+      const button = [...view.container.querySelectorAll("button")].find((candidate) => (candidate.textContent ?? "").trim() === label);
+      assert.ok(button);
+      await act(async () => {
+        button.dispatchEvent(new view.harness.window.MouseEvent("click", { bubbles: true }));
+      });
+      await flushMicrotasks();
+    };
+
+    await clickButton("Time");
+    await clickButton("Tool");
+    await clickButton("Desc");
+
+    assert.deepEqual(readTreeOrder(view.container, "session"), ["session-a", "session-b"]);
+    assert.match(view.container.textContent ?? "", /Bootstrap/);
+
+    deferredSiblingStatistics.resolve(
+      createSessionStatistics(1200, {
+        timeBreakdown: [
+          { label: "User", value: 20, hint: "s" },
+          { label: "Model", value: 10, hint: "s" },
+          { label: "Tool", value: 170, hint: "s" }
+        ]
+      })
+    );
+    await flushMicrotasks();
+
+    assert.deepEqual(readTreeOrder(view.container, "session"), ["session-b", "session-a"]);
+    assert.match(view.container.textContent ?? "", /Bootstrap/);
+  } finally {
+    await view.unmount();
     resetAnalysisPanelCacheForTests();
   }
 });

@@ -69,6 +69,9 @@ const STACKED_BAR_TONES = {
 } as const;
 
 type SessionBrowserMetricMode = "messages" | "hours";
+type SessionBrowserSortKey = "alphabetic" | "messages" | "hours";
+type SessionBrowserSortDirection = "asc" | "desc";
+type SessionBrowserSortMetric = "user" | "assistant" | "tool" | "model";
 
 type SessionBrowserBreakdownSegment = {
   label: "User" | "Assistant" | "Tool";
@@ -1390,6 +1393,9 @@ function SessionDetailPage({
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [collapsedSessions, setCollapsedSessions] = useState<Record<string, boolean>>({});
   const [browserMetricMode, setBrowserMetricMode] = useState<SessionBrowserMetricMode>("messages");
+  const [browserSortKey, setBrowserSortKey] = useState<SessionBrowserSortKey>("alphabetic");
+  const [browserSortDirection, setBrowserSortDirection] = useState<SessionBrowserSortDirection>("asc");
+  const [browserSortMetric, setBrowserSortMetric] = useState<SessionBrowserSortMetric>("assistant");
   const activeEntries = selectedSectionId ? sectionDetail?.entries ?? [] : sessionDetail?.entries ?? [];
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(activeEntries[0]?.entryId ?? null);
 
@@ -1409,7 +1415,12 @@ function SessionDetailPage({
     setSelectedEntryId(activeEntries[0]?.entryId ?? null);
   }, [selectedSectionId, selectedSessionId, activeEntries]);
 
+  useEffect(() => {
+    setBrowserSortMetric((current) => normalizeSessionBrowserSortMetric(browserSortKey, current));
+  }, [browserSortKey]);
+
   const selectedEntry = activeEntries.find((entry) => entry.entryId === selectedEntryId) ?? activeEntries[0] ?? null;
+  const metricOptions = getSessionBrowserSortMetricOptions(browserSortKey);
 
   return (
     <section className="analysis-layout">
@@ -1433,6 +1444,59 @@ function SessionDetailPage({
                 Hours
               </button>
             </div>
+            <div className="analysis-browser-toggle" role="group" aria-label="Session browser sort key">
+              <button
+                type="button"
+                className={browserSortKey === "alphabetic" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
+                onClick={() => setBrowserSortKey("alphabetic")}
+              >
+                A-Z
+              </button>
+              <button
+                type="button"
+                className={browserSortKey === "messages" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
+                onClick={() => setBrowserSortKey("messages")}
+              >
+                Message
+              </button>
+              <button
+                type="button"
+                className={browserSortKey === "hours" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
+                onClick={() => setBrowserSortKey("hours")}
+              >
+                Time
+              </button>
+            </div>
+            <div className="analysis-browser-toggle" role="group" aria-label="Session browser sort direction">
+              <button
+                type="button"
+                className={browserSortDirection === "asc" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
+                onClick={() => setBrowserSortDirection("asc")}
+              >
+                Asc
+              </button>
+              <button
+                type="button"
+                className={browserSortDirection === "desc" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
+                onClick={() => setBrowserSortDirection("desc")}
+              >
+                Desc
+              </button>
+            </div>
+            {metricOptions.length > 0 ? (
+              <div className="analysis-browser-toggle" role="group" aria-label="Session browser sort metric">
+                {metricOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={browserSortMetric === option.value ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
+                    onClick={() => setBrowserSortMetric(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <span className="entry-badge">{projects.length}</span>
           </div>
         </div>
@@ -1443,13 +1507,28 @@ function SessionDetailPage({
           {projects.map((project) => {
             const projectCollapsed = collapsedProjects[project.projectKey] ?? project.projectKey !== selectedProjectKey;
             const cachedProjectSessions = projectSessionsByKey.get(project.projectKey) ?? [];
-            const renderedProjectSessions = project.projectKey === selectedProjectKey ? projectSessions : cachedProjectSessions;
+            const renderedProjectSessions = sortSessionBrowserItems(
+              project.projectKey === selectedProjectKey ? projectSessions : cachedProjectSessions,
+              browserSortKey,
+              browserSortDirection,
+              browserSortMetric,
+              (session) => session.sessionId,
+              (session) =>
+                buildSessionBrowserBreakdown(
+                  sessionDetail?.summary.sessionId === session.sessionId ? sessionDetail : null,
+                  session.sessionId === selectedSessionId ? sessionSections : sessionSectionsById.get(session.sessionId) ?? [],
+                  session.sessionId === selectedSessionId ? sessionStatistics : sessionStatisticsById.get(session.sessionId) ?? null,
+                  browserSortKey === "hours" ? "hours" : "messages"
+                )
+            );
             const showProjectSessions = !projectCollapsed;
             return (
-              <div key={project.projectKey || "__unknown_project__"} className="analysis-tree-node">
+              <div key={project.projectKey || "__unknown_project__"} className="analysis-tree-node" data-analysis-tree-kind="project">
                 <button
                   type="button"
                   className={project.projectKey === selectedProjectKey ? "analysis-tree-row is-active" : "analysis-tree-row"}
+                  data-analysis-tree-kind="project"
+                  data-analysis-project-key={project.projectKey}
                   onClick={() => {
                     onSelectProject(project.projectKey);
                     setCollapsedProjects((current) => ({
@@ -1472,20 +1551,31 @@ function SessionDetailPage({
                     )}
                     {renderedProjectSessions.map((session) => {
                       const sessionCollapsed = collapsedSessions[session.sessionId] ?? session.sessionId !== selectedSessionId;
-                      const renderedSessionSections =
-                        session.sessionId === selectedSessionId
-                          ? sessionSections
-                          : sessionSectionsById.get(session.sessionId) ?? [];
+                      const renderedSessionSections = sortSessionBrowserItems(
+                        session.sessionId === selectedSessionId ? sessionSections : sessionSectionsById.get(session.sessionId) ?? [],
+                        browserSortKey,
+                        browserSortDirection,
+                        browserSortMetric,
+                        (section) => section.title || `Section ${section.sectionIndex + 1}`,
+                        (section) =>
+                          buildSectionBrowserBreakdown(
+                            section,
+                            browserSortKey === "hours" ? "hours" : "messages",
+                            sessionDetail?.summary.sessionId === session.sessionId ? sessionDetail.entries : []
+                          )
+                      );
                       const showSections = !sessionCollapsed;
                       const rowStatistics =
                         session.sessionId === selectedSessionId
                           ? sessionStatistics
                           : sessionStatisticsById.get(session.sessionId) ?? null;
                       return (
-                        <div key={session.sessionId} className="analysis-tree-node">
+                        <div key={session.sessionId} className="analysis-tree-node" data-analysis-tree-kind="session">
                           <button
                             type="button"
                             className={session.sessionId === selectedSessionId ? "analysis-tree-row is-active" : "analysis-tree-row"}
+                            data-analysis-tree-kind="session"
+                            data-analysis-session-id={session.sessionId}
                             onClick={() => {
                               onSelectSession(session.sessionId);
                               setCollapsedSessions((current) => ({
@@ -1527,6 +1617,8 @@ function SessionDetailPage({
                                   key={section.sectionId}
                                   type="button"
                                   className={section.sectionId === selectedSectionId ? "analysis-tree-leaf is-active" : "analysis-tree-leaf"}
+                                  data-analysis-tree-kind="section"
+                                  data-analysis-section-id={section.sectionId}
                                   onClick={() => onSelectSection(section.sectionId)}
                                 >
                                   <span className="analysis-tree-content">
@@ -2284,6 +2376,91 @@ function formatMetricValue(value: number, hint?: string | null): string {
 function trimCompactValue(value: number, suffix: "K" | "M" | "B"): string {
   const rounded = Math.round(value * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}${suffix}`;
+}
+
+function getSessionBrowserSortMetricOptions(
+  sortKey: SessionBrowserSortKey
+): Array<{ value: SessionBrowserSortMetric; label: string }> {
+  if (sortKey === "messages") {
+    return [
+      { value: "user", label: "User" },
+      { value: "assistant", label: "Assistant" },
+      { value: "tool", label: "Tool" }
+    ];
+  }
+  if (sortKey === "hours") {
+    return [
+      { value: "user", label: "User" },
+      { value: "model", label: "Model" },
+      { value: "tool", label: "Tool" }
+    ];
+  }
+  return [];
+}
+
+function normalizeSessionBrowserSortMetric(
+  sortKey: SessionBrowserSortKey,
+  metric: SessionBrowserSortMetric
+): SessionBrowserSortMetric {
+  const options = getSessionBrowserSortMetricOptions(sortKey);
+  if (options.length === 0) {
+    return metric;
+  }
+  return options.some((option) => option.value === metric) ? metric : options[0]!.value;
+}
+
+function sortSessionBrowserItems<Item>(
+  items: Item[],
+  sortKey: SessionBrowserSortKey,
+  sortDirection: SessionBrowserSortDirection,
+  sortMetric: SessionBrowserSortMetric,
+  getAlphabeticLabel: (item: Item) => string,
+  getSegments: (item: Item) => SessionBrowserBreakdownSegment[]
+): Item[] {
+  const normalizedMetric = normalizeSessionBrowserSortMetric(sortKey, sortMetric);
+
+  return [...items]
+    .map((item, index) => ({
+      item,
+      index,
+      label: getAlphabeticLabel(item),
+      metricValue:
+        sortKey === "alphabetic" ? null : getSessionBrowserSortMetricValue(getSegments(item), normalizedMetric)
+    }))
+    .sort((left, right) => {
+      if (sortKey !== "alphabetic") {
+        const leftKnown = left.metricValue != null;
+        const rightKnown = right.metricValue != null;
+        if (leftKnown && rightKnown && left.metricValue !== right.metricValue) {
+          return sortDirection === "asc"
+            ? (left.metricValue ?? 0) - (right.metricValue ?? 0)
+            : (right.metricValue ?? 0) - (left.metricValue ?? 0);
+        }
+        if (leftKnown !== rightKnown) {
+          return leftKnown ? -1 : 1;
+        }
+      }
+
+      const labelCompare = left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" });
+      if (labelCompare !== 0) {
+        return sortDirection === "asc" ? labelCompare : -labelCompare;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.item);
+}
+
+function getSessionBrowserSortMetricValue(
+  segments: SessionBrowserBreakdownSegment[],
+  metric: SessionBrowserSortMetric
+): number | null {
+  const segmentLabel =
+    metric === "tool" ? "Tool" : metric === "user" ? "User" : metric === "assistant" || metric === "model" ? "Assistant" : null;
+  if (!segmentLabel) {
+    return null;
+  }
+  const value = segments.find((segment) => segment.label === segmentLabel)?.value;
+  return typeof value === "number" && value > 0 ? value : null;
 }
 
 function buildSectionBrowserBreakdown(
