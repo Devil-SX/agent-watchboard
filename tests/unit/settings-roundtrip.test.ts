@@ -22,6 +22,7 @@ test("default settings survive a write-then-read round-trip", async () => {
   assert.equal(readBack.wslBoardPath, written.wslBoardPath);
   assert.equal(readBack.terminalFontFamily, written.terminalFontFamily);
   assert.equal(readBack.terminalFontSize, written.terminalFontSize);
+  assert.deepEqual(readBack.workspaceCollapsedPathGroups, written.workspaceCollapsedPathGroups);
   assert.equal(readBack.activeMainTab, written.activeMainTab);
   assert.deepEqual(readBack.skillsPane, written.skillsPane);
   assert.deepEqual(readBack.agentConfigPane, written.agentConfigPane);
@@ -79,6 +80,7 @@ test("missing analysisPane field gets filled with defaults on read", async () =>
   assert.equal(readBack.analysisPane.location, "host");
   assert.equal(readBack.analysisPane.selectedSessionId, null);
   assert.ok(readBack.analysisPane.queryText.length > 0, "queryText should have default SQL");
+  assert.deepEqual(readBack.workspaceCollapsedPathGroups, {});
 
   // Similarly, skillsPane should be filled
   assert.equal(readBack.skillsPane.familyFilter, "all");
@@ -122,4 +124,23 @@ test("reading settings with a stale structure triggers a self-repair write that 
   assert.ok(repairedRaw.skillsPane, "repaired file should include skillsPane");
   // updatedAt is refreshed by writeAppSettings
   assert.notEqual(repairedRaw.updatedAt, "2020-01-01T00:00:00.000Z");
+});
+
+test("collapsed workspace path groups survive a write-then-read round-trip", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "watchboard-settings-rt-"));
+  const settingsPath = join(dir, "settings.json");
+
+  const defaults = createDefaultAppSettings({
+    workspaceCollapsedPathGroups: {
+      "/repo/a": true,
+      "/repo/b": false
+    }
+  });
+  await writeAppSettings(defaults, settingsPath);
+  const readBack = await readAppSettings(settingsPath);
+
+  assert.deepEqual(readBack.workspaceCollapsedPathGroups, {
+    "/repo/a": true,
+    "/repo/b": false
+  });
 });

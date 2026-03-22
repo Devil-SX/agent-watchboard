@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
+import {
+  createIdleAgentConfigValidation,
+  formatAgentConfigLabel,
+  highlightAgentConfigContent,
+  validateAgentConfigContent
+} from "@renderer/components/agentConfigEditor";
 import { ChatPromptEditor } from "@renderer/components/ChatPromptEditor";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
@@ -12,6 +18,7 @@ import { type TerminalViewState } from "@renderer/components/terminalViewState";
 import type {
   AgentConfigDocument,
   AgentConfigEntry,
+  AgentConfigFileId,
   AgentConfigFamily,
   AgentConfigPaneState,
   AgentPathLocation,
@@ -48,20 +55,25 @@ export function AgentConfigPanel({
   onTerminalViewStateChange,
   onViewStateChange
 }: Props): ReactElement {
-  const [activeConfigId, setActiveConfigId] = useState<string>(viewState.activeConfigId);
+  const [activeConfigId, setActiveConfigId] = useState<AgentConfigFileId>(viewState.activeConfigId);
   const [location, setLocation] = useState<AgentPathLocation>(viewState.location);
   const [familyFilter, setFamilyFilter] = useState<"all" | AgentConfigFamily>(viewState.familyFilter);
   const [isChatOpen, setIsChatOpen] = useState(viewState.isChatOpen);
   const [chatAgent, setChatAgent] = useState<SkillsChatAgent>(viewState.chatAgent);
+  const [skipDangerous, setSkipDangerous] = useState(viewState.skipDangerous);
   const [chatPrompts, setChatPrompts] = useState(viewState.chatPrompts);
   const [entries, setEntries] = useState<AgentConfigEntry[]>([]);
   const [originalContent, setOriginalContent] = useState("");
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
+  const [reading, setReading] = useState(false);
   const [error, setError] = useState("");
+  const [saveWarning, setSaveWarning] = useState("");
   const [loading, setLoading] = useState(true);
   const persistReadyRef = useRef(false);
   const isApplyingViewStateRef = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const highlightRef = useRef<HTMLPreElement | null>(null);
 
   const isWindows = diagnostics?.platform === "win32";
   const visibleEntries = useMemo(
@@ -69,7 +81,18 @@ export function AgentConfigPanel({
     [entries, familyFilter]
   );
   const activeEntry = entries.find((entry) => entry.id === activeConfigId) ?? null;
+  const activeFormat = activeEntry?.format ?? null;
   const isDirty = editContent !== originalContent;
+  const validation = useMemo(() => {
+    if (!activeFormat) {
+      return createIdleAgentConfigValidation(null, "Select a config to inspect.");
+    }
+    if (reading) {
+      return createIdleAgentConfigValidation(activeFormat, `Loading ${formatAgentConfigLabel(activeFormat)} config...`);
+    }
+    return validateAgentConfigContent(editContent, activeFormat);
+  }, [activeFormat, editContent, reading]);
+  const highlightedContent = useMemo(() => highlightAgentConfigContent(editContent, activeFormat), [activeFormat, editContent]);
   const normalizedActiveConfigId =
     activeConfigId === "codex-config" || activeConfigId === "codex-auth" || activeConfigId === "claude-settings"
       ? activeConfigId
@@ -80,6 +103,7 @@ export function AgentConfigPanel({
     activeConfigId: normalizedActiveConfigId,
     isChatOpen,
     chatAgent,
+    skipDangerous,
     chatPrompts
   };
 
@@ -90,6 +114,7 @@ export function AgentConfigPanel({
     setActiveConfigId(viewState.activeConfigId);
     setIsChatOpen(viewState.isChatOpen);
     setChatAgent(viewState.chatAgent);
+    setSkipDangerous(viewState.skipDangerous);
     setChatPrompts(viewState.chatPrompts);
   }, [viewState]);
 
@@ -101,7 +126,7 @@ export function AgentConfigPanel({
       .then((nextEntries) => {
         setEntries(nextEntries);
         if (!nextEntries.some((entry) => entry.id === activeConfigId)) {
-          setActiveConfigId(nextEntries[0]?.id ?? "");
+          setActiveConfigId(nextEntries[0]?.id ?? activeConfigId);
         }
       })
       .catch((loadError: unknown) => {
@@ -117,27 +142,37 @@ export function AgentConfigPanel({
     if (!activeConfigId) {
       setOriginalContent("");
       setEditContent("");
+      setSaveWarning("");
       return;
     }
+    setReading(true);
     setError("");
     void window.watchboard
       .readAgentConfig(activeConfigId, location)
       .then((document: AgentConfigDocument) => {
         setOriginalContent(document.content);
         setEditContent(document.content);
+        setSaveWarning("");
       })
       .catch((readError: unknown) => {
         setOriginalContent("");
         setEditContent("");
         setError(readError instanceof Error ? readError.message : String(readError));
+        setSaveWarning("");
+      })
+      .finally(() => {
+        setReading(false);
       });
   }, [activeConfigId, location]);
 
   useEffect(() => {
+    if (visibleEntries.length === 0) {
+      return;
+    }
     if (visibleEntries.some((entry) => entry.id === activeConfigId)) {
       return;
     }
-    setActiveConfigId(visibleEntries[0]?.id ?? "");
+    setActiveConfigId(visibleEntries[0]?.id ?? activeConfigId);
   }, [activeConfigId, visibleEntries]);
 
   useEffect(() => {
@@ -162,10 +197,36 @@ export function AgentConfigPanel({
       return;
     }
     void onViewStateChange(currentPaneState);
-  }, [activeConfigId, chatAgent, chatPrompts, currentPaneState, familyFilter, isChatOpen, location, onViewStateChange, viewState]);
+  }, [activeConfigId, chatAgent, skipDangerous, chatPrompts, currentPaneState, familyFilter, isChatOpen, location, onViewStateChange, viewState]);
+
+  useEffect(() => {
+    setSaveWarning("");
+  }, [activeConfigId, location]);
+
+  function syncEditorScroll(): void {
+    if (!textareaRef.current || !highlightRef.current) {
+      return;
+    }
+    highlightRef.current.scrollTop = textareaRef.current.scrollTop;
+    highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
+  }
+
+  function handleEditContentChange(value: string): void {
+    setEditContent(value);
+    if (saveWarning) {
+      setSaveWarning("");
+    }
+    if (error) {
+      setError("");
+    }
+  }
 
   async function handleSave(): Promise<void> {
     if (!activeConfigId) {
+      return;
+    }
+    if (validation.status === "invalid" && !saveWarning) {
+      setSaveWarning(`Invalid ${formatAgentConfigLabel(validation.format)} syntax. Click Save again to write it anyway.`);
       return;
     }
     setSaving(true);
@@ -173,6 +234,7 @@ export function AgentConfigPanel({
     try {
       await window.watchboard.writeAgentConfig(activeConfigId, location, editContent);
       setOriginalContent(editContent);
+      setSaveWarning("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -183,6 +245,17 @@ export function AgentConfigPanel({
   function handleDiscard(): void {
     setEditContent(originalContent);
     setError("");
+    setSaveWarning("");
+    requestAnimationFrame(() => {
+      if (textareaRef.current) {
+        textareaRef.current.scrollTop = 0;
+        textareaRef.current.scrollLeft = 0;
+      }
+      if (highlightRef.current) {
+        highlightRef.current.scrollTop = 0;
+        highlightRef.current.scrollLeft = 0;
+      }
+    });
   }
 
   return (
@@ -225,6 +298,13 @@ export function AgentConfigPanel({
               onChange={setChatAgent}
             />
           ) : null}
+          {isChatOpen ? (
+            <CompactToggleButton
+              label="Skip"
+              value={skipDangerous ? "Dangerous" : "Safe"}
+              onClick={() => setSkipDangerous((current) => !current)}
+            />
+          ) : null}
         </div>
       </header>
 
@@ -245,16 +325,46 @@ export function AgentConfigPanel({
           </nav>
 
           {error ? <div className="toolbar-error">{error}</div> : null}
+          {saveWarning ? <div className="toolbar-error">{saveWarning}</div> : null}
           {loading ? <div className="panel-empty"><p>Loading configs...</p></div> : null}
 
           <div className="agent-config-editor">
-            <textarea
-              className="agent-config-textarea"
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              spellCheck={false}
-              disabled={!activeEntry}
-            />
+            <div className="agent-config-editor-status">
+              <div className="agent-config-editor-status-copy">
+                {activeFormat ? <span className="entry-badge">{formatAgentConfigLabel(activeFormat)}</span> : null}
+                <span
+                  className={[
+                    "path-validation",
+                    validation.status === "valid"
+                      ? "is-valid"
+                      : validation.status === "invalid"
+                        ? "is-invalid"
+                        : "is-loading"
+                  ].join(" ")}
+                >
+                  {validation.summary}
+                </span>
+              </div>
+              {validation.detail ? <span className="agent-config-validation-detail">{validation.detail}</span> : null}
+            </div>
+            <div className="agent-config-editor-surface">
+              <pre
+                ref={highlightRef}
+                aria-hidden="true"
+                className="agent-config-highlight"
+                dangerouslySetInnerHTML={{ __html: highlightedContent || " " }}
+              />
+              <textarea
+                ref={textareaRef}
+                className="agent-config-textarea"
+                value={editContent}
+                onChange={(e) => handleEditContentChange(e.target.value)}
+                onScroll={syncEditorScroll}
+                spellCheck={false}
+                disabled={!activeEntry || reading}
+                wrap="off"
+              />
+            </div>
           </div>
 
           <footer className="agent-config-footer">
@@ -262,15 +372,15 @@ export function AgentConfigPanel({
               <button
                 type="button"
                 className="primary-button"
-                disabled={!activeEntry || !isDirty || saving}
+                disabled={!activeEntry || !isDirty || saving || reading}
                 onClick={() => void handleSave()}
               >
-                {saving ? "Saving..." : "Save"}
+                {saving ? "Saving..." : validation.status === "invalid" && Boolean(saveWarning) ? "Save Anyway" : "Save"}
               </button>
               <button
                 type="button"
                 className="secondary-button"
-                disabled={!isDirty}
+                disabled={!isDirty || reading}
                 onClick={handleDiscard}
               >
                 Discard
@@ -310,6 +420,9 @@ export function AgentConfigPanel({
             <div className="entry-meta">
               <span className="entry-meta-label">Scope</span>
               <code>Scoped config session in ~</code>
+              <span className={skipDangerous ? "entry-badge doctor-badge-error" : "entry-badge"}>
+                {skipDangerous ? "Skip Dangerous On" : "Skip Dangerous Off"}
+              </span>
               {chatError ? <span className="toolbar-error">{chatError}</span> : null}
             </div>
             <ChatPromptEditor

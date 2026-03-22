@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Added a syntax-aware config editor with JSON/TOML highlighting, validation feedback, and regression coverage for settings/config round-trips.
+- Added richer analysis session-browser coverage for project/session expansion state, browser metric rendering, and legacy analysis state normalization.
+
+### Changed
+- Changed analysis navigation and browser state handling to support the current overview/session/cross-session layout, cached project-session snapshots, and stacked role breakdown rendering.
+- Changed workspace, skills, and settings controls to use the newer compact control surface, shared prompt settings, and icon-driven filter affordances.
+
 ## [0.13.0] - 2026-03-21
 
 > **Code Stats** | Total: 48,705 lines | Delta: +5,290 (-671) = **+4,619 net** | Change: **+10.48%** vs v0.12.3

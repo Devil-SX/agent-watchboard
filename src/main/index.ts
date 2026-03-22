@@ -1317,6 +1317,7 @@ async function buildAgentConfigEntry(configId: AgentConfigFileId, location: Agen
     id: entry.id,
     label: entry.label,
     family: entry.family,
+    format: entry.format,
     location,
     entryPath,
     resolvedPath,

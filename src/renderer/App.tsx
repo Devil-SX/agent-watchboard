@@ -621,7 +621,12 @@ export function App(): ReactElement {
       skillsPaneScanStateRef.current
     );
     const nextSkillsKey = skillsIsChatOpen
-      ? buildSkillsChatSessionKey(settingsDraft.skillsPane.chatAgent, settingsDraft.skillsPane.location, platform)
+      ? buildSkillsChatSessionKey(
+          settingsDraft.skillsPane.chatAgent,
+          settingsDraft.skillsPane.location,
+          platform,
+          settingsDraft.skillsPane.skipDangerous
+        )
       : null;
 
     if (!skillsIsChatOpen) {
@@ -634,7 +639,8 @@ export function App(): ReactElement {
           settingsDraft.skillsPane.chatAgent,
           settingsDraft.skillsPane.location,
           platform,
-          nextPrompt
+          nextPrompt,
+          settingsDraft.skillsPane.skipDangerous
         );
         const previous = current;
         skillsChatKeyRef.current = nextSkillsKey;
@@ -651,7 +657,8 @@ export function App(): ReactElement {
             settingsDraft.skillsPane.chatAgent,
             settingsDraft.skillsPane.location,
             platform,
-            nextPrompt
+            nextPrompt,
+            settingsDraft.skillsPane.skipDangerous
           );
           skillsChatKeyRef.current = nextSkillsKey;
           setSkillsChatInstance(nextInstance);
@@ -664,7 +671,13 @@ export function App(): ReactElement {
     const configIsChatOpen = settingsDraft.agentConfigPane.isChatOpen;
     const shouldAllowConfigChatStartup = shouldStartPaneChatSession(activeTab, "config", configIsChatOpen);
     const nextConfigKey = configIsChatOpen
-      ? buildPaneChatSessionKey("config", settingsDraft.agentConfigPane.chatAgent, settingsDraft.agentConfigPane.location, platform)
+      ? buildPaneChatSessionKey(
+          "config",
+          settingsDraft.agentConfigPane.chatAgent,
+          settingsDraft.agentConfigPane.location,
+          platform,
+          settingsDraft.agentConfigPane.skipDangerous
+        )
       : null;
 
     if (!configIsChatOpen) {
@@ -684,7 +697,8 @@ export function App(): ReactElement {
         settingsDraft.agentConfigPane.chatAgent,
         settingsDraft.agentConfigPane.location,
         platform,
-        configPrompt
+        configPrompt,
+        settingsDraft.agentConfigPane.skipDangerous
       );
       const previous = currentConfig;
       configChatKeyRef.current = nextConfigKey;
@@ -704,7 +718,8 @@ export function App(): ReactElement {
         settingsDraft.agentConfigPane.chatAgent,
         settingsDraft.agentConfigPane.location,
         platform,
-        configPrompt
+        configPrompt,
+        settingsDraft.agentConfigPane.skipDangerous
       );
       configChatKeyRef.current = nextConfigKey;
       setConfigChatInstance(nextInstance);
@@ -957,6 +972,7 @@ export function App(): ReactElement {
       Pick<
         AppSettings,
         "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "workspaceInstanceVisibilityFilterEnabled"
+        | "workspaceCollapsedPathGroups"
         | "activeMainTab" | "boardPanelCollapsed" | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
       >
     >
@@ -986,7 +1002,11 @@ export function App(): ReactElement {
 
   async function handleWorkspaceSidebarPreferenceChange(
     update: Partial<
-      Pick<AppSettings, "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "workspaceInstanceVisibilityFilterEnabled">
+      Pick<
+        AppSettings,
+        "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "workspaceInstanceVisibilityFilterEnabled"
+        | "workspaceCollapsedPathGroups"
+      >
     >
   ): Promise<void> {
     await persistSettingsPreference(update);
@@ -1220,6 +1240,24 @@ export function App(): ReactElement {
     setSettingsDraft({
       ...settingsDraft,
       [field]: value,
+      updatedAt: new Date().toISOString()
+    });
+    setIsSettingsDirty(true);
+  }
+
+  function handleSkillsChatPromptChange(agent: "codex" | "claude", prompt: AppSettings["skillsPane"]["chatPrompts"]["codex"]): void {
+    if (!settingsDraft) {
+      return;
+    }
+    setSettingsDraft({
+      ...settingsDraft,
+      skillsPane: {
+        ...settingsDraft.skillsPane,
+        chatPrompts: {
+          ...settingsDraft.skillsPane.chatPrompts,
+          [agent]: prompt
+        }
+      },
       updatedAt: new Date().toISOString()
     });
     setIsSettingsDirty(true);
@@ -1568,6 +1606,7 @@ export function App(): ReactElement {
               filterMode={settingsDraft.workspaceFilterMode}
               environmentFilterMode={settingsDraft.workspaceEnvironmentFilterMode}
               instanceVisibilityFilterEnabled={settingsDraft.workspaceInstanceVisibilityFilterEnabled}
+              collapsedPathGroups={settingsDraft.workspaceCollapsedPathGroups}
               isDeleteMode={isDeleteMode}
               selectedDeleteIds={deleteSelection}
               onCreateWorkspace={() => void handleCreateWorkspace()}
@@ -1580,6 +1619,9 @@ export function App(): ReactElement {
               }
               onInstanceVisibilityFilterChange={(enabled: boolean) =>
                 void handleWorkspaceSidebarPreferenceChange({ workspaceInstanceVisibilityFilterEnabled: enabled })
+              }
+              onCollapsedPathGroupsChange={(collapsedPathGroups) =>
+                void handleWorkspaceSidebarPreferenceChange({ workspaceCollapsedPathGroups: collapsedPathGroups })
               }
               onToggleDeleteMode={() => {
                 setIsDeleteMode(true);
@@ -1706,6 +1748,7 @@ export function App(): ReactElement {
               onDeleteSshEnvironment={handleDeleteSshEnvironment}
               onSshSecretChange={handleSshSecretDraftChange}
               onTestSshEnvironment={(environmentId) => void handleTestSshEnvironment(environmentId)}
+              onUpdateSkillsChatPrompt={handleSkillsChatPromptChange}
               onViewStateChange={(state) => void handleSettingsPaneStateChange(state)}
               onOpenDebugPath={handleOpenDebugPath}
               onSave={() => void handleSettingsSave()}

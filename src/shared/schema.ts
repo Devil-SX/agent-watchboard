@@ -110,6 +110,7 @@ export const SkillsPaneStateSchema = z.object({
   selectedSkillMdPath: z.string().nullable().default(null),
   isChatOpen: z.boolean().default(false),
   chatAgent: z.enum(["codex", "claude"]).default("codex"),
+  skipDangerous: z.boolean().default(false),
   chatPrompts: ChatPromptSetSchema.default({
     codex: {
       mode: "default",
@@ -128,6 +129,7 @@ export const AgentConfigPaneStateSchema = z.object({
   activeConfigId: z.enum(["codex-config", "codex-auth", "claude-settings"]).default("codex-config"),
   isChatOpen: z.boolean().default(false),
   chatAgent: z.enum(["codex", "claude"]).default("codex"),
+  skipDangerous: z.boolean().default(false),
   chatPrompts: ChatPromptSetSchema.default({
     codex: {
       mode: "default",
@@ -157,7 +159,7 @@ export const AnalysisPaneStateSchema = z.object({
   executedQueryText: z.string().default(DEFAULT_ANALYSIS_QUERY)
 });
 export type AnalysisPaneState = z.infer<typeof AnalysisPaneStateSchema>;
-export const SettingsCategorySchema = z.enum(["board", "terminal", "environments", "storage", "debug"]);
+export const SettingsCategorySchema = z.enum(["board", "terminal", "chat", "environments", "storage", "debug"]);
 export type SettingsCategory = z.infer<typeof SettingsCategorySchema>;
 export const SettingsPaneStateSchema = z.object({
   activeCategory: SettingsCategorySchema.default("board")
@@ -194,6 +196,7 @@ export const AppSettingsSchema = z.object({
   workspaceFilterMode: WorkspaceFilterModeSchema.default("all"),
   workspaceEnvironmentFilterMode: WorkspaceEnvironmentFilterModeSchema.default("all"),
   workspaceInstanceVisibilityFilterEnabled: z.boolean().default(false),
+  workspaceCollapsedPathGroups: z.record(z.string(), z.boolean()).default({}),
   sshEnvironments: z.array(SshEnvironmentSchema).default([]),
   activeMainTab: MainViewTabSchema.default("terminal"),
   skillsPane: SkillsPaneStateSchema.default({
@@ -203,6 +206,7 @@ export const AppSettingsSchema = z.object({
     selectedSkillMdPath: null,
     isChatOpen: false,
     chatAgent: "codex",
+    skipDangerous: false,
     chatPrompts: {
       codex: {
         mode: "default",
@@ -220,6 +224,7 @@ export const AppSettingsSchema = z.object({
     activeConfigId: "codex-config",
     isChatOpen: false,
     chatAgent: "codex",
+    skipDangerous: false,
     chatPrompts: {
       codex: {
         mode: "default",
@@ -313,16 +318,19 @@ export type SkillEntry = {
   skillMdPath: string;
 };
 
+export type AgentConfigFormat = "json" | "toml";
+
 export const AGENT_CONFIG_FILES = [
-  { id: "codex-config", label: "Codex Config", family: "codex", path: "~/.codex/config.toml" },
-  { id: "codex-auth", label: "Codex Auth", family: "codex", path: "~/.codex/auth.json" },
-  { id: "claude-settings", label: "Claude Settings", family: "claude", path: "~/.claude/settings.json" }
+  { id: "codex-config", label: "Codex Config", family: "codex", format: "toml", path: "~/.codex/config.toml" },
+  { id: "codex-auth", label: "Codex Auth", family: "codex", format: "json", path: "~/.codex/auth.json" },
+  { id: "claude-settings", label: "Claude Settings", family: "claude", format: "json", path: "~/.claude/settings.json" }
 ] as const;
 export type AgentConfigFileId = (typeof AGENT_CONFIG_FILES)[number]["id"];
 export type AgentConfigEntry = {
   id: AgentConfigFileId;
   label: string;
   family: AgentConfigFamily;
+  format: AgentConfigFormat;
   location: AgentPathLocation;
   entryPath: string;
   resolvedPath: string;

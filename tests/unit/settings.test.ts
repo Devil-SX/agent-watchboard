@@ -32,8 +32,10 @@ test("readAppSettings migrates a legacy single boardPath into the selected env s
   assert.equal(settings.activeMainTab, "terminal");
   assert.equal(settings.skillsPane.location, "host");
   assert.equal(settings.skillsPane.chatPrompts.codex.mode, "default");
+  assert.equal(settings.skillsPane.skipDangerous, false);
   assert.equal(settings.agentConfigPane.activeConfigId, "codex-config");
   assert.equal(settings.agentConfigPane.isChatOpen, false);
+  assert.equal(settings.agentConfigPane.skipDangerous, false);
   assert.equal(settings.analysisPane.activeSection, "overview");
   assert.equal(settings.settingsPane.activeCategory, "board");
   assert.deepEqual(settings.sshEnvironments, []);
@@ -56,6 +58,9 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
       workspaceSortMode: "last-launch",
       workspaceFilterMode: "all",
       workspaceEnvironmentFilterMode: "all",
+      workspaceCollapsedPathGroups: {
+        "/repo/demo": true
+      },
       sshEnvironments: [
         {
           id: "env-1",
@@ -80,6 +85,7 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
         selectedSkillMdPath: "/tmp/SKILL.md",
         isChatOpen: true,
         chatAgent: "claude",
+        skipDangerous: true,
         chatPrompts: {
           codex: {
             mode: "default",
@@ -97,6 +103,7 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
         activeConfigId: "claude-settings",
         isChatOpen: true,
         chatAgent: "claude",
+        skipDangerous: true,
         chatPrompts: {
           codex: {
             mode: "default",
@@ -126,9 +133,12 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
   assert.equal(saved.hostBoardPath, "~/host-board.json");
   assert.equal(saved.wslBoardPath, "~/wsl-board.json");
   assert.equal(saved.activeMainTab, "skills");
+  assert.deepEqual(saved.workspaceCollapsedPathGroups, { "/repo/demo": true });
   assert.equal(saved.skillsPane.familyFilter, "claude");
+  assert.equal(saved.skillsPane.skipDangerous, true);
   assert.equal(saved.agentConfigPane.activeConfigId, "claude-settings");
   assert.equal(saved.agentConfigPane.isChatOpen, true);
+  assert.equal(saved.agentConfigPane.skipDangerous, true);
   assert.equal(saved.agentConfigPane.chatPrompts.claude.mode, "custom");
   assert.equal(saved.analysisPane.activeSection, "query");
   assert.equal(saved.settingsPane.activeCategory, "environments");
@@ -155,6 +165,7 @@ test("writeAppSettings serializes concurrent writes to the same file", async () 
     workspaceSortMode: "last-launch" as const,
     workspaceFilterMode: "all" as const,
     workspaceEnvironmentFilterMode: "all" as const,
+    workspaceCollapsedPathGroups: {},
     sshEnvironments: [],
     activeMainTab: "terminal" as const,
     skillsPane: {
@@ -164,6 +175,7 @@ test("writeAppSettings serializes concurrent writes to the same file", async () 
       selectedSkillMdPath: null,
       isChatOpen: false,
       chatAgent: "codex" as const,
+      skipDangerous: false,
       chatPrompts: {
         codex: { mode: "default" as const, text: "" },
         claude: { mode: "default" as const, text: "" }
@@ -175,6 +187,7 @@ test("writeAppSettings serializes concurrent writes to the same file", async () 
       activeConfigId: "codex-config" as const,
       isChatOpen: false,
       chatAgent: "codex" as const,
+      skipDangerous: false,
       chatPrompts: {
         codex: { mode: "default" as const, text: "" },
         claude: { mode: "default" as const, text: "" }

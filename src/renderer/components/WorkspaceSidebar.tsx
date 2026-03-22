@@ -8,9 +8,13 @@ import {
   ClaudeIcon,
   CodexIcon,
   EyeIcon,
+  EyeOffIcon,
+  HostIcon,
   IconButton,
+  ListIcon,
   PlusIcon,
-  TrashIcon
+  TrashIcon,
+  WslIcon
 } from "@renderer/components/IconButton";
 import { LocationBadge } from "@renderer/components/LocationBadge";
 import { StatusOrbit } from "@renderer/components/StatusOrbit";
@@ -40,6 +44,7 @@ type Props = {
   filterMode: WorkspaceFilterMode;
   environmentFilterMode: WorkspaceEnvironmentFilterMode;
   instanceVisibilityFilterEnabled: boolean;
+  collapsedPathGroups: Record<string, boolean>;
   isDeleteMode: boolean;
   selectedDeleteIds: string[];
   onCreateWorkspace: () => void;
@@ -47,6 +52,7 @@ type Props = {
   onFilterModeChange: (mode: WorkspaceFilterMode) => void;
   onEnvironmentFilterModeChange: (mode: WorkspaceEnvironmentFilterMode) => void;
   onInstanceVisibilityFilterChange: (enabled: boolean) => void;
+  onCollapsedPathGroupsChange: (collapsedPathGroups: Record<string, boolean>) => void;
   onToggleDeleteMode: () => void;
   onCancelDeleteMode: () => void;
   onDeleteSelected: () => void;
@@ -82,6 +88,7 @@ export function WorkspaceSidebar({
   filterMode,
   environmentFilterMode,
   instanceVisibilityFilterEnabled,
+  collapsedPathGroups,
   isDeleteMode,
   selectedDeleteIds,
   onCreateWorkspace,
@@ -89,6 +96,7 @@ export function WorkspaceSidebar({
   onFilterModeChange,
   onEnvironmentFilterModeChange,
   onInstanceVisibilityFilterChange,
+  onCollapsedPathGroupsChange,
   onToggleDeleteMode,
   onCancelDeleteMode,
   onDeleteSelected,
@@ -153,27 +161,40 @@ export function WorkspaceSidebar({
           {!isDeleteMode ? (
             <div className="workspace-sidebar-controls">
               <CompactToggleButton
+                className="workspace-compact-control"
                 label="Sort"
+                hideLabel
+                ariaLabel={`Sort workspaces: ${sortMode === "last-launch" ? "last launch" : "alphabetical"}`}
+                icon={<ListIcon />}
                 value={sortMode === "last-launch" ? "Last Launch" : "A-Z"}
                 onClick={() => onSortModeChange(sortMode === "last-launch" ? "alphabetical" : "last-launch")}
               />
               <CompactDropdown
+                className="workspace-compact-control"
+                icon={filterMode === "codex" ? <CodexIcon /> : filterMode === "claude" ? <ClaudeIcon /> : undefined}
                 label="Agent"
+                hideLabel
+                ariaLabel="Filter workspaces by agent"
                 value={filterMode}
                 options={WORKSPACE_FILTER_OPTIONS}
                 onChange={onFilterModeChange}
               />
               <CompactDropdown
+                className="workspace-compact-control"
+                icon={environmentFilterMode === "host" ? <HostIcon /> : environmentFilterMode === "wsl" ? <WslIcon /> : undefined}
                 label="Env"
+                hideLabel
+                ariaLabel="Filter workspaces by environment"
                 value={environmentFilterMode}
                 options={WORKSPACE_ENVIRONMENT_FILTER_OPTIONS}
                 onChange={onEnvironmentFilterModeChange}
               />
-              <IconButton
-                className={instanceVisibilityFilterEnabled ? "workspace-instance-filter-toggle is-active" : "workspace-instance-filter-toggle"}
-                label="Show Templates With Instances Only"
-                icon={<EyeIcon />}
-                isActive={instanceVisibilityFilterEnabled}
+              <CompactToggleButton
+                className={instanceVisibilityFilterEnabled ? "workspace-compact-control is-active" : "workspace-compact-control"}
+                label="Instance"
+                hideLabel
+                ariaLabel={instanceVisibilityFilterEnabled ? "Hide templates without instances" : "Show all templates"}
+                icon={instanceVisibilityFilterEnabled ? <EyeIcon /> : <EyeOffIcon />}
                 onClick={() => onInstanceVisibilityFilterChange(!instanceVisibilityFilterEnabled)}
               />
             </div>
@@ -206,10 +227,24 @@ export function WorkspaceSidebar({
       <div className="workspace-list" role="list">
         {visiblePathGroups.map((group) => (
           <section key={group.key} className="workspace-path-group">
-            <div className="workspace-path-row" title={group.label}>
+            <button
+              type="button"
+              className={collapsedPathGroups[group.key] ? "workspace-path-row is-collapsed" : "workspace-path-row"}
+              title={group.label}
+              onClick={() =>
+                onCollapsedPathGroupsChange({
+                  ...collapsedPathGroups,
+                  [group.key]: !collapsedPathGroups[group.key]
+                })
+              }
+            >
+              <span className={collapsedPathGroups[group.key] ? "workspace-path-glyph is-collapsed" : "workspace-path-glyph"} aria-hidden="true">
+                <ChevronDownIcon />
+              </span>
               <span className="workspace-path-label">{group.label}</span>
-            </div>
-            {group.templates.map(({ workspace, instances }) => {
+              <span className="workspace-path-count">{group.templates.length}</span>
+            </button>
+            {!collapsedPathGroups[group.key] ? group.templates.map(({ workspace, instances }) => {
               const workspaceStatus = resolveWorkspaceVisualState(instances, sessions);
               const isSelected = workspace.id === selectedWorkspaceId;
               const hasInstances = instances.length > 0;
@@ -384,7 +419,7 @@ export function WorkspaceSidebar({
                   ) : null}
                 </div>
               );
-            })}
+            }) : null}
           </section>
         ))}
         {!isDeleteMode && visiblePathGroups.length === 0 ? (
@@ -426,15 +461,15 @@ export function WorkspaceSidebar({
 
 const WORKSPACE_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceFilterMode; icon?: ReactNode; content?: ReactNode }> = [
   { label: "All", value: "all" },
-  { label: "Codex", value: "codex", content: <AgentBadge agent="codex" /> },
-  { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> },
+  { label: "Codex", value: "codex", content: <AgentBadge agent="codex" showLabel={false} /> },
+  { label: "Claude", value: "claude", content: <AgentBadge agent="claude" showLabel={false} /> },
   { label: "Other", value: "other" }
 ];
 
 const WORKSPACE_ENVIRONMENT_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceEnvironmentFilterMode; content?: ReactNode }> = [
   { label: "All", value: "all" },
-  { label: "Host", value: "host", content: <LocationBadge location="host" /> },
-  { label: "WSL", value: "wsl", content: <LocationBadge location="wsl" /> }
+  { label: "Host", value: "host", content: <LocationBadge location="host" tone="strong" showLabel={false} /> },
+  { label: "WSL", value: "wsl", content: <LocationBadge location="wsl" tone="strong" showLabel={false} /> }
 ];
 
 function groupInstances(instances: TerminalInstance[]): Map<string, TerminalInstance[]> {

@@ -4,6 +4,7 @@ type SettingsPreferenceUpdate = Partial<
   Pick<
     AppSettings,
     "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "workspaceInstanceVisibilityFilterEnabled"
+    | "workspaceCollapsedPathGroups"
     | "activeMainTab" | "boardPanelCollapsed"
     | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
   >
@@ -13,6 +14,7 @@ export function applyOptimisticSettingsPreference<
   K extends keyof Pick<
     AppSettings,
     "workspaceSortMode" | "workspaceFilterMode" | "workspaceEnvironmentFilterMode" | "workspaceInstanceVisibilityFilterEnabled"
+    | "workspaceCollapsedPathGroups"
     | "activeMainTab" | "boardPanelCollapsed"
     | "skillsPane" | "agentConfigPane" | "analysisPane" | "settingsPane"
   >
@@ -30,7 +32,8 @@ const SKILLS_PANE_KEYS = [
   "claudeSubtypeFilter",
   "selectedSkillMdPath",
   "isChatOpen",
-  "chatAgent"
+  "chatAgent",
+  "skipDangerous"
 ] as const satisfies readonly (keyof AppSettings["skillsPane"])[];
 
 const AGENT_CONFIG_PANE_KEYS = [
@@ -38,7 +41,8 @@ const AGENT_CONFIG_PANE_KEYS = [
   "familyFilter",
   "activeConfigId",
   "isChatOpen",
-  "chatAgent"
+  "chatAgent",
+  "skipDangerous"
 ] as const satisfies readonly (keyof AppSettings["agentConfigPane"])[];
 
 const SETTINGS_PANE_KEYS = ["activeCategory"] as const satisfies readonly (keyof AppSettings["settingsPane"])[];

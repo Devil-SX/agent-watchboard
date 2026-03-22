@@ -20,6 +20,7 @@ test("applyOptimisticSettingsPreference immediately updates skills pane agent se
       selectedSkillMdPath: null,
       isChatOpen: true,
       chatAgent: "claude",
+      skipDangerous: false,
       chatPrompts: {
         codex: { mode: "default", text: "" },
         claude: { mode: "default", text: "" }
@@ -93,6 +94,25 @@ test("hasSettingsPreferenceChange detects chat prompt edits for config pane", ()
       }
     }),
     true
+  );
+});
+
+test("pane equality helpers detect skip-dangerous toggles for skills and config chat panes", () => {
+  const baseSettings = createDefaultAppSettings();
+
+  assert.equal(
+    areSkillsPaneStatesEqual(baseSettings.skillsPane, {
+      ...baseSettings.skillsPane,
+      skipDangerous: !baseSettings.skillsPane.skipDangerous
+    }),
+    false
+  );
+  assert.equal(
+    areAgentConfigPaneStatesEqual(baseSettings.agentConfigPane, {
+      ...baseSettings.agentConfigPane,
+      skipDangerous: !baseSettings.agentConfigPane.skipDangerous
+    }),
+    false
   );
 });
 

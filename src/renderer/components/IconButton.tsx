@@ -78,6 +78,17 @@ export function EyeIcon({ className }: IconProps): ReactElement {
   );
 }
 
+export function EyeOffIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.1 2.1 13.9 13.9" />
+      <path d="M6.35 4.47A7.7 7.7 0 0 1 8 4c4.2 0 6.5 4 6.5 4a11.4 11.4 0 0 1-1.83 2.28" />
+      <path d="M9.72 9.72A2.1 2.1 0 0 1 6.28 6.28" />
+      <path d="M12.03 12.03A7.9 7.9 0 0 1 8 13c-4.2 0-6.5-4-6.5-4a11.6 11.6 0 0 1 2.56-2.91" />
+    </svg>
+  );
+}
+
 export function PlusIcon({ className }: IconProps): ReactElement {
   return (
     <svg

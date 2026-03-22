@@ -8,7 +8,6 @@ import type {
   AnalysisContentEntry,
   AnalysisCrossSessionMetrics,
   AnalysisDatabaseInfo,
-  AnalysisQueryResult,
   AnalysisSectionDetail,
   AnalysisSessionDetail,
   AnalysisSessionSectionSummary,
@@ -24,10 +23,10 @@ const sampleSection: AnalysisSessionSectionSummary = {
   endMessageUuid: "msg-2",
   startTimestamp: "2026-03-16T00:00:00.000Z",
   endTimestamp: "2026-03-16T00:02:00.000Z",
-  totalMessages: 2,
+  totalMessages: 3,
   userMessageCount: 1,
   assistantMessageCount: 1,
-  toolCallCount: 0,
+  toolCallCount: 1,
   inputTokens: 300,
   outputTokens: 120,
   totalTokens: 420,
@@ -89,6 +88,47 @@ const sampleSectionDetail: AnalysisSectionDetail = {
   entries: sampleEntries
 };
 
+function createSessionStatistics(
+  sessionId: string,
+  totalTokens: number,
+  totalToolCalls: number,
+  breakdown: Array<{ label: string; value: number }>
+): AnalysisSessionStatistics {
+  return {
+    summary: {
+      ...sampleSessionDetail.summary,
+      sessionId,
+      totalTokens,
+      totalToolCalls
+    },
+    statisticsSizeBytes: 2048,
+    messageBreakdown: breakdown.map((entry) => ({ ...entry, hint: null })),
+    tokenBreakdown: [
+      { label: "Input", value: Math.max(1, Math.round(totalTokens * 0.7)), hint: null },
+      { label: "Output", value: Math.max(1, totalTokens - Math.round(totalTokens * 0.7)), hint: null }
+    ],
+    timeBreakdown: [
+      { label: "Model", value: 120, hint: "s" },
+      { label: "Tool", value: 60, hint: "s" }
+    ],
+    timeDistribution: [],
+    toolCalls: [
+      { label: "exec_command", count: totalToolCalls, totalTokens: 120, successCount: totalToolCalls, errorCount: 0, avgLatencySeconds: 0.8 }
+    ],
+    toolGroups: [
+      { label: "shell", count: totalToolCalls, totalTokens: 120, successCount: totalToolCalls, errorCount: 0, avgLatencySeconds: 0.8 }
+    ],
+    errorCategories: [],
+    errorRecords: [],
+    characterBreakdown: [{ label: "Tool", value: 630, hint: null }],
+    resourceBreakdown: [{ label: "Trajectory Bytes", value: 4096, hint: "B" }],
+    bashCommands: [{ command: "pnpm", count: 3 }],
+    leverageMetrics: [{ label: "Automation Ratio", value: 1.75, hint: null }],
+    activeTimeRatio: 0.95,
+    modelTimeoutCount: 1
+  };
+}
+
 test("AnalysisPanelSurface renders missing database guidance", () => {
   const html = renderToStaticMarkup(
     <AnalysisPanelSurface
@@ -116,8 +156,10 @@ test("AnalysisPanelSurface renders missing database guidance", () => {
       projectError=""
       selectedProjectKey={null}
       projectSessions={[]}
+      projectSessionsByKey={new Map()}
       projectSessionsLoading={false}
       sessionSections={[]}
+      sessionSectionsById={new Map()}
       sessionSectionsLoading={false}
       selectedSectionId={null}
       sessionDetail={null}
@@ -127,6 +169,7 @@ test("AnalysisPanelSurface renders missing database guidance", () => {
       sectionDetailLoading={false}
       sectionDetailError=""
       sessionStatistics={null}
+      sessionStatisticsById={new Map()}
       sessionStatisticsLoading={false}
       sessionStatisticsError=""
       crossSessionMetrics={null}
@@ -162,62 +205,11 @@ test("AnalysisPanelSurface renders cross-session analytics cards", () => {
     totalFiles: 2,
     lastParsedAt: "2026-03-16T00:00:00.000Z"
   };
-  const result: AnalysisQueryResult = {
-    location: "host",
-    columns: ["session_id", "total_tokens"],
-    rows: [["session-1", 1024]],
-    rowCount: 1,
-    truncated: false,
-    durationMs: 12
-  };
-  const sessionStatistics: AnalysisSessionStatistics = {
-    summary: {
-      sessionId: "session-1",
-      logicalSessionId: "logical-1",
-      ecosystem: "codex",
-      projectPath: "/tmp/demo",
-      totalTokens: 1024,
-      totalToolCalls: 7,
-      parsedAt: "2026-03-16T00:00:00.000Z",
-      updatedAt: "2026-03-16T00:05:00.000Z",
-      durationSeconds: 300,
-      automationRatio: 1.75,
-      bottleneck: "Tool"
-    },
-    statisticsSizeBytes: 2048,
-    messageBreakdown: [
-      { label: "User", value: 3, hint: null },
-      { label: "Assistant", value: 9, hint: null }
-    ],
-    tokenBreakdown: [
-      { label: "Input", value: 800, hint: null },
-      { label: "Output", value: 224, hint: null }
-    ],
-    timeBreakdown: [
-      { label: "Model", value: 120, hint: "s" },
-      { label: "Tool", value: 60, hint: "s" }
-    ],
-    timeDistribution: [
-      { label: "Model", value: 54, hint: null },
-      { label: "Tool", value: 27, hint: null }
-    ],
-    toolCalls: [
-      { label: "exec_command", count: 6, totalTokens: 120, successCount: 5, errorCount: 1, avgLatencySeconds: 0.8 }
-    ],
-    toolGroups: [
-      { label: "shell", count: 6, totalTokens: 120, successCount: 5, errorCount: 1, avgLatencySeconds: 0.8 }
-    ],
-    errorCategories: [{ label: "execution", value: 1, hint: null }],
-    errorRecords: [
-      { timestamp: "2026-03-16T00:03:00.000Z", toolName: "exec_command", category: "execution", summary: "command failed", preview: "exit code 1" }
-    ],
-    characterBreakdown: [{ label: "Tool", value: 630, hint: null }],
-    resourceBreakdown: [{ label: "Trajectory Bytes", value: 4096, hint: "B" }],
-    bashCommands: [{ command: "pnpm", count: 3 }],
-    leverageMetrics: [{ label: "Automation Ratio", value: 1.75, hint: null }],
-    activeTimeRatio: 0.95,
-    modelTimeoutCount: 1
-  };
+  const sessionStatistics = createSessionStatistics("session-1", 1024, 7, [
+    { label: "User", value: 3 },
+    { label: "Assistant", value: 9 },
+    { label: "System", value: 2 }
+  ]);
   const crossSessionMetrics: AnalysisCrossSessionMetrics = {
     location: "host",
     totalSessions: 4,
@@ -247,7 +239,7 @@ test("AnalysisPanelSurface renders cross-session analytics cards", () => {
       crossSessionMetrics={crossSessionMetrics}
       crossSessionLoading={false}
       crossSessionError=""
-      queryResult={result}
+      queryResult={null}
       queryError=""
       queryRunning={false}
       sessions={[
@@ -294,7 +286,30 @@ test("AnalysisPanelSurface renders cross-session analytics cards", () => {
         }
       ]}
       projectSessionsLoading={false}
+      projectSessionsByKey={
+        new Map([
+          [
+            "/tmp/demo",
+            [
+              {
+                sessionId: "session-1",
+                logicalSessionId: "logical-1",
+                ecosystem: "codex",
+                projectPath: "/tmp/demo",
+                totalTokens: 1024,
+                totalToolCalls: 7,
+                parsedAt: "2026-03-16T00:00:00.000Z",
+                updatedAt: "2026-03-16T00:05:00.000Z",
+                durationSeconds: 300,
+                automationRatio: 1.75,
+                bottleneck: "Tool"
+              }
+            ]
+          ]
+        ])
+      }
       sessionSections={[sampleSection]}
+      sessionSectionsById={new Map([["session-1", [sampleSection]]])}
       sessionSectionsLoading={false}
       selectedSectionId={null}
       sessionDetail={sampleSessionDetail}
@@ -304,6 +319,7 @@ test("AnalysisPanelSurface renders cross-session analytics cards", () => {
       sectionDetailLoading={false}
       sectionDetailError=""
       selectedSessionId="session-1"
+      sessionStatisticsById={new Map([["session-1", sessionStatistics]])}
       sessionsLoading={false}
       sessionError=""
       onLocationChange={() => undefined}
@@ -316,11 +332,12 @@ test("AnalysisPanelSurface renders cross-session analytics cards", () => {
     />
   );
 
-  assert.match(html, /Cross-Session/);
+  assert.match(html, /Cross Session/);
   assert.match(html, /Sessions/);
   assert.match(html, /Recent Sessions/);
   assert.match(html, /Top Projects/);
   assert.match(html, /4,096/);
+  assert.doesNotMatch(html, /Query/);
 });
 
 test("AnalysisPanelSurface renders a project-first session browser", () => {
@@ -373,11 +390,60 @@ test("AnalysisPanelSurface renders a project-first session browser", () => {
           durationSeconds: 300,
           automationRatio: 1.75,
           bottleneck: "Tool"
+        },
+        {
+          sessionId: "session-2",
+          logicalSessionId: "logical-2",
+          ecosystem: "claude",
+          projectPath: "/tmp/demo",
+          totalTokens: 1550,
+          totalToolCalls: 4,
+          parsedAt: "2026-03-16T00:10:00.000Z",
+          updatedAt: "2026-03-16T00:15:00.000Z",
+          durationSeconds: 240,
+          automationRatio: 1.25,
+          bottleneck: "Tool"
         }
       ]}
       projectSessionsLoading={false}
+      projectSessionsByKey={
+        new Map([
+          [
+            "/tmp/demo",
+            [
+              {
+                sessionId: "session-1",
+                logicalSessionId: "logical-1",
+                ecosystem: "codex",
+                projectPath: "/tmp/demo",
+                totalTokens: 1024,
+                totalToolCalls: 7,
+                parsedAt: "2026-03-16T00:00:00.000Z",
+                updatedAt: "2026-03-16T00:05:00.000Z",
+                durationSeconds: 300,
+                automationRatio: 1.75,
+                bottleneck: "Tool"
+              },
+              {
+                sessionId: "session-2",
+                logicalSessionId: "logical-2",
+                ecosystem: "claude",
+                projectPath: "/tmp/demo",
+                totalTokens: 1550,
+                totalToolCalls: 4,
+                parsedAt: "2026-03-16T00:10:00.000Z",
+                updatedAt: "2026-03-16T00:15:00.000Z",
+                durationSeconds: 240,
+                automationRatio: 1.25,
+                bottleneck: "Tool"
+              }
+            ]
+          ]
+        ])
+      }
       selectedSessionId="session-1"
       sessionSections={[sampleSection]}
+      sessionSectionsById={new Map([["session-1", [sampleSection]], ["session-2", []]])}
       sessionSectionsLoading={false}
       selectedSectionId={null}
       sessionDetail={sampleSessionDetail}
@@ -386,33 +452,31 @@ test("AnalysisPanelSurface renders a project-first session browser", () => {
       sectionDetail={null}
       sectionDetailLoading={false}
       sectionDetailError=""
-      sessionStatistics={{
-        summary: sampleSessionDetail.summary,
-        statisticsSizeBytes: 2048,
-        messageBreakdown: [
-          { label: "User", value: 3, hint: null },
-          { label: "Assistant", value: 9, hint: null }
-        ],
-        tokenBreakdown: [
-          { label: "Input", value: 800, hint: null },
-          { label: "Output", value: 224, hint: null }
-        ],
-        timeBreakdown: [
-          { label: "Model", value: 120, hint: "s" },
-          { label: "Tool", value: 60, hint: "s" }
-        ],
-        timeDistribution: [],
-        toolCalls: [],
-        toolGroups: [],
-        errorCategories: [],
-        errorRecords: [],
-        characterBreakdown: [],
-        resourceBreakdown: [],
-        bashCommands: [],
-        leverageMetrics: [],
-        activeTimeRatio: 0.95,
-        modelTimeoutCount: 1
-      }}
+      sessionStatistics={createSessionStatistics("session-1", 1024, 7, [
+        { label: "User", value: 3 },
+        { label: "Assistant", value: 9 },
+        { label: "System", value: 2 }
+      ])}
+      sessionStatisticsById={
+        new Map([
+          [
+            "session-1",
+            createSessionStatistics("session-1", 1024, 7, [
+              { label: "User", value: 3 },
+              { label: "Assistant", value: 9 },
+              { label: "System", value: 2 }
+            ])
+          ],
+          [
+            "session-2",
+            createSessionStatistics("session-2", 1550, 4, [
+              { label: "User", value: 2 },
+              { label: "Assistant", value: 7 },
+              { label: "System", value: 4 }
+            ])
+          ]
+        ])
+      }
       sessionStatisticsLoading={false}
       sessionStatisticsError=""
       crossSessionMetrics={null}
@@ -432,8 +496,16 @@ test("AnalysisPanelSurface renders a project-first session browser", () => {
 
   assert.match(html, /Session Browser/);
   assert.match(html, /Session Detail/);
+  assert.match(html, /Messages/);
+  assert.match(html, /Hours/);
   assert.match(html, /\/tmp\/demo/);
   assert.match(html, /session-1/);
+  assert.match(html, /session-2/);
+  assert.match(html, /2K tokens/);
+  assert.match(html, /1K tokens/);
   assert.match(html, /Bootstrap/);
   assert.match(html, /Transcript/);
+  assert.equal((html.match(/analysis-tree-stack-bar/g) ?? []).length, 3);
+  assert.ok((html.match(/analysis-tree-stack-segment is-tool/g) ?? []).length >= 3);
+  assert.doesNotMatch(html, /System/);
 });

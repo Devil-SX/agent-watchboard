@@ -5,8 +5,12 @@ import { ChevronDownIcon } from "@renderer/components/IconButton";
 
 type ToggleButtonProps = {
   label: string;
-  value: ReactNode;
+  value?: ReactNode;
   onClick: () => void;
+  icon?: ReactNode;
+  className?: string;
+  hideLabel?: boolean;
+  ariaLabel?: string;
 };
 
 type DropdownOption<T extends string> = {
@@ -21,18 +25,50 @@ type DropdownProps<T extends string> = {
   value: T;
   options: DropdownOption<T>[];
   onChange: (value: T) => void;
+  className?: string;
+  icon?: ReactNode;
+  hideLabel?: boolean;
+  ariaLabel?: string;
 };
 
-export function CompactToggleButton({ label, value, onClick }: ToggleButtonProps): ReactElement {
+export function CompactToggleButton({
+  label,
+  value,
+  onClick,
+  icon,
+  className = "",
+  hideLabel = false,
+  ariaLabel
+}: ToggleButtonProps): ReactElement {
   return (
-    <button type="button" className="compact-control-button" onClick={onClick}>
-      <span className="compact-control-label">{label}</span>
-      <span className="compact-control-value">{value}</span>
+    <button
+      type="button"
+      className={["compact-control-button", className].filter(Boolean).join(" ")}
+      onClick={onClick}
+      aria-label={ariaLabel ?? label}
+      title={ariaLabel ?? label}
+    >
+      {icon ? <span className="compact-control-icon" aria-hidden="true">{icon}</span> : null}
+      {!hideLabel || value ? (
+        <span className="compact-control-copy">
+          {!hideLabel ? <span className="compact-control-label">{label}</span> : null}
+          {value ? <span className="compact-control-value">{value}</span> : null}
+        </span>
+      ) : null}
     </button>
   );
 }
 
-export function CompactDropdown<T extends string>({ label, value, options, onChange }: DropdownProps<T>): ReactElement {
+export function CompactDropdown<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  className = "",
+  icon,
+  hideLabel = false,
+  ariaLabel
+}: DropdownProps<T>): ReactElement {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -97,27 +133,32 @@ export function CompactDropdown<T extends string>({ label, value, options, onCha
   }, [open]);
 
   return (
-    <div ref={rootRef} className={open ? "compact-dropdown is-open" : "compact-dropdown"}>
+    <div ref={rootRef} className={[open ? "compact-dropdown is-open" : "compact-dropdown", className].filter(Boolean).join(" ")}>
       <button
         ref={buttonRef}
         type="button"
         className="compact-control-button compact-control-button-dropdown"
         onClick={() => setOpen((current) => !current)}
+        aria-label={ariaLabel ?? label}
+        title={ariaLabel ?? label}
       >
-        <span className="compact-control-label">{label}</span>
-        <span className="compact-dropdown-value">
-          {selected ? (
-            <span className="compact-dropdown-option-content">
-              {selected.content ? (
-                selected.content
-              ) : (
-                <>
-                  {selected.icon ? <span className="compact-dropdown-icon">{selected.icon}</span> : null}
-                  <strong className="compact-control-value">{selected.label}</strong>
-                </>
-              )}
-            </span>
-          ) : null}
+        {icon ? <span className="compact-control-icon" aria-hidden="true">{icon}</span> : null}
+        <span className="compact-control-copy">
+          {!hideLabel ? <span className="compact-control-label">{label}</span> : null}
+          <span className="compact-dropdown-value">
+            {selected ? (
+              <span className="compact-dropdown-option-content">
+                {selected.content ? (
+                  selected.content
+                ) : (
+                  <>
+                    {selected.icon ? <span className="compact-dropdown-icon">{selected.icon}</span> : null}
+                    <strong className="compact-control-value">{selected.label}</strong>
+                  </>
+                )}
+              </span>
+            ) : null}
+          </span>
         </span>
         <span className="compact-dropdown-caret" aria-hidden="true">
           <ChevronDownIcon />

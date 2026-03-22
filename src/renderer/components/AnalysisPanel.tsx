@@ -44,11 +44,10 @@ import type {
 } from "@shared/ipc";
 import type { AnalysisPaneSection, AnalysisPaneState, AgentPathLocation, DiagnosticsInfo } from "@shared/schema";
 
-const ANALYSIS_PAGE_OPTIONS: Array<{ label: string; copy: string; value: AnalysisPaneSection }> = [
-  { label: "Overview", copy: "Quick health snapshot and recent activity.", value: "overview" },
-  { label: "Session Detail", copy: "Browse project, session, and section detail.", value: "session-detail" },
-  { label: "Cross-Session", copy: "Compare trends across projects and sessions.", value: "cross-session" },
-  { label: "Query", copy: "Run read-only SQL against the profiler DB.", value: "query" }
+const ANALYSIS_PAGE_OPTIONS: Array<{ label: string; value: AnalysisPaneSection }> = [
+  { label: "Overview", value: "overview" },
+  { label: "Session Detail", value: "session-detail" },
+  { label: "Cross Session", value: "cross-session" }
 ];
 
 const CHART_COLORS = [
@@ -63,6 +62,19 @@ const CHART_COLORS = [
 ];
 
 const AGENT_TRAJECTORY_PROFILER_REPO_URL = "https://github.com/Devil-SX/agent-trajectory-profiler";
+const STACKED_BAR_TONES = {
+  user: "#8dcff4",
+  assistant: "#54c5a7",
+  tool: "#f0b867"
+} as const;
+
+type SessionBrowserMetricMode = "messages" | "hours";
+
+type SessionBrowserBreakdownSegment = {
+  label: "User" | "Assistant" | "Tool";
+  value: number;
+  tone: keyof typeof STACKED_BAR_TONES;
+};
 
 type AnalysisLocationCache = {
   databaseInfo: AnalysisDatabaseInfo | null;
@@ -100,9 +112,11 @@ type SurfaceProps = {
   projectError: string;
   selectedProjectKey: string | null;
   projectSessions: AnalysisSessionSummary[];
+  projectSessionsByKey: Map<string, AnalysisSessionSummary[]>;
   projectSessionsLoading: boolean;
   selectedSessionId: string | null;
   sessionSections: AnalysisSessionSectionSummary[];
+  sessionSectionsById: Map<string, AnalysisSessionSectionSummary[]>;
   sessionSectionsLoading: boolean;
   selectedSectionId: string | null;
   sessionDetail: AnalysisSessionDetail | null;
@@ -112,6 +126,7 @@ type SurfaceProps = {
   sectionDetailLoading: boolean;
   sectionDetailError: string;
   sessionStatistics: AnalysisSessionStatistics | null;
+  sessionStatisticsById: Map<string, AnalysisSessionStatistics | null>;
   sessionStatisticsLoading: boolean;
   sessionStatisticsError: string;
   crossSessionMetrics: AnalysisCrossSessionMetrics | null;
@@ -140,7 +155,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     ? initialCache.sessionSectionsById.get(viewState.selectedSessionId) ?? []
     : [];
   const [location, setLocation] = useState<AgentPathLocation>(viewState.location);
-  const [activeSection, setActiveSection] = useState<AnalysisPaneSection>(viewState.activeSection);
+  const [activeSection, setActiveSection] = useState<AnalysisPaneSection>(normalizeAnalysisPaneSection(viewState.activeSection));
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(viewState.selectedProjectKey);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(viewState.selectedSessionId);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(viewState.selectedSectionId);
@@ -157,8 +172,14 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   const [projectSessions, setProjectSessions] = useState<AnalysisSessionSummary[]>(
     viewState.selectedProjectKey ? initialCache.projectSessionsByKey.get(viewState.selectedProjectKey) ?? [] : []
   );
+  const [projectSessionsByKeySnapshot, setProjectSessionsByKeySnapshot] = useState<Map<string, AnalysisSessionSummary[]>>(
+    () => new Map(initialCache.projectSessionsByKey)
+  );
   const [projectSessionsLoading, setProjectSessionsLoading] = useState(false);
   const [sessionSections, setSessionSections] = useState<AnalysisSessionSectionSummary[]>(initialSelectedSessionSections);
+  const [sessionSectionsByIdSnapshot, setSessionSectionsByIdSnapshot] = useState<Map<string, AnalysisSessionSectionSummary[]>>(
+    () => new Map(initialCache.sessionSectionsById)
+  );
   const [sessionSectionsLoading, setSessionSectionsLoading] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<AnalysisSessionDetail | null>(
     viewState.selectedSessionId ? initialCache.sessionDetailById.get(viewState.selectedSessionId) ?? null : null
@@ -174,6 +195,9 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   const [sectionDetailError, setSectionDetailError] = useState("");
   const [sessionStatistics, setSessionStatistics] = useState<AnalysisSessionStatistics | null>(
     viewState.selectedSessionId ? initialCache.sessionStatisticsById.get(viewState.selectedSessionId) ?? null : null
+  );
+  const [sessionStatisticsByIdSnapshot, setSessionStatisticsByIdSnapshot] = useState<Map<string, AnalysisSessionStatistics | null>>(
+    () => new Map(initialCache.sessionStatisticsById)
   );
   const [sessionStatisticsLoading, setSessionStatisticsLoading] = useState(false);
   const [sessionStatisticsError, setSessionStatisticsError] = useState("");
@@ -209,7 +233,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   useEffect(() => {
     isApplyingViewStateRef.current = true;
     setLocation(viewState.location);
-    setActiveSection(viewState.activeSection);
+    setActiveSection(normalizeAnalysisPaneSection(viewState.activeSection));
     setSelectedProjectKey(viewState.selectedProjectKey);
     setSelectedSessionId(viewState.selectedSessionId);
     setSelectedSectionId(viewState.selectedSectionId);
@@ -251,9 +275,12 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       setSessions(locationCache.sessions ?? []);
       setProjects(locationCache.projects ?? []);
       setProjectSessions(selectedProjectKey ? locationCache.projectSessionsByKey.get(selectedProjectKey) ?? [] : []);
+      setProjectSessionsByKeySnapshot(new Map(locationCache.projectSessionsByKey));
       setSessionSections(selectedSessionId ? locationCache.sessionSectionsById.get(selectedSessionId) ?? [] : []);
+      setSessionSectionsByIdSnapshot(new Map(locationCache.sessionSectionsById));
       setCrossSessionMetrics(locationCache.crossSessionMetrics);
       setSessionStatistics(selectedSessionId ? locationCache.sessionStatisticsById.get(selectedSessionId) ?? null : null);
+      setSessionStatisticsByIdSnapshot(new Map(locationCache.sessionStatisticsById));
       setSessionDetail(selectedSessionId ? locationCache.sessionDetailById.get(selectedSessionId) ?? null : null);
       setSectionDetail(sectionDetailCacheKey ? locationCache.sectionDetailByKey.get(sectionDetailCacheKey) ?? null : null);
       setQueryResult(normalizedExecutedQuery ? locationCache.queryResultsBySql.get(normalizedExecutedQuery) ?? null : null);
@@ -268,8 +295,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       locationCache.databaseInfo == null &&
       locationCache.sessions == null &&
       locationCache.projects == null &&
-      activeSection !== "cross-session" &&
-      activeSection !== "query";
+      activeSection !== "cross-session";
     setIsLoadingDatabase(locationCache.databaseInfo == null);
     setSessionError("");
     setSessionStatisticsError("");
@@ -304,9 +330,11 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
             setProjects(payload.projects);
             setSelectedProjectKey(payload.selectedProjectKey);
             setProjectSessions(payload.projectSessions);
+            setProjectSessionsByKeySnapshot(new Map(locationCache.projectSessionsByKey));
             setSelectedSessionId(payload.selectedSessionId);
             setSelectedSectionId(null);
             setSessionStatistics(payload.sessionStatistics);
+            setSessionStatisticsByIdSnapshot(new Map(locationCache.sessionStatisticsById));
           });
         })
         .catch((error: unknown) => {
@@ -441,6 +469,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       locationCache.projectSessionsByKey.clear();
       setProjects([]);
       setProjectSessions([]);
+      setProjectSessionsByKeySnapshot(new Map());
       setSelectedProjectKey(null);
       setProjectError("");
       return;
@@ -504,6 +533,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     const cachedProjectSessions = locationCache.projectSessionsByKey.get(selectedProjectKey);
     if (cachedProjectSessions) {
       setProjectSessions(cachedProjectSessions);
+      setProjectSessionsByKeySnapshot(new Map(locationCache.projectSessionsByKey));
       setProjectSessionsLoading(false);
       setSessionError("");
       if (!selectedSessionId || !cachedProjectSessions.some((session) => session.sessionId === selectedSessionId)) {
@@ -530,6 +560,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         locationCache.projectSessionsByKey.set(selectedProjectKey, nextProjectSessions);
         startTransition(() => {
           setProjectSessions(nextProjectSessions);
+          setProjectSessionsByKeySnapshot(new Map(locationCache.projectSessionsByKey));
           if (!selectedSessionId || !nextProjectSessions.some((session) => session.sessionId === selectedSessionId)) {
             setSelectedSessionId(nextProjectSessions[0]?.sessionId ?? null);
             setSelectedSectionId(null);
@@ -553,7 +584,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   }, [databaseInfo?.status, databaseSignature, location, selectedProjectKey, selectedSessionId]);
 
   useEffect(() => {
-    if (databaseInfo?.status !== "ready" || !selectedSessionId || activeSection === "cross-session" || activeSection === "query") {
+    if (databaseInfo?.status !== "ready" || !selectedSessionId || activeSection === "cross-session") {
       setSessionStatistics(null);
       setSessionStatisticsError("");
       return;
@@ -562,6 +593,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     const locationCache = getAnalysisLocationCache(location);
     if (locationCache.sessionStatisticsById.has(selectedSessionId)) {
       setSessionStatistics(locationCache.sessionStatisticsById.get(selectedSessionId) ?? null);
+      setSessionStatisticsByIdSnapshot(new Map(locationCache.sessionStatisticsById));
       setSessionStatisticsLoading(false);
       return;
     }
@@ -583,6 +615,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         locationCache.sessionStatisticsById.set(selectedSessionId, result);
         startTransition(() => {
           setSessionStatistics(result);
+          setSessionStatisticsByIdSnapshot(new Map(locationCache.sessionStatisticsById));
         });
       })
       .catch((error: unknown) => {
@@ -602,6 +635,45 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
   }, [activeSection, databaseSignature, location, selectedSessionId]);
 
   useEffect(() => {
+    if (databaseInfo?.status !== "ready" || activeSection !== "session-detail" || projectSessions.length === 0) {
+      return;
+    }
+
+    const locationCache = getAnalysisLocationCache(location);
+    const sessionIdsToPrefetch = projectSessions
+      .map((session) => session.sessionId)
+      .filter((sessionId) => sessionId !== selectedSessionId && !locationCache.sessionStatisticsById.has(sessionId));
+
+    if (sessionIdsToPrefetch.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.allSettled(
+      sessionIdsToPrefetch.map(async (sessionId) => {
+        const result = await measureRendererAsync(
+          "analysis",
+          "session-statistics-prefetch",
+          () => window.watchboard.getAnalysisSessionStatistics(location, sessionId),
+          { location, sessionId, section: activeSection }
+        );
+        locationCache.sessionStatisticsById.set(sessionId, result);
+      })
+    ).finally(() => {
+      if (!cancelled) {
+        startTransition(() => {
+          setSessionStatisticsByIdSnapshot(new Map(locationCache.sessionStatisticsById));
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, databaseInfo?.status, location, projectSessions, selectedSessionId]);
+
+  useEffect(() => {
     if (databaseInfo?.status !== "ready" || activeSection !== "session-detail" || !selectedSessionId) {
       setSessionSections([]);
       setSessionSectionsLoading(false);
@@ -612,6 +684,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
     if (locationCache.sessionSectionsById.has(selectedSessionId)) {
       const cachedSections = locationCache.sessionSectionsById.get(selectedSessionId) ?? [];
       setSessionSections(cachedSections);
+      setSessionSectionsByIdSnapshot(new Map(locationCache.sessionSectionsById));
       setSessionSectionsLoading(false);
       if (selectedSectionId && !cachedSections.some((section) => section.sectionId === selectedSectionId)) {
         setSelectedSectionId(null);
@@ -635,6 +708,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         locationCache.sessionSectionsById.set(selectedSessionId, sections);
         startTransition(() => {
           setSessionSections(sections);
+          setSessionSectionsByIdSnapshot(new Map(locationCache.sessionSectionsById));
           if (selectedSectionId && !sections.some((section) => section.sectionId === selectedSectionId)) {
             setSelectedSectionId(null);
           }
@@ -665,6 +739,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       setSessionDetailLoading(false);
       if (cachedDetail && !locationCache.sessionSectionsById.has(selectedSessionId)) {
         locationCache.sessionSectionsById.set(selectedSessionId, cachedDetail.sections);
+        setSessionSectionsByIdSnapshot(new Map(locationCache.sessionSectionsById));
       }
       return;
     }
@@ -691,6 +766,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
           setSessionDetail(detail);
           if (detail) {
             setSessionSections(detail.sections);
+            setSessionSectionsByIdSnapshot(new Map(locationCache.sessionSectionsById));
           }
         });
       })
@@ -870,8 +946,6 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         signature = `${activeSection}:${deferredSessionStatistics.summary.sessionId}`;
       } else if (activeSection === "cross-session" && deferredCrossSessionMetrics) {
         signature = `${activeSection}:${deferredCrossSessionMetrics.totalSessions}`;
-      } else if (activeSection === "query" && queryResult) {
-        signature = `${activeSection}:${queryResult.rowCount}`;
       }
     }
 
@@ -890,7 +964,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
         signature
       }
     });
-  }, [activeSection, databaseInfo?.status, deferredCrossSessionMetrics, deferredSessionStatistics, isLoadingDatabase, location, queryResult]);
+  }, [activeSection, databaseInfo?.status, deferredCrossSessionMetrics, deferredSessionStatistics, isLoadingDatabase, location]);
 
   return (
     <AnalysisPanelSurface
@@ -908,9 +982,11 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       projectError={projectError}
       selectedProjectKey={selectedProjectKey}
       projectSessions={projectSessions}
+      projectSessionsByKey={projectSessionsByKeySnapshot}
       projectSessionsLoading={projectSessionsLoading}
       selectedSessionId={selectedSessionId}
       sessionSections={sessionSections}
+      sessionSectionsById={sessionSectionsByIdSnapshot}
       sessionSectionsLoading={sessionSectionsLoading}
       selectedSectionId={selectedSectionId}
       sessionDetail={sessionDetail}
@@ -920,6 +996,7 @@ export function AnalysisPanel({ diagnostics, viewState, onViewStateChange }: Pro
       sectionDetailLoading={sectionDetailLoading}
       sectionDetailError={sectionDetailError}
       sessionStatistics={deferredSessionStatistics}
+      sessionStatisticsById={sessionStatisticsByIdSnapshot}
       sessionStatisticsLoading={sessionStatisticsLoading}
       sessionStatisticsError={sessionStatisticsError}
       crossSessionMetrics={deferredCrossSessionMetrics}
@@ -961,9 +1038,11 @@ export function AnalysisPanelSurface({
   projectError,
   selectedProjectKey,
   projectSessions,
+  projectSessionsByKey,
   projectSessionsLoading,
   selectedSessionId,
   sessionSections,
+  sessionSectionsById,
   sessionSectionsLoading,
   selectedSectionId,
   sessionDetail,
@@ -973,6 +1052,7 @@ export function AnalysisPanelSurface({
   sectionDetailLoading,
   sectionDetailError,
   sessionStatistics,
+  sessionStatisticsById,
   sessionStatisticsLoading,
   sessionStatisticsError,
   crossSessionMetrics,
@@ -1041,21 +1121,14 @@ export function AnalysisPanelSurface({
                 onClick={() => onSectionChange(option.value)}
               >
                 <span className="analysis-page-tab-label">{option.label}</span>
-                <span className="analysis-page-tab-copy">{option.copy}</span>
               </button>
             ))}
           </aside>
 
           <div className="analysis-panel-body">
-            <section className="analysis-kpi-grid">
-              <MetricCard label="Sessions" value={formatMetric(databaseInfo.sessionCount)} />
-              <MetricCard label="Tracked Files" value={formatMetric(databaseInfo.totalFiles)} />
-              <MetricCard label="Tables" value={formatMetric(databaseInfo.tableNames.length)} />
-              <MetricCard label="Last Parsed" value={formatTimestamp(databaseInfo.lastParsedAt)} />
-            </section>
-
             {activeSection === "overview" ? (
               <OverviewSection
+                databaseInfo={databaseInfo}
                 sessionStatistics={sessionStatistics}
                 loading={sessionStatisticsLoading}
                 error={sessionStatisticsError}
@@ -1070,8 +1143,10 @@ export function AnalysisPanelSurface({
                 projectError={projectError}
                 selectedProjectKey={selectedProjectKey}
                 projectSessions={projectSessions}
+                projectSessionsByKey={projectSessionsByKey}
                 projectSessionsLoading={projectSessionsLoading}
                 sessionSections={sessionSections}
+                sessionSectionsById={sessionSectionsById}
                 sessionSectionsLoading={sessionSectionsLoading}
                 sessionError={sessionError}
                 selectedSessionId={selectedSessionId}
@@ -1083,6 +1158,7 @@ export function AnalysisPanelSurface({
                 sectionDetailLoading={sectionDetailLoading}
                 sectionDetailError={sectionDetailError}
                 sessionStatistics={sessionStatistics}
+                sessionStatisticsById={sessionStatisticsById}
                 sessionStatisticsLoading={sessionStatisticsLoading}
                 sessionStatisticsError={sessionStatisticsError}
                 onSelectProject={onSelectProject}
@@ -1093,17 +1169,6 @@ export function AnalysisPanelSurface({
 
             {activeSection === "cross-session" ? (
               <CrossSessionSection metrics={crossSessionMetrics} loading={crossSessionLoading} error={crossSessionError} />
-            ) : null}
-
-            {activeSection === "query" ? (
-              <QuerySection
-                queryText={queryText}
-                queryResult={queryResult}
-                queryError={queryError}
-                queryRunning={queryRunning}
-                onQueryTextChange={onQueryTextChange}
-                onRunQuery={onRunQuery}
-              />
             ) : null}
           </div>
         </div>
@@ -1164,12 +1229,18 @@ function normalizeAnalysisQueryCacheKey(value: string): string {
   return value.trim();
 }
 
+function normalizeAnalysisPaneSection(value: AnalysisPaneSection): AnalysisPaneSection {
+  return value === "query" ? "overview" : value;
+}
+
 function OverviewSection({
+  databaseInfo,
   sessionStatistics,
   loading,
   error,
   sessions
 }: {
+  databaseInfo: AnalysisDatabaseInfo;
   sessionStatistics: AnalysisSessionStatistics | null;
   loading: boolean;
   error: string;
@@ -1202,6 +1273,13 @@ function OverviewSection({
   return (
     <>
       <section className="analysis-kpi-grid">
+        <MetricCard label="Sessions" value={formatMetric(databaseInfo.sessionCount)} />
+        <MetricCard label="Tracked Files" value={formatMetric(databaseInfo.totalFiles)} />
+        <MetricCard label="Tables" value={formatMetric(databaseInfo.tableNames.length)} />
+        <MetricCard label="Last Parsed" value={formatTimestamp(databaseInfo.lastParsedAt)} />
+      </section>
+
+      <section className="analysis-kpi-grid">
         <MetricCard label="Selected Session" value={sessionStatistics.summary.sessionId.slice(0, 8)} />
         <MetricCard label="Tokens" value={formatMetric(sessionStatistics.summary.totalTokens)} />
         <MetricCard label="Tool Calls" value={formatMetric(sessionStatistics.summary.totalToolCalls)} />
@@ -1223,8 +1301,11 @@ function OverviewSection({
             valueFormatter={(value) => formatMetric(value)}
           />
         </ChartCard>
-        <ChartCard title="Message Composition" subtitle="User / assistant / system">
-          <PieMetricChart data={sessionStatistics.messageBreakdown} valueFormatter={(value) => formatMetric(value)} />
+        <ChartCard title="Message Composition" subtitle="User / assistant / tool">
+          <PieMetricChart
+            data={normalizeAnalysisMessageBreakdown(sessionStatistics.messageBreakdown, sessionStatistics.summary.totalToolCalls)}
+            valueFormatter={(value) => formatMetric(value)}
+          />
         </ChartCard>
       </section>
 
@@ -1257,8 +1338,10 @@ function SessionDetailPage({
   projectError,
   selectedProjectKey,
   projectSessions,
+  projectSessionsByKey,
   projectSessionsLoading,
   sessionSections,
+  sessionSectionsById,
   sessionSectionsLoading,
   sessionError,
   selectedSessionId,
@@ -1270,6 +1353,7 @@ function SessionDetailPage({
   sectionDetailLoading,
   sectionDetailError,
   sessionStatistics,
+  sessionStatisticsById,
   sessionStatisticsLoading,
   sessionStatisticsError,
   onSelectProject,
@@ -1281,8 +1365,10 @@ function SessionDetailPage({
   projectError: string;
   selectedProjectKey: string | null;
   projectSessions: AnalysisSessionSummary[];
+  projectSessionsByKey: Map<string, AnalysisSessionSummary[]>;
   projectSessionsLoading: boolean;
   sessionSections: AnalysisSessionSectionSummary[];
+  sessionSectionsById: Map<string, AnalysisSessionSectionSummary[]>;
   sessionSectionsLoading: boolean;
   sessionError: string;
   selectedSessionId: string | null;
@@ -1294,6 +1380,7 @@ function SessionDetailPage({
   sectionDetailLoading: boolean;
   sectionDetailError: string;
   sessionStatistics: AnalysisSessionStatistics | null;
+  sessionStatisticsById: Map<string, AnalysisSessionStatistics | null>;
   sessionStatisticsLoading: boolean;
   sessionStatisticsError: string;
   onSelectProject: (projectKey: string) => void;
@@ -1302,6 +1389,7 @@ function SessionDetailPage({
 }): ReactElement {
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [collapsedSessions, setCollapsedSessions] = useState<Record<string, boolean>>({});
+  const [browserMetricMode, setBrowserMetricMode] = useState<SessionBrowserMetricMode>("messages");
   const activeEntries = selectedSectionId ? sectionDetail?.entries ?? [] : sessionDetail?.entries ?? [];
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(activeEntries[0]?.entryId ?? null);
 
@@ -1328,7 +1416,25 @@ function SessionDetailPage({
       <article className="analysis-card analysis-sidebar">
         <div className="analysis-card-header">
           <h3>Session Browser</h3>
-          <span className="entry-badge">{projects.length}</span>
+          <div className="analysis-browser-header-actions">
+            <div className="analysis-browser-toggle" role="group" aria-label="Session browser metrics">
+              <button
+                type="button"
+                className={browserMetricMode === "messages" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
+                onClick={() => setBrowserMetricMode("messages")}
+              >
+                Messages
+              </button>
+              <button
+                type="button"
+                className={browserMetricMode === "hours" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
+                onClick={() => setBrowserMetricMode("hours")}
+              >
+                Hours
+              </button>
+            </div>
+            <span className="entry-badge">{projects.length}</span>
+          </div>
         </div>
         {projectError ? <div className="toolbar-error">{projectError}</div> : null}
         {sessionError ? <div className="toolbar-error">{sessionError}</div> : null}
@@ -1336,7 +1442,9 @@ function SessionDetailPage({
           {projectsLoading ? <div className="panel-empty"><p>Loading projects...</p></div> : null}
           {projects.map((project) => {
             const projectCollapsed = collapsedProjects[project.projectKey] ?? project.projectKey !== selectedProjectKey;
-            const showProjectSessions = selectedProjectKey === project.projectKey && !projectCollapsed;
+            const cachedProjectSessions = projectSessionsByKey.get(project.projectKey) ?? [];
+            const renderedProjectSessions = project.projectKey === selectedProjectKey ? projectSessions : cachedProjectSessions;
+            const showProjectSessions = !projectCollapsed;
             return (
               <div key={project.projectKey || "__unknown_project__"} className="analysis-tree-node">
                 <button
@@ -1353,15 +1461,26 @@ function SessionDetailPage({
                   <span className={projectCollapsed ? "board-toggle-caret is-collapsed" : "board-toggle-caret"} />
                   <span className="analysis-tree-copy">
                     <strong>{project.projectPath ?? "Unknown project"}</strong>
-                    <span>{project.sessionCount} sessions · {formatMetric(project.totalTokens)} tokens</span>
+                    <span>{project.sessionCount} sessions · {formatCompactMetric(project.totalTokens)} tokens</span>
                   </span>
                 </button>
                 {showProjectSessions ? (
                   <div className="analysis-tree-children">
-                    {projectSessionsLoading ? <div className="analysis-tree-empty">Loading sessions...</div> : null}
-                    {projectSessions.map((session) => {
+                    {project.projectKey === selectedProjectKey && projectSessionsLoading ? <div className="analysis-tree-empty">Loading sessions...</div> : null}
+                    {project.projectKey === selectedProjectKey || renderedProjectSessions.length > 0 ? null : (
+                      <div className="analysis-tree-empty">Select this project to load sessions.</div>
+                    )}
+                    {renderedProjectSessions.map((session) => {
                       const sessionCollapsed = collapsedSessions[session.sessionId] ?? session.sessionId !== selectedSessionId;
-                      const showSections = session.sessionId === selectedSessionId && !sessionCollapsed;
+                      const renderedSessionSections =
+                        session.sessionId === selectedSessionId
+                          ? sessionSections
+                          : sessionSectionsById.get(session.sessionId) ?? [];
+                      const showSections = !sessionCollapsed;
+                      const rowStatistics =
+                        session.sessionId === selectedSessionId
+                          ? sessionStatistics
+                          : sessionStatisticsById.get(session.sessionId) ?? null;
                       return (
                         <div key={session.sessionId} className="analysis-tree-node">
                           <button
@@ -1376,26 +1495,54 @@ function SessionDetailPage({
                             }}
                           >
                             <span className={sessionCollapsed ? "board-toggle-caret is-collapsed" : "board-toggle-caret"} />
-                            <span className="analysis-tree-copy">
-                              <strong>{session.sessionId}</strong>
-                              <span>{formatDuration(session.durationSeconds)} · {formatMetric(session.totalTokens)} tokens</span>
+                            <span className="analysis-tree-content">
+                              <span className="analysis-tree-copy">
+                                <strong>{session.sessionId}</strong>
+                                <span>{formatDuration(session.durationSeconds)} · {formatCompactMetric(session.totalTokens)} tokens</span>
+                              </span>
+                              <TreeStackedBar
+                                segments={buildSessionBrowserBreakdown(
+                                  sessionDetail?.summary.sessionId === session.sessionId ? sessionDetail : null,
+                                  renderedSessionSections,
+                                  rowStatistics,
+                                  browserMetricMode
+                                )}
+                                mode={browserMetricMode}
+                              />
                             </span>
                           </button>
                           {showSections ? (
                             <div className="analysis-tree-children">
-                              {sessionSectionsLoading ? <div className="analysis-tree-empty">Loading sections...</div> : null}
-                              {!sessionSectionsLoading && sessionSections.length === 0 ? (
+                              {session.sessionId === selectedSessionId && sessionSectionsLoading ? (
+                                <div className="analysis-tree-empty">Loading sections...</div>
+                              ) : null}
+                              {session.sessionId === selectedSessionId || renderedSessionSections.length > 0 ? null : (
+                                <div className="analysis-tree-empty">Select this session to load sections.</div>
+                              )}
+                              {session.sessionId === selectedSessionId && !sessionSectionsLoading && renderedSessionSections.length === 0 ? (
                                 <div className="analysis-tree-empty">No materialized sections.</div>
                               ) : null}
-                              {sessionSections.map((section) => (
+                              {renderedSessionSections.map((section) => (
                                 <button
                                   key={section.sectionId}
                                   type="button"
                                   className={section.sectionId === selectedSectionId ? "analysis-tree-leaf is-active" : "analysis-tree-leaf"}
                                   onClick={() => onSelectSection(section.sectionId)}
                                 >
-                                  <strong>{section.title}</strong>
-                                  <span>{section.totalMessages} msgs · {formatMetric(section.totalTokens)} tokens</span>
+                                  <span className="analysis-tree-content">
+                                    <span className="analysis-tree-copy">
+                                      <strong>{section.title}</strong>
+                                      <span>{section.totalMessages} msgs · {formatCompactMetric(section.totalTokens)} tokens</span>
+                                    </span>
+                                    <TreeStackedBar
+                                      segments={buildSectionBrowserBreakdown(
+                                        section,
+                                        browserMetricMode,
+                                        sessionDetail?.summary.sessionId === session.sessionId ? sessionDetail.entries : []
+                                      )}
+                                      mode={browserMetricMode}
+                                    />
+                                  </span>
                                 </button>
                               ))}
                             </div>
@@ -1471,17 +1618,41 @@ function SessionDetailSurface({
   return (
     <>
       <section className="analysis-kpi-grid">
-        <MetricCard label="Project" value={detail.summary.projectPath ?? "N/A"} dense />
         <MetricCard label="Tokens" value={formatMetric(detail.summary.totalTokens)} />
         <MetricCard label="Tool Calls" value={formatMetric(detail.summary.totalToolCalls)} />
         <MetricCard label="Sections" value={formatMetric(detail.sections.length)} />
+        <MetricCard label="Duration" value={formatDuration(detail.summary.durationSeconds)} />
         <MetricCard label="Bottleneck" value={detail.summary.bottleneck ?? "N/A"} />
       </section>
 
-      <section className="analysis-grid analysis-grid-2">
-        <InfoCard title="Session Synopsis">
+      <section className="analysis-detail-overview">
+        <InfoCard title="Session Synopsis" className="analysis-detail-card is-wide">
           <p>{detail.synopsisText ?? "No generated synopsis for this session."}</p>
         </InfoCard>
+        <article className="analysis-card analysis-detail-card is-meta">
+          <div className="analysis-card-header">
+            <h3>Metadata</h3>
+          </div>
+          <div className="entry-meta is-compact analysis-detail-meta">
+            <span className="entry-meta-label">Project</span>
+            <code>{detail.summary.projectPath ?? "N/A"}</code>
+            <span className="entry-meta-label">Session</span>
+            <code>{detail.summary.sessionId}</code>
+            <span className="entry-meta-label">Updated</span>
+            <code>{formatTimestamp(detail.summary.updatedAt)}</code>
+            <span className="entry-meta-label">Parsed</span>
+            <code>{formatTimestamp(detail.summary.parsedAt)}</code>
+            <span className="entry-meta-label">Automation</span>
+            <code>{formatRatio(detail.summary.automationRatio)}</code>
+            <span className="entry-meta-label">Entries</span>
+            <code>{formatMetric(entries.length)}</code>
+            <span className="entry-meta-label">Ecosystem</span>
+            <code>{detail.summary.ecosystem ?? "N/A"}</code>
+          </div>
+        </article>
+      </section>
+
+      <section className="analysis-grid analysis-grid-2">
         <InfoCard title="Section Coverage">
           <MetricDatumList
             data={[
@@ -1496,7 +1667,10 @@ function SessionDetailSurface({
         </InfoCard>
         <InfoCard title="Message Mix">
           {statistics ? (
-            <PieMetricChart data={statistics.messageBreakdown} valueFormatter={(value) => formatMetric(value)} />
+            <PieMetricChart
+              data={normalizeAnalysisMessageBreakdown(statistics.messageBreakdown, statistics.summary.totalToolCalls)}
+              valueFormatter={(value) => formatMetric(value)}
+            />
           ) : (
             <div className="panel-empty"><p>No message composition available.</p></div>
           )}
@@ -1779,86 +1953,6 @@ function CrossSessionSection({
   );
 }
 
-function QuerySection({
-  queryText,
-  queryResult,
-  queryError,
-  queryRunning,
-  onQueryTextChange,
-  onRunQuery
-}: {
-  queryText: string;
-  queryResult: AnalysisQueryResult | null;
-  queryError: string;
-  queryRunning: boolean;
-  onQueryTextChange: (value: string) => void;
-  onRunQuery: () => void;
-}): ReactElement {
-  return (
-    <section className="analysis-grid analysis-grid-2">
-      <article className="analysis-card">
-        <div className="analysis-card-header">
-          <h3>Read-Only SQL</h3>
-          <button type="button" className="primary-button" onClick={onRunQuery} disabled={queryRunning}>
-            {queryRunning ? "Running..." : "Run Query"}
-          </button>
-        </div>
-        <p className="analysis-panel-copy">
-          Supports `SELECT`, `WITH`, `PRAGMA`, and `EXPLAIN`. Use this for ad-hoc debugging after the visual dashboards.
-        </p>
-        <textarea
-          className="analysis-query-textarea"
-          value={queryText}
-          onChange={(event) => onQueryTextChange(event.target.value)}
-          spellCheck={false}
-        />
-        {queryError ? <div className="toolbar-error">{queryError}</div> : null}
-      </article>
-
-      <article className="analysis-card">
-        <div className="analysis-card-header">
-          <h3>Results</h3>
-          {queryResult?.truncated ? <span className="entry-badge">Showing first 200 rows</span> : null}
-        </div>
-        {queryResult ? (
-          <div className="analysis-query-results">
-            <div className="entry-meta">
-              <span className="entry-meta-label">Rows</span>
-              <code>{queryResult.rowCount}</code>
-              <span className="entry-meta-label">Duration</span>
-              <code>{Math.round(queryResult.durationMs)} ms</code>
-            </div>
-            <div className="analysis-table-scroll">
-              <table className="analysis-table">
-                <thead>
-                  <tr>
-                    {queryResult.columns.map((column) => (
-                      <th key={column}>{column}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {queryResult.rows.map((row, rowIndex) => (
-                    <tr key={rowIndex}>
-                      {row.map((value, columnIndex) => (
-                        <td key={`${rowIndex}-${columnIndex}`}>{String(value ?? "null")}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : (
-          <div className="panel-empty">
-            <p>Run a query to inspect profiler data.</p>
-          </div>
-        )}
-      </article>
-    </section>
-  );
-}
-
 function TokenUsageLine({ usage }: { usage: AnalysisTokenUsage }): ReactElement {
   return (
     <div className="analysis-inline-note">
@@ -1900,14 +1994,57 @@ function ChartCard({
   );
 }
 
-function InfoCard({ title, children }: { title: string; children: ReactNode }): ReactElement {
+function InfoCard({
+  title,
+  children,
+  className = ""
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+}): ReactElement {
   return (
-    <article className="analysis-card">
+    <article className={`analysis-card ${className}`.trim()}>
       <div className="analysis-card-header">
         <h3>{title}</h3>
       </div>
       {children}
     </article>
+  );
+}
+
+function TreeStackedBar({
+  segments,
+  mode
+}: {
+  segments: SessionBrowserBreakdownSegment[];
+  mode: SessionBrowserMetricMode;
+}): ReactElement | null {
+  const total = segments.reduce((sum, segment) => sum + segment.value, 0);
+  if (total <= 0) {
+    return null;
+  }
+
+  return (
+    <div className="analysis-tree-stack">
+      <div className="analysis-tree-stack-bar" aria-label={`${mode} mix`}>
+        {segments.map((segment) => (
+          <span
+            key={segment.label}
+            className={`analysis-tree-stack-segment is-${segment.tone}`}
+            style={{ width: `${(segment.value / total) * 100}%` }}
+            title={`${segment.label}: ${formatBrowserBreakdownValue(segment.value, mode)}`}
+          />
+        ))}
+      </div>
+      <div className="analysis-tree-stack-legend">
+        {segments.map((segment) => (
+          <span key={segment.label}>
+            {segment.label} {formatBrowserBreakdownValue(segment.value, mode)}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -2075,14 +2212,25 @@ function formatMetric(value: number | null): string {
   return new Intl.NumberFormat().format(Math.round(value * 100) / 100);
 }
 
+function formatCompactMetric(value: number | null): string {
+  if (value === null) {
+    return "N/A";
+  }
+  const normalized = Math.abs(value);
+  if (normalized >= 1_000_000_000) {
+    return trimCompactValue(value / 1_000_000_000, "B");
+  }
+  if (normalized >= 1_000_000) {
+    return trimCompactValue(value / 1_000_000, "M");
+  }
+  if (normalized >= 1_000) {
+    return trimCompactValue(value / 1_000, "K");
+  }
+  return formatMetric(value);
+}
+
 function formatMetricAxis(value: number): string {
-  if (value >= 1_000_000) {
-    return `${Math.round((value / 1_000_000) * 10) / 10}M`;
-  }
-  if (value >= 1_000) {
-    return `${Math.round((value / 1_000) * 10) / 10}K`;
-  }
-  return `${Math.round(value)}`;
+  return formatCompactMetric(value);
 }
 
 function formatDuration(value: number | null): string {
@@ -2131,6 +2279,246 @@ function formatMetricValue(value: number, hint?: string | null): string {
     return formatBytes(value);
   }
   return formatMetric(value);
+}
+
+function trimCompactValue(value: number, suffix: "K" | "M" | "B"): string {
+  const rounded = Math.round(value * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}${suffix}`;
+}
+
+function buildSectionBrowserBreakdown(
+  section: AnalysisSessionSectionSummary,
+  mode: SessionBrowserMetricMode,
+  entries: AnalysisContentEntry[] = []
+): SessionBrowserBreakdownSegment[] {
+  if (mode === "messages") {
+    const segments: SessionBrowserBreakdownSegment[] = [
+      { label: "User", value: section.userMessageCount, tone: "user" },
+      { label: "Assistant", value: section.assistantMessageCount, tone: "assistant" },
+      { label: "Tool", value: section.toolCallCount, tone: "tool" }
+    ];
+    return segments.filter((segment) => segment.value > 0);
+  }
+
+  return buildSectionTimeBreakdownFromEntries(section, entries);
+}
+
+function buildSessionBrowserBreakdown(
+  detail: AnalysisSessionDetail | null,
+  sections: AnalysisSessionSectionSummary[],
+  statistics: AnalysisSessionStatistics | null,
+  mode: SessionBrowserMetricMode
+): SessionBrowserBreakdownSegment[] {
+  if (mode === "hours") {
+    const statisticsSegments = buildSessionTimeBreakdownFromStatistics(statistics);
+    if (statisticsSegments.length > 0) {
+      return statisticsSegments;
+    }
+  }
+
+  const sectionSource = detail?.sections.length ? detail.sections : sections;
+  if (sectionSource.length > 0) {
+    const totals = {
+      User: 0,
+      Assistant: 0,
+      Tool: 0
+    };
+    for (const section of sectionSource) {
+      for (const segment of buildSectionBrowserBreakdown(section, mode, detail?.entries ?? [])) {
+        totals[segment.label] += segment.value;
+      }
+    }
+    const segments: SessionBrowserBreakdownSegment[] = [
+      { label: "User", value: totals.User, tone: "user" },
+      { label: "Assistant", value: totals.Assistant, tone: "assistant" },
+      { label: "Tool", value: totals.Tool, tone: "tool" }
+    ];
+    return segments.filter((segment) => segment.value > 0);
+  }
+
+  if (!statistics) {
+    return [];
+  }
+  const normalizedBreakdown = normalizeAnalysisMessageBreakdown(statistics.messageBreakdown, statistics.summary.totalToolCalls);
+  const userMessages = normalizedBreakdown.find((entry) => entry.label === "User")?.value ?? 0;
+  const assistantMessages = normalizedBreakdown.find((entry) => entry.label === "Assistant")?.value ?? 0;
+  const toolMessages = normalizedBreakdown.find((entry) => entry.label === "Tool")?.value ?? 0;
+
+  if (mode === "messages") {
+    const segments: SessionBrowserBreakdownSegment[] = [
+      { label: "User", value: userMessages, tone: "user" },
+      { label: "Assistant", value: assistantMessages, tone: "assistant" },
+      { label: "Tool", value: toolMessages, tone: "tool" }
+    ];
+    return segments.filter((segment) => segment.value > 0);
+  }
+
+  return [];
+}
+
+function formatBrowserBreakdownValue(value: number, mode: SessionBrowserMetricMode): string {
+  return mode === "hours" ? formatDuration(value) : formatMetric(value);
+}
+
+function normalizeAnalysisMessageBreakdown(
+  breakdown: AnalysisMetricDatum[],
+  fallbackToolCount: number
+): AnalysisMetricDatum[] {
+  const totals = {
+    User: 0,
+    Assistant: 0,
+    Tool: 0
+  };
+
+  for (const entry of breakdown) {
+    const normalizedLabel = normalizeAnalysisMessageLabel(entry.label);
+    if (normalizedLabel === "User" || normalizedLabel === "Assistant" || normalizedLabel === "Tool") {
+      totals[normalizedLabel] += entry.value;
+    }
+  }
+
+  if (totals.Tool <= 0 && fallbackToolCount > 0) {
+    totals.Tool = fallbackToolCount;
+  }
+
+  return [
+    { label: "User", value: totals.User, hint: null },
+    { label: "Assistant", value: totals.Assistant, hint: null },
+    { label: "Tool", value: totals.Tool, hint: null }
+  ].filter((entry) => entry.value > 0);
+}
+
+function normalizeAnalysisMessageLabel(label: string): "User" | "Assistant" | "Tool" | null {
+  const normalized = label.trim().toLowerCase();
+  if (normalized === "user") {
+    return "User";
+  }
+  if (normalized === "assistant") {
+    return "Assistant";
+  }
+  if (normalized === "system" || normalized.includes("tool")) {
+    return "Tool";
+  }
+  return null;
+}
+
+function buildSessionTimeBreakdownFromStatistics(
+  statistics: AnalysisSessionStatistics | null
+): SessionBrowserBreakdownSegment[] {
+  if (!statistics) {
+    return [];
+  }
+
+  const totals = {
+    User: 0,
+    Assistant: 0,
+    Tool: 0
+  };
+
+  for (const entry of statistics.timeBreakdown) {
+    const normalizedLabel = normalizeAnalysisTimeLabel(entry.label);
+    if (normalizedLabel) {
+      totals[normalizedLabel] += entry.value;
+    }
+  }
+
+  const segments: SessionBrowserBreakdownSegment[] = [
+    { label: "User", value: totals.User, tone: "user" },
+    { label: "Assistant", value: totals.Assistant, tone: "assistant" },
+    { label: "Tool", value: totals.Tool, tone: "tool" }
+  ];
+  return segments.filter((segment) => segment.value > 0);
+}
+
+function buildSectionTimeBreakdownFromEntries(
+  section: AnalysisSessionSectionSummary,
+  entries: AnalysisContentEntry[]
+): SessionBrowserBreakdownSegment[] {
+  const startTime = Date.parse(section.startTimestamp ?? "");
+  const endTime = Date.parse(section.endTimestamp ?? "");
+  if (Number.isNaN(startTime) || Number.isNaN(endTime) || endTime <= startTime) {
+    return [];
+  }
+
+  const timedEntries = entries
+    .filter((entry) => entry.sectionId === section.sectionId)
+    .map((entry) => ({
+      ...entry,
+      unixMs: Date.parse(entry.timestamp ?? "")
+    }))
+    .filter((entry) => !Number.isNaN(entry.unixMs))
+    .sort((left, right) => (left.unixMs === right.unixMs ? left.sequence - right.sequence : left.unixMs - right.unixMs));
+
+  if (timedEntries.length === 0) {
+    return [];
+  }
+
+  const totals = {
+    User: 0,
+    Assistant: 0,
+    Tool: 0
+  };
+  let previousTime = startTime;
+
+  // Attribute each elapsed interval to the event that becomes active at its end.
+  // This keeps section hours tied to real trajectory timestamps instead of silently
+  // mirroring message counts when the profiler does not persist per-role section times.
+  for (const entry of timedEntries) {
+    const currentTime = Math.max(previousTime, Math.min(entry.unixMs, endTime));
+    const normalizedKind = normalizeAnalysisEntryTimingKind(entry);
+    if (normalizedKind) {
+      totals[normalizedKind] += Math.max(0, currentTime - previousTime) / 1000;
+    }
+    previousTime = currentTime;
+  }
+
+  const trailingKind = normalizeAnalysisEntryTimingKind(timedEntries[timedEntries.length - 1] ?? null);
+  if (trailingKind && previousTime < endTime) {
+    totals[trailingKind] += (endTime - previousTime) / 1000;
+  }
+
+  const segments: SessionBrowserBreakdownSegment[] = [
+    { label: "User", value: totals.User, tone: "user" },
+    { label: "Assistant", value: totals.Assistant, tone: "assistant" },
+    { label: "Tool", value: totals.Tool, tone: "tool" }
+  ];
+  return segments.filter((segment) => segment.value > 0);
+}
+
+function normalizeAnalysisTimeLabel(label: string): "User" | "Assistant" | "Tool" | null {
+  const normalized = label.trim().toLowerCase();
+  if (normalized === "user") {
+    return "User";
+  }
+  if (normalized === "assistant" || normalized === "model") {
+    return "Assistant";
+  }
+  if (normalized === "tool" || normalized === "system") {
+    return "Tool";
+  }
+  return null;
+}
+
+function normalizeAnalysisEntryTimingKind(entry: AnalysisContentEntry | null): "User" | "Assistant" | "Tool" | null {
+  if (!entry) {
+    return null;
+  }
+  if (entry.kind === "user") {
+    return "User";
+  }
+  if (entry.kind === "assistant" || entry.kind === "thinking") {
+    return "Assistant";
+  }
+  if (entry.kind === "tool-use" || entry.kind === "tool-result") {
+    return "Tool";
+  }
+  if (entry.role === "user") {
+    return "User";
+  }
+  if (entry.role === "assistant") {
+    return "Assistant";
+  }
+  return null;
 }
 
 function limitRawPreview(value: unknown, depth = 0): unknown {

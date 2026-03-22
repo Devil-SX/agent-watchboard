@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
-import { ChatPromptEditor } from "@renderer/components/ChatPromptEditor";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
@@ -65,7 +64,7 @@ export function SkillsPanel({
   const [claudeSubtypeFilter, setClaudeSubtypeFilter] = useState<ClaudeSubtypeFilter>(viewState.claudeSubtypeFilter);
   const [isChatOpen, setIsChatOpen] = useState(viewState.isChatOpen);
   const [chatAgent, setChatAgent] = useState<SkillsChatAgent>(viewState.chatAgent);
-  const [chatPrompts, setChatPrompts] = useState(viewState.chatPrompts);
+  const [skipDangerous, setSkipDangerous] = useState(viewState.skipDangerous);
   const [loadError, setLoadError] = useState("");
   const [loadWarning, setLoadWarning] = useState("");
   const [contentError, setContentError] = useState("");
@@ -94,6 +93,7 @@ export function SkillsPanel({
   }
 
   const isWindows = diagnosticsProp?.platform === "win32";
+  const chatPrompts = viewState.chatPrompts;
 
   const currentPaneState: SkillsPaneState = {
     location,
@@ -102,6 +102,7 @@ export function SkillsPanel({
     selectedSkillMdPath: selectedSkillPath,
     isChatOpen,
     chatAgent,
+    skipDangerous,
     chatPrompts
   };
 
@@ -113,7 +114,7 @@ export function SkillsPanel({
     setSelectedSkillPath(viewState.selectedSkillMdPath);
     setIsChatOpen(viewState.isChatOpen);
     setChatAgent(viewState.chatAgent);
-    setChatPrompts(viewState.chatPrompts);
+    setSkipDangerous(viewState.skipDangerous);
     setSyncWarning("");
   }, [viewState]);
 
@@ -264,6 +265,7 @@ export function SkillsPanel({
     };
   }, [
     chatAgent,
+    skipDangerous,
     chatPrompts,
     claudeSubtypeFilter,
     familyFilter,
@@ -351,6 +353,13 @@ export function SkillsPanel({
                 { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> }
               ]}
               onChange={setChatAgent}
+            />
+          ) : null}
+          {isChatOpen ? (
+            <CompactToggleButton
+              label="Skip"
+              value={skipDangerous ? "Dangerous" : "Safe"}
+              onClick={() => setSkipDangerous((current) => !current)}
             />
           ) : null}
         </div>
@@ -449,17 +458,14 @@ export function SkillsPanel({
             <div className="entry-meta">
               <span className="entry-meta-label">Scope</span>
               <code>Scoped utility session in ~</code>
+              <span className={skipDangerous ? "entry-badge doctor-badge-error" : "entry-badge"}>
+                {skipDangerous ? "Skip Dangerous On" : "Skip Dangerous Off"}
+              </span>
+              <span className="entry-badge">
+                Prompt {chatPrompts[chatAgent].mode === "custom" ? "From Settings" : "Default"}
+              </span>
               {chatError ? <span className="toolbar-error">{chatError}</span> : null}
             </div>
-            <ChatPromptEditor
-              agent={chatAgent}
-              prompt={chatPrompts[chatAgent]}
-              onPromptChange={(prompt) =>
-                setChatPrompts((current) => ({
-                  ...current,
-                  [chatAgent]: prompt
-                }))}
-            />
             <div className="skills-chat-terminal">
               <TerminalTabView
                 instance={chatInstance}

@@ -62,6 +62,7 @@ test("SettingsPanel renders debug actions and runtime log paths", () => {
       onDeleteSshEnvironment={() => undefined}
       onSshSecretChange={() => undefined}
       onTestSshEnvironment={() => undefined}
+      onUpdateSkillsChatPrompt={() => undefined}
       onViewStateChange={() => undefined}
       onOpenDebugPath={async () => undefined}
       onSave={() => undefined}
@@ -120,6 +121,7 @@ test("SettingsPanel debug section renders app version", () => {
       onDeleteSshEnvironment={() => undefined}
       onSshSecretChange={() => undefined}
       onTestSshEnvironment={() => undefined}
+      onUpdateSkillsChatPrompt={() => undefined}
       onViewStateChange={() => undefined}
       onOpenDebugPath={async () => undefined}
       onSave={() => undefined}
@@ -167,6 +169,7 @@ test("SettingsPanel renders SSH environment management controls", () => {
       onDeleteSshEnvironment={() => undefined}
       onSshSecretChange={() => undefined}
       onTestSshEnvironment={() => undefined}
+      onUpdateSkillsChatPrompt={() => undefined}
       onViewStateChange={() => undefined}
       onOpenDebugPath={async () => undefined}
       onSave={() => undefined}
@@ -179,4 +182,53 @@ test("SettingsPanel renders SSH environment management controls", () => {
   assert.match(html, /Prod SSH/);
   assert.match(html, /Test Connection/);
   assert.match(html, /Private Key Path/);
+});
+
+test("SettingsPanel renders skills chat prompt editors under the chat category", () => {
+  const html = renderToStaticMarkup(
+    <SettingsPanel
+      settings={createDefaultAppSettings({
+        settingsPane: {
+          activeCategory: "chat"
+        },
+        skillsPane: {
+          ...createDefaultAppSettings().skillsPane,
+          chatPrompts: {
+            codex: {
+              mode: "custom",
+              text: "Keep responses scoped to repo automation."
+            },
+            claude: {
+              mode: "default",
+              text: ""
+            }
+          }
+        }
+      })}
+      diagnostics={null}
+      viewState={{ activeCategory: "chat" }}
+      isDirty={true}
+      isSaving={false}
+      sshSecretDrafts={{}}
+      sshTestStates={{}}
+      onChange={() => undefined}
+      onAddSshEnvironment={() => undefined}
+      onUpdateSshEnvironment={() => undefined}
+      onDeleteSshEnvironment={() => undefined}
+      onSshSecretChange={() => undefined}
+      onTestSshEnvironment={() => undefined}
+      onUpdateSkillsChatPrompt={() => undefined}
+      onViewStateChange={() => undefined}
+      onOpenDebugPath={async () => undefined}
+      onSave={() => undefined}
+      onReset={() => undefined}
+    />
+  );
+
+  assert.match(html, /Chat Prompts/);
+  assert.match(html, /Skills Chat/);
+  assert.match(html, /System Prompt/);
+  assert.match(html, /Codex/);
+  assert.match(html, /Claude/);
+  assert.match(html, /Keep responses scoped to repo automation\./);
 });

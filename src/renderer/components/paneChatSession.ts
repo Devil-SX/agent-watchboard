@@ -1,7 +1,9 @@
 import {
+  buildPresetCommand,
   createSingleTerminalLayout,
   createTerminalInstance,
   createTerminalProfile,
+  findPresetId,
   type AgentPathLocation,
   type ChatPrompt,
   type TerminalInstance,
@@ -19,9 +21,10 @@ export function buildPaneChatSessionKey(
   pane: PaneChatKind,
   agent: PaneChatAgent,
   location: AgentPathLocation,
-  platform: NodeJS.Platform | undefined
+  platform: NodeJS.Platform | undefined,
+  skipDangerous = false
 ): string {
-  return `${pane}:${agent}:${resolvePaneChatLocation(location, platform)}:${platform ?? "unknown"}`;
+  return `${pane}:${agent}:${resolvePaneChatLocation(location, platform)}:${platform ?? "unknown"}:${skipDangerous ? "skip" : "safe"}`;
 }
 
 export function createPaneChatInstance(
@@ -29,7 +32,8 @@ export function createPaneChatInstance(
   agent: PaneChatAgent,
   location: AgentPathLocation,
   platform: NodeJS.Platform | undefined,
-  prompt: ChatPrompt
+  prompt: ChatPrompt,
+  skipDangerous = false
 ): TerminalInstance {
   const isWindows = platform === "win32";
   const effectiveLocation = resolvePaneChatLocation(location, platform);
@@ -41,10 +45,10 @@ export function createPaneChatInstance(
     shellOrProgram,
     cwd: "~",
     startupMode: shouldUsePresetStartup(prompt) ? "preset" : "custom",
-    startupPresetId: shouldUsePresetStartup(prompt) ? agent : undefined,
+    startupPresetId: shouldUsePresetStartup(prompt) ? findPresetId(agent, false, skipDangerous) : undefined,
     startupCustomCommand: shouldUsePresetStartup(prompt)
       ? ""
-      : buildPaneChatStartupCommand(agent, target, shellOrProgram, prompt)
+      : buildPaneChatStartupCommand(agent, target, shellOrProgram, prompt, skipDangerous)
   });
   const createdAt = new Date().toISOString();
   const workspace: Workspace = {
@@ -71,25 +75,31 @@ export function buildPaneChatStartupCommand(
   agent: PaneChatAgent,
   target: "linux" | "windows" | "wsl",
   shellOrProgram: string,
-  prompt: ChatPrompt
+  prompt: ChatPrompt,
+  skipDangerous = false
 ): string {
   if (shouldUsePresetStartup(prompt)) {
-    return agent;
+    return buildPresetCommand(agent, false, skipDangerous);
   }
 
   const quoteArgument = target === "windows" && /powershell/i.test(shellOrProgram)
     ? quotePowerShellArgument
     : quotePosixArgument;
   const promptText = prompt.text.trim();
+  const skipFlag =
+    agent === "codex"
+      ? "--dangerously-bypass-approvals-and-sandbox"
+      : "--dangerously-skip-permissions";
+  const skipArgs = skipDangerous ? [skipFlag] : [];
 
   if (agent === "claude") {
     // Preserve Claude's built-in system prompt and append the user-defined supplement.
-    return ["claude", "--append-system-prompt", quoteArgument(promptText)].join(" ");
+    return ["claude", ...skipArgs, "--append-system-prompt", quoteArgument(promptText)].join(" ");
   }
 
   // Codex does not currently expose a dedicated interactive system-prompt flag. Use a
   // developer_instructions override so the custom prompt supplements the built-in defaults.
-  return ["codex", "-c", quoteArgument(`developer_instructions=${promptText}`)].join(" ");
+  return ["codex", ...skipArgs, "-c", quoteArgument(`developer_instructions=${promptText}`)].join(" ");
 }
 
 function shouldUsePresetStartup(prompt: ChatPrompt): boolean {

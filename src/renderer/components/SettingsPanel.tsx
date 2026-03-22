@@ -1,9 +1,11 @@
 import { useEffect, useState, type ReactElement } from "react";
 
+import { ChatPromptEditor } from "@renderer/components/ChatPromptEditor";
 import type { SshSecretInput, SshTestResult } from "@shared/ipc";
 import {
   TERMINAL_FONT_PRESETS,
   type AppSettings,
+  type ChatPrompt,
   type DiagnosticsInfo,
   type PersistenceStoreHealth,
   type SettingsCategory,
@@ -28,6 +30,7 @@ type Props = {
   onDeleteSshEnvironment: (environmentId: string) => void;
   onSshSecretChange: (environmentId: string, field: keyof SshSecretInput, value: string) => void;
   onTestSshEnvironment: (environmentId: string) => void;
+  onUpdateSkillsChatPrompt: (agent: "codex" | "claude", prompt: ChatPrompt) => void;
   onViewStateChange: (state: SettingsPaneState) => void;
   onOpenDebugPath: (debugPath: string) => Promise<void>;
   onSave: () => void;
@@ -61,6 +64,7 @@ export function SettingsPanel({
   onDeleteSshEnvironment,
   onSshSecretChange,
   onTestSshEnvironment,
+  onUpdateSkillsChatPrompt,
   onViewStateChange,
   onOpenDebugPath,
   onSave,
@@ -128,7 +132,6 @@ export function SettingsPanel({
                 onClick={() => onViewStateChange({ activeCategory: category.id })}
               >
                 <span className="settings-category-tab-label">{category.label}</span>
-                <span className="settings-category-tab-copy">{category.copy}</span>
               </button>
             ))}
           </div>
@@ -227,6 +230,24 @@ export function SettingsPanel({
               </pre>
             </section>
           </>
+        ) : null}
+
+        {activeCategory === "chat" ? (
+          <section className="settings-section">
+            <p className="panel-eyebrow">Skills Chat</p>
+            <div className="settings-chat-stack">
+              <ChatPromptEditor
+                agent="codex"
+                prompt={settings.skillsPane.chatPrompts.codex}
+                onPromptChange={(prompt) => onUpdateSkillsChatPrompt("codex", prompt)}
+              />
+              <ChatPromptEditor
+                agent="claude"
+                prompt={settings.skillsPane.chatPrompts.claude}
+                onPromptChange={(prompt) => onUpdateSkillsChatPrompt("claude", prompt)}
+              />
+            </div>
+          </section>
         ) : null}
 
         {activeCategory === "environments" ? (
@@ -568,6 +589,12 @@ const SETTINGS_CATEGORIES: SettingsCategoryMeta[] = [
     label: "Terminal",
     title: "Terminal Rendering",
     copy: "Font settings apply to every workspace terminal in the app."
+  },
+  {
+    id: "chat",
+    label: "Chat",
+    title: "Chat Prompts",
+    copy: "Configure reusable startup prompt overlays for pane-scoped chat sessions."
   },
   {
     id: "environments",

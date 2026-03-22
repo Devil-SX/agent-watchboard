@@ -16,16 +16,18 @@ export function resolveSkillsChatLocation(location: AgentPathLocation, platform:
 export function buildSkillsChatSessionKey(
   agent: SkillsChatAgent,
   location: AgentPathLocation,
-  platform: NodeJS.Platform | undefined
+  platform: NodeJS.Platform | undefined,
+  skipDangerous = false
 ): string {
-  return buildPaneChatSessionKey("skills", agent, location, platform);
+  return buildPaneChatSessionKey("skills", agent, location, platform, skipDangerous);
 }
 
 export function createSkillsChatInstance(
   agent: SkillsChatAgent,
   location: AgentPathLocation,
   platform: NodeJS.Platform | undefined,
-  prompt: ChatPrompt
+  prompt: ChatPrompt,
+  skipDangerous = false
 ): TerminalInstance {
-  return createPaneChatInstance("skills", agent, location, platform, prompt);
+  return createPaneChatInstance("skills", agent, location, platform, prompt, skipDangerous);
 }

@@ -1,6 +1,7 @@
 import type {
   AgentConfigDocument,
   AgentConfigEntry,
+  AgentConfigFileId,
   AgentPathLocation,
   AppSettings,
   BoardDocument,
@@ -85,8 +86,8 @@ export type WatchboardApi = {
   listSkills: (location: AgentPathLocation, options?: SkillListOptions) => Promise<SkillListResult>;
   readSkillContent: (skillPath: string) => Promise<string>;
   listAgentConfigs: (location: AgentPathLocation) => Promise<AgentConfigEntry[]>;
-  readAgentConfig: (configId: string, location: AgentPathLocation) => Promise<AgentConfigDocument>;
-  writeAgentConfig: (configId: string, location: AgentPathLocation, content: string) => Promise<void>;
+  readAgentConfig: (configId: AgentConfigFileId, location: AgentPathLocation) => Promise<AgentConfigDocument>;
+  writeAgentConfig: (configId: AgentConfigFileId, location: AgentPathLocation, content: string) => Promise<void>;
   getDoctorDiagnostics: () => Promise<DoctorDiagnosticsDocument>;
   runDoctorCheck: (location: DoctorLocation, agent: DoctorAgent) => Promise<DoctorCheckResult>;
   getAnalysisDatabase: (location: AgentPathLocation) => Promise<AnalysisDatabaseInfo>;
