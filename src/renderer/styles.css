@@ -338,7 +338,7 @@ textarea::placeholder {
 .workspace-path-row {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   width: 100%;
   min-height: 18px;
@@ -359,17 +359,16 @@ textarea::placeholder {
 .workspace-path-label {
   position: relative;
   z-index: 1;
-  display: inline-block;
+  display: block;
   max-width: 100%;
   padding-right: 10px;
   background: linear-gradient(180deg, rgba(13, 18, 24, 0.94), rgba(10, 14, 19, 0.88));
   font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  line-height: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
   text-transform: none;
 }
 
@@ -464,7 +463,7 @@ textarea::placeholder {
 .workspace-list-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
@@ -510,7 +509,7 @@ textarea::placeholder {
   position: relative;
   z-index: 1;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   width: 100%;
   padding: 6px 8px 6px 7px;
@@ -606,9 +605,8 @@ textarea::placeholder {
 
 .workspace-list-copy span {
   line-height: 1.15;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .workspace-list-actions {

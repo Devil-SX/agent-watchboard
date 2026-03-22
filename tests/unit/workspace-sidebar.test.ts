@@ -94,6 +94,18 @@ test("deriveVisibleWorkspaceGroups uses a fallback label when cwd is blank", () 
   assert.equal(grouped[0]?.label, "No path");
 });
 
+test("deriveVisibleWorkspaceGroups normalizes trailing separators without collapsing roots", () => {
+  const alpha = makeWorkspace("Alpha", "linux", "codex", "~/A");
+  const beta = makeWorkspace("Beta", "linux", "claude", "~/A/");
+  const homeRoot = makeWorkspace("Home Root", "linux", "codex", "~/");
+  const filesystemRoot = makeWorkspace("Filesystem Root", "linux", "codex", "/");
+
+  const grouped = deriveVisibleWorkspaceGroups([beta, filesystemRoot, alpha, homeRoot], new Map(), "all", "all", "alphabetical", false);
+
+  assert.deepEqual(grouped.map((group) => group.label), ["/", "~", "~/A"]);
+  assert.deepEqual(grouped[2]?.templates.map((template) => template.workspace.name), ["Alpha", "Beta"]);
+});
+
 test("deriveVisibleWorkspaceGroups hides empty templates and paths when instance filter is enabled", () => {
   const alpha = makeWorkspace("Alpha", "linux", "codex", "/repo/a");
   const beta = makeWorkspace("Beta", "linux", "codex", "/repo/b");

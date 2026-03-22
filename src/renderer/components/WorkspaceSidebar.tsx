@@ -587,11 +587,36 @@ type WorkspacePathGroupMetadata = {
 
 function getWorkspacePathGroupMetadata(workspace: Workspace): WorkspacePathGroupMetadata {
   const rawPath = workspace.terminals[0]?.cwd ?? "";
-  const label = rawPath.trim() || "No path";
+  const label = normalizeWorkspacePathGroupLabel(rawPath) || "No path";
   return {
     key: label.toLocaleLowerCase(),
     label
   };
+}
+
+function normalizeWorkspacePathGroupLabel(rawPath: string): string {
+  const trimmed = rawPath.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed === "~/" || trimmed === "~\\") {
+    return "~";
+  }
+  if (trimmed === "/" || trimmed === "\\" || trimmed === "~") {
+    return trimmed;
+  }
+
+  const windowsRootMatch = trimmed.match(/^([A-Za-z]:)([\\/]+)$/);
+  if (windowsRootMatch) {
+    return `${windowsRootMatch[1]!}${windowsRootMatch[2]![0]!}`;
+  }
+
+  const uncRootMatch = trimmed.match(/^(\\\\[^\\/]+[\\/][^\\/]+)[\\/]*$/);
+  if (uncRootMatch) {
+    return uncRootMatch[1]!;
+  }
+
+  return trimmed.replace(/[\\/]+$/, "");
 }
 
 export function getPreviewStyle(bounds: Pick<DOMRect, "right" | "top" | "width">): CSSProperties {

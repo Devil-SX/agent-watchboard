@@ -1,10 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { WorkspaceSidebar } from "../../src/renderer/components/WorkspaceSidebar";
 import { createEmptyWorkbenchDocument, createWorkspaceTemplate } from "../../src/shared/schema";
+
+const styles = readFileSync(new URL("../../src/renderer/styles.css", import.meta.url), "utf8");
 
 test("WorkspaceSidebar uses icon-led compact filter controls without visible field labels", () => {
   const codexWorkspace = createWorkspaceTemplate("Codex Workspace", { platform: "linux" });
@@ -63,4 +66,31 @@ test("WorkspaceSidebar uses icon-led compact filter controls without visible fie
   assert.doesNotMatch(html, />Agent<\/span>/);
   assert.doesNotMatch(html, />Env<\/span>/);
   assert.doesNotMatch(html, />Instance<\/span>/);
+});
+
+test("WorkspaceSidebar path labels wrap instead of widening the sidebar", () => {
+  assert.match(
+    styles,
+    /\.workspace-path-row\s*\{[^}]*align-items:\s*flex-start;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-path-label\s*\{[^}]*display:\s*block;[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-list-row\s*\{[^}]*align-items:\s*flex-start;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-list-main\s*\{[^}]*align-items:\s*flex-start;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-list-copy span\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.workspace-path-label\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s
+  );
 });

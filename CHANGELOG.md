@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Changed analysis navigation and browser state handling to support the current overview/session/cross-session layout, cached project-session snapshots, and stacked role breakdown rendering.
 - Changed workspace, skills, and settings controls to use the newer compact control surface, shared prompt settings, and icon-driven filter affordances.
 
+### Fixed
+- Fixed workspace sidebar path grouping so semantically identical cwd values such as `~/A` and `~/A/` now collapse into the same path section, while root paths remain stable.
+- Fixed workspace sidebar long-path rendering so path-group labels and cwd lines wrap within the existing sidebar width instead of forcing the left panel wider.
+
 ## [0.13.0] - 2026-03-21
 
 > **Code Stats** | Total: 48,705 lines | Delta: +5,290 (-671) = **+4,619 net** | Change: **+10.48%** vs v0.12.3
