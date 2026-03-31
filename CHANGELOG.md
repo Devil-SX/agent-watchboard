@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Changed analysis navigation and browser state handling to support the current overview/session/cross-session layout, cached project-session snapshots, and stacked role breakdown rendering.
 - Changed workspace, skills, and settings controls to use the newer compact control surface, shared prompt settings, and icon-driven filter affordances.
+- Changed workspace sidebar template rows to use a denser horizontal identity layout with compact `Continue` / `Skip` / `Cron` launch flags, and tightened runtime row spacing without shrinking text.
 
 ### Fixed
 - Fixed workspace sidebar path grouping so semantically identical cwd values such as `~/A` and `~/A/` now collapse into the same path section, while root paths remain stable.

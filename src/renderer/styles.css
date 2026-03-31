@@ -471,17 +471,9 @@ textarea::placeholder {
 .workspace-identity-stack {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 5px;
-  width: 48px;
-  flex: 0 0 48px;
-}
-
-.workspace-env-rail {
-  display: inline-flex;
-  align-items: stretch;
-  flex: 0 0 auto;
-  margin-left: -1px;
+  justify-content: center;
+  width: 24px;
+  flex: 0 0 24px;
 }
 
 .workspace-agent-icon {
@@ -510,9 +502,9 @@ textarea::placeholder {
   z-index: 1;
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  padding: 6px 8px 6px 7px;
+  padding: 5px 8px 5px 7px;
   border: 0;
   border-radius: 12px;
   text-align: left;
@@ -553,7 +545,7 @@ textarea::placeholder {
 
 .workspace-list-copy {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
   flex: 1;
 }
@@ -561,8 +553,33 @@ textarea::placeholder {
 .workspace-list-title-row {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 6px;
   min-width: 0;
+}
+
+.workspace-template-heading .location-badge {
+  flex: 0 0 auto;
+}
+
+.workspace-template-flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.workspace-template-flag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.05rem;
+  padding: 0.08rem 0.38rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .workspace-list-copy strong,
@@ -697,11 +714,11 @@ textarea::placeholder {
 
 .workspace-instance-list {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   width: 100%;
   min-width: 0;
   margin: 0 0 4px 10px;
-  padding: 8px 8px 8px 14px;
+  padding: 7px 8px 7px 13px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 14px;
   background: rgba(5, 10, 15, 0.46);
@@ -742,10 +759,10 @@ textarea::placeholder {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   border: 1px solid transparent;
   border-radius: 12px;
-  padding: 8px 10px;
+  padding: 6px 9px;
   background: rgba(255, 255, 255, 0.02);
   text-align: left;
   cursor: grab;
@@ -856,7 +873,7 @@ textarea::placeholder {
 
 .workspace-instance-copy {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -3340,15 +3357,6 @@ textarea::placeholder {
 .agent-badge-icon svg {
   width: 100%;
   height: 100%;
-}
-
-.workspace-identity-stack .location-badge {
-  justify-content: center;
-  min-width: 3rem;
-}
-
-.workspace-identity-stack .location-badge.is-vertical-compact {
-  min-width: 16px;
 }
 
 .doctor-result-heading {

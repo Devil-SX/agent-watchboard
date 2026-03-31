@@ -21,11 +21,14 @@ import { StatusOrbit } from "@renderer/components/StatusOrbit";
 import { createTerminalPreviewSnippet } from "@renderer/components/terminalFallback";
 import { resolveSessionVisualState, resolveWorkspaceVisualState, visualStateClassName, type SessionVisualState } from "@renderer/components/sessionVisualState";
 import {
-  describeTerminalLaunchShort,
+  AGENT_PRESETS,
+  decomposePresetId,
   detectAgentKind,
+  resolveTerminalStartupCommand,
   resolveWorkspaceEnvironment,
   type SessionState,
   type TerminalInstance,
+  type TerminalProfile,
   type WorkbenchDocument,
   type WorkspaceEnvironmentFilterMode,
   type Workspace,
@@ -252,6 +255,7 @@ export function WorkspaceSidebar({
               // Sidebar disclosure is explicit. Terminal focus changes should not mutate expansion state.
               const isExpanded = hasInstances && Boolean(expandedGroups[workspace.id]);
               const isMarkedForDelete = selectedDeleteIds.includes(workspace.id);
+              const compactFlags = describeWorkspaceCompactFlags(workspace);
 
               return (
                 <div
@@ -291,9 +295,6 @@ export function WorkspaceSidebar({
                       }}
                     >
                       <span className="workspace-identity-stack">
-                        <span className="workspace-env-rail">
-                          <LocationBadge location={environment} tone="strong" orientation="vertical-compact" />
-                        </span>
                         {(() => {
                           const terminal = workspace.terminals[0];
                           const agentKind = terminal ? detectAgentKind(terminal) : "unknown";
@@ -307,10 +308,19 @@ export function WorkspaceSidebar({
                         })()}
                       </span>
                       <span className="workspace-list-copy">
-                        <span className="workspace-list-title-row">
+                        <span className="workspace-list-title-row workspace-template-heading">
+                          <LocationBadge location={environment} tone="strong" />
                           <strong>{workspace.name}</strong>
                         </span>
-                        <span>{describeWorkspaceLine(workspace)}</span>
+                        {compactFlags.length > 0 ? (
+                          <span className="workspace-template-flags" aria-label="Workspace launch flags">
+                            {compactFlags.map((flag) => (
+                              <span key={flag} className="workspace-template-flag">
+                                {flag}
+                              </span>
+                            ))}
+                          </span>
+                        ) : null}
                       </span>
                       <span className="workspace-list-status">
                         {isDeleteMode ? (
@@ -485,12 +495,51 @@ function groupInstances(instances: TerminalInstance[]): Map<string, TerminalInst
   return groups;
 }
 
-function describeWorkspaceLine(workspace: Workspace): string {
+function describeWorkspaceCompactFlags(workspace: Workspace): string[] {
   const terminal = workspace.terminals[0];
   if (!terminal) {
-    return "No terminal configured";
+    return [];
   }
-  return `${terminal.target} · ${describeTerminalLaunchShort(terminal)}`;
+
+  // Sidebar rows stay intentionally terse: agent/environment already have dedicated visual affordances,
+  // so the secondary line should only surface scan-worthy launch flags instead of repeating identity text.
+  const flags: string[] = [];
+  const seenFlags = new Set<string>();
+  const pushFlag = (label: string, enabled: boolean): void => {
+    if (enabled && !seenFlags.has(label)) {
+      seenFlags.add(label);
+      flags.push(label);
+    }
+  };
+
+  const { continueMode, skipMode } = resolveWorkspaceLaunchFlags(terminal);
+  pushFlag("Continue", continueMode);
+  pushFlag("Skip", skipMode);
+  pushFlag("Cron", Boolean(terminal.cron.enabled));
+
+  return flags;
+}
+
+function resolveWorkspaceLaunchFlags(terminal: Pick<
+  TerminalProfile,
+  "startupMode" | "startupPresetId" | "startupCustomCommand" | "startupCommand" | "shellOrProgram" | "target"
+>): { continueMode: boolean; skipMode: boolean } {
+  if (terminal.startupMode === "preset") {
+    const { continueMode, skipMode } = decomposePresetId(terminal.startupPresetId);
+    return { continueMode, skipMode };
+  }
+
+  const command = resolveTerminalStartupCommand(terminal);
+  const agentKind = detectAgentKind(terminal);
+  if (agentKind !== "codex" && agentKind !== "claude") {
+    return { continueMode: false, skipMode: false };
+  }
+
+  const preset = AGENT_PRESETS[agentKind];
+  return {
+    continueMode: command.includes(preset.continueFlag),
+    skipMode: command.includes(preset.skipFlag)
+  };
 }
 
 export function matchesWorkspaceFilter(
