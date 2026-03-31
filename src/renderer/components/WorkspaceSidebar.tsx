@@ -577,7 +577,7 @@ export function deriveVisibleWorkspaceGroups(
       templates: [...group.templates].sort((left, right) => compareWorkspaces(left.workspace, right.workspace, sortMode))
     }))
     .filter((group) => group.templates.length > 0)
-    .sort((left, right) => left.label.localeCompare(right.label, undefined, { sensitivity: "base", numeric: true }));
+    .sort((left, right) => compareWorkspacePathGroups(left, right, sortMode));
 }
 
 type WorkspacePathGroupMetadata = {
@@ -635,8 +635,8 @@ export function compareWorkspaces(left: Workspace, right: Workspace, sortMode: W
   if (sortMode === "alphabetical") {
     return compareWorkspaceNames(left, right);
   }
-  const leftLaunch = left.lastLaunchedAt ?? "";
-  const rightLaunch = right.lastLaunchedAt ?? "";
+  const leftLaunch = normalizeWorkspaceLaunchTimestamp(left.lastLaunchedAt);
+  const rightLaunch = normalizeWorkspaceLaunchTimestamp(right.lastLaunchedAt);
   if (leftLaunch && rightLaunch && leftLaunch !== rightLaunch) {
     return rightLaunch.localeCompare(leftLaunch);
   }
@@ -654,6 +654,43 @@ function compareWorkspaceNames(left: Workspace, right: Workspace): number {
     sensitivity: "base",
     numeric: true
   });
+}
+
+function compareWorkspacePathGroups(
+  left: WorkspacePathGroup,
+  right: WorkspacePathGroup,
+  sortMode: WorkspaceSortMode
+): number {
+  if (sortMode === "last-launch") {
+    const leftLaunch = getLatestWorkspacePathGroupLaunch(left);
+    const rightLaunch = getLatestWorkspacePathGroupLaunch(right);
+    if (leftLaunch && rightLaunch && leftLaunch !== rightLaunch) {
+      return rightLaunch.localeCompare(leftLaunch);
+    }
+    if (leftLaunch) {
+      return -1;
+    }
+    if (rightLaunch) {
+      return 1;
+    }
+  }
+
+  return left.label.localeCompare(right.label, undefined, { sensitivity: "base", numeric: true });
+}
+
+function getLatestWorkspacePathGroupLaunch(group: WorkspacePathGroup): string {
+  let latestLaunch = "";
+  for (const template of group.templates) {
+    const launch = normalizeWorkspaceLaunchTimestamp(template.workspace.lastLaunchedAt);
+    if (launch && (!latestLaunch || launch.localeCompare(latestLaunch) > 0)) {
+      latestLaunch = launch;
+    }
+  }
+  return latestLaunch;
+}
+
+function normalizeWorkspaceLaunchTimestamp(value: string | null | undefined): string {
+  return value?.trim() ?? "";
 }
 
 function handleAction(event: MouseEvent<HTMLButtonElement>, action: () => void): void {

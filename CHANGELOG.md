@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Fixed workspace sidebar path grouping so semantically identical cwd values such as `~/A` and `~/A/` now collapse into the same path section, while root paths remain stable.
 - Fixed workspace sidebar long-path rendering so path-group labels and cwd lines wrap within the existing sidebar width instead of forcing the left panel wider.
+- Fixed workspace sidebar `Last Launch` sorting so path sections now reorder by the newest `lastLaunchedAt` in each group instead of staying alphabetically pinned.
 
 ## [0.13.0] - 2026-03-21
 

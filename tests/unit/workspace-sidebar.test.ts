@@ -106,6 +106,36 @@ test("deriveVisibleWorkspaceGroups normalizes trailing separators without collap
   assert.deepEqual(grouped[2]?.templates.map((template) => template.workspace.name), ["Alpha", "Beta"]);
 });
 
+test("deriveVisibleWorkspaceGroups orders path groups by latest launch when sort mode is last-launch", () => {
+  const alpha = makeWorkspace("Alpha", "linux", "codex", "/repo/a", "2026-03-29T10:00:00.000Z");
+  const beta = makeWorkspace("Beta", "linux", "codex", "/repo/b", "2026-03-30T10:00:00.000Z");
+  const gamma = makeWorkspace("Gamma", "linux", "codex", "/repo/c");
+
+  const grouped = deriveVisibleWorkspaceGroups([alpha, gamma, beta], new Map(), "all", "all", "last-launch", false);
+
+  assert.deepEqual(grouped.map((group) => group.label), ["/repo/b", "/repo/a", "/repo/c"]);
+});
+
+test("deriveVisibleWorkspaceGroups keeps alphabetical path order when sort mode is alphabetical", () => {
+  const alpha = makeWorkspace("Alpha", "linux", "codex", "/repo/b", "2026-03-30T10:00:00.000Z");
+  const beta = makeWorkspace("Beta", "linux", "codex", "/repo/a", "2026-03-31T10:00:00.000Z");
+
+  const grouped = deriveVisibleWorkspaceGroups([alpha, beta], new Map(), "all", "all", "alphabetical", false);
+
+  assert.deepEqual(grouped.map((group) => group.label), ["/repo/a", "/repo/b"]);
+});
+
+test("deriveVisibleWorkspaceGroups keeps path ordering stable when launch timestamps are missing or tied", () => {
+  const alpha = makeWorkspace("Alpha", "linux", "codex", "/repo/b");
+  const beta = makeWorkspace("Beta", "linux", "codex", "/repo/a");
+  const gamma = makeWorkspace("Gamma", "linux", "codex", "/repo/c", "2026-03-31T10:00:00.000Z");
+  const delta = makeWorkspace("Delta", "linux", "codex", "/repo/d", "2026-03-31T10:00:00.000Z");
+
+  const grouped = deriveVisibleWorkspaceGroups([alpha, beta, delta, gamma], new Map(), "all", "all", "last-launch", false);
+
+  assert.deepEqual(grouped.map((group) => group.label), ["/repo/c", "/repo/d", "/repo/a", "/repo/b"]);
+});
+
 test("deriveVisibleWorkspaceGroups hides empty templates and paths when instance filter is enabled", () => {
   const alpha = makeWorkspace("Alpha", "linux", "codex", "/repo/a");
   const beta = makeWorkspace("Beta", "linux", "codex", "/repo/b");
