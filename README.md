@@ -13,25 +13,38 @@
   <img src="./screenshot.png" alt="Agent Watchboard screenshot" width="100%" />
 </p>
 
+## Positioning
+
+An AI agent application stack can be understood as four layers:
+
+| Layer | Role | Examples |
+|---|---|---|
+| **Human** | End user operating the agent | — |
+| **Agent Client** | Human–Agent interface; interaction, monitoring, orchestration | **This project** |
+| **Agent Harness** | Context engineering, tool execution, session management | Claude Code, Codex, OpenCode, … |
+| **AI Infra** | Stable LLM inference serving | Anthropic API, OpenAI API, … |
+
+Agent Watchboard sits at the **Agent Client** layer — it is the desktop surface through which a human supervises and interacts with one or more agent harnesses.
+
+### Why build a dedicated client?
+
+**Multi-agent, multi-ecosystem.** Each vendor ships its own desktop client, but those clients are locked to a single ecosystem. The agent landscape is evolving fast; different harnesses excel at different tasks and change rapidly. A vendor-neutral client lets the user run Codex, Claude Code, and custom profiles side by side without juggling separate UIs.
+
+**Personal experimentation.** Having an independent codebase makes it easy to prototype custom workflows, test new interaction patterns, and iterate on operational tooling without waiting for upstream vendors to ship features.
+
 ## Overview
 
-Agent Watchboard is a desktop control surface for people who run more than one coding agent at the same time and need the runtime state to stay visible.
-
-It combines three layers in one application:
+Agent Watchboard combines three layers in one application:
 
 - persistent workspace templates for Codex, Claude Code, bash, and custom terminal profiles
 - a split-pane runtime workbench with reconnectable PTY sessions
-- a shared Todo Board that stays in sync with the repo-local `todo_preview` CLI and skill
-
-The current real-world target is Windows with WSL, where host-side and WSL-side tools need to coexist without forcing the user to mentally switch between two different environments.
+- a shared Todo Board that stays in sync with the [`todo_preview`](docs/todo-preview.md) CLI and skill
 
 ## Platform Support
 
 - Windows
-- Windows + WSL
+- Windows + WSL (primary development target)
 - Linux
-
-Windows + WSL is the setup that has been exercised most heavily in day-to-day usage.
 
 ## Supported Agents
 
@@ -42,7 +55,7 @@ Windows + WSL is the setup that has been exercised most heavily in day-to-day us
 
 ## Why This Exists
 
-Typical agent tooling still treats each terminal as an isolated session. That breaks down when you want to:
+Typical agent tooling treats each terminal as an isolated session. That breaks down when you want to:
 
 - keep multiple agents open across different repos and environments
 - reconnect after closing the UI
@@ -52,37 +65,37 @@ Typical agent tooling still treats each terminal as an isolated session. That br
 
 Agent Watchboard is designed as the missing operational layer above individual agent CLIs.
 
-## Core Capabilities
+## Features
 
-- Save workspace templates and launch them into tabs, splits, or background runtime instances.
-- Reconnect to live PTY sessions after restarting the desktop UI instead of discarding terminal state.
-- Run host and WSL workspaces side by side in a single watchboard.
-- Inspect skills, configs, and runtime state from the same application shell.
-- Share a JSON Todo Board between the desktop app and terminal automation through `todo_preview`.
-- Persist workbench layout, workspace definitions, settings, and runtime diagnostics outside the repository.
+### Multi-Project Management
+
+Register project paths in the sidebar, expand/collapse each to monitor agent runtime status per project. Workspace templates persist across sessions.
+
+### Cron Scheduling
+
+Client-side periodic task execution, similar to Claude Code CLI's `/loop` but implemented at the client layer — available to any harness, including those that don't natively support recurring commands.
+
+### Agent Config Management
+
+Centralized management of skills, configs, and profiles across multiple agent harnesses from a single interface.
+
+### Conversation Trajectory Analysis <sup>experimental</sup>
+
+Powered by [agent-trajectory-profiler](https://github.com/Devil-SX/agent-trajectory-profiler). Statistical analysis of agent conversation histories — extract patterns, identify inefficiencies, and iteratively improve agent usage based on real session data.
+
+### Cross-Session Task Board <sup>experimental</sup>
+
+A shared task board backed by the [`todo_preview`](docs/todo-preview.md) CLI and local JSON persistence. Multiple sessions can read and write the same board. Frontend renders list and calendar views; agents interact through the skill or CLI.
 
 ## Development Priorities
 
-These are the two product directions the project is being shaped around:
-
 ### 1. Seamless Multi-Environment Operation
 
-The long-term goal is to make agent execution feel continuous across:
-
-- host
-- WSL
-- server / remote runtime targets
-
-Today the app already supports host and WSL workflows. The next step is to extend the same visual language, runtime health model, and path-aware tooling into remote or server-backed agent environments without forcing separate UIs.
+Make agent execution feel continuous across host, WSL, and remote/server targets. Today the app supports host and WSL workflows; the next step is extending the same runtime model into remote agent environments without forcing separate UIs.
 
 ### 2. Multi-Agent Monitoring And Sync
 
-The watchboard is meant to become a single surface for supervising several agents at once:
-
-- unified session state and health visibility
-- synchronized task tracking through the board + CLI bridge
-- consistent workspace identity across Codex and Claude Code
-- better operational insight into which agent is running, idle, blocked, or producing output
+A single surface for supervising several agents at once: unified session state visibility, synchronized task tracking through the board + CLI bridge, and consistent workspace identity across harnesses.
 
 ## Quick Start
 
@@ -95,17 +108,12 @@ pnpm dev
 
 ```bash
 pnpm build
-pnpm dist:linux
-pnpm dist:win
-pnpm dist:win:portable
+pnpm dist:linux    # AppImage under release/
+pnpm dist:win      # unpacked folder under release/win-unpacked/
+pnpm dist:win:portable  # portable .exe (requires wine on non-Windows hosts)
 ```
 
-Notes:
-
-- Linux packages are written under `release/` as `AppImage`.
-- `pnpm dist:win` writes a runnable `release/win-unpacked/` folder that is useful for Windows-side testing from a non-Windows host.
-- On WSL/Linux hosts, `pnpm dist:win` intentionally skips native dependency rebuild and Windows executable resource edits. This keeps `node-pty` on its bundled Windows prebuilds and avoids requiring `wine` for the unpacked test bundle.
-- `pnpm dist:win:portable` produces a Windows portable `.exe` when the host environment has the required Windows packaging tooling such as `wine`.
+On WSL/Linux hosts, `pnpm dist:win` skips native dependency rebuild and Windows executable resource edits, keeping `node-pty` on its bundled Windows prebuilds.
 
 ## CLI
 
@@ -115,161 +123,34 @@ pnpm todo_preview add "new task" --topic Inbox
 pnpm watchboard --help
 ```
 
+See [docs/todo-preview.md](docs/todo-preview.md) for full `todo_preview` usage.
+
 ## Headless E2E Contract
 
-End-to-end tests in this repository are expected to run without a graphical desktop session.
-
-- Electron Playwright suites should launch the app through `tests/e2e/headlessElectronApp.ts`.
-- The shared helper applies the repository-standard headless contract:
-  - `WATCHBOARD_HEADLESS_TEST=1`
-  - `WATCHBOARD_DISABLE_GPU=1`
-  - Chromium flags that disable GPU- and display-dependent rendering paths
-- The main process must keep test windows offscreen and must not surface a desktop-visible `BrowserWindow`.
-- New E2E suites should not call `_electron.launch(...)` directly unless they preserve the same contract.
+E2E tests run without a graphical desktop session. Electron Playwright suites launch through `tests/e2e/headlessElectronApp.ts`, which applies the headless contract (`WATCHBOARD_HEADLESS_TEST=1`, `WATCHBOARD_DISABLE_GPU=1`, GPU-free Chromium flags).
 
 Stable invocation patterns:
 
-- Inside this repository: `pnpm todo_preview ...`
-- Outside this repository: `pnpm --dir /home/sdu/pure_auto/agent_watchboard todo_preview ...`
-- In restricted/sandboxed runtimes where `tsx` may fail: `node /home/sdu/pure_auto/agent_watchboard/dist-node/cli/todo-preview.cjs ...`
-
-E2E gating note:
-
-- `pnpm test:e2e` is intentionally blocked on local machines so it does not accidentally start Electron E2E on a developer desktop.
-- CI runs the gated suite through `pnpm test:e2e:ci`, which requires `CI=1` or `CI=true`.
-
-## `todo_preview` Skill Setup
-
-`todo_preview` is the shared task-management surface for this project. The desktop board UI and the CLI both read and write the same JSON board file, so agents can update tasks from the terminal while the app reflects the changes immediately.
-
-If you want your agent runtime to invoke the skill directly, expose this repository skill in the agent's skill search path:
-
-- Codex: make sure [`skills/todo_preview/SKILL.md`](skills/todo_preview/SKILL.md) is visible from your Codex skills directory, usually by copying or symlinking this repository `skills/` folder into `~/.codex/skills/`.
-- Claude: expose the same repository `skills/` folder in the Claude-side skill location you use for local skills.
-- Repository-local fallback: even without global skill installation, you can always run the CLI directly with `pnpm todo_preview ...` from this repository.
-
-The default board path is `~/.agent-watchboard/board.json`. Keep the desktop app and CLI pointed at the same file if you want one shared board view. Override the path when needed:
-
 ```bash
-pnpm todo_preview --file ~/.agent-watchboard/board.json list
+# Inside this repository
+pnpm todo_preview ...
+
+# Outside this repository
+pnpm --dir /home/sdu/pure_auto/agent_watchboard todo_preview ...
+
+# Restricted/sandboxed runtimes where tsx may fail
+node /home/sdu/pure_auto/agent_watchboard/dist-node/cli/todo-preview.cjs ...
 ```
 
-If you are not currently in the repository root, use:
-
-```bash
-pnpm --dir /home/sdu/pure_auto/agent_watchboard todo_preview --file ~/.agent-watchboard/board.json list
-```
-
-If your runtime blocks `tsx` child IPC features, use the built CLI directly after `pnpm build`:
-
-```bash
-node /home/sdu/pure_auto/agent_watchboard/dist-node/cli/todo-preview.cjs --file ~/.agent-watchboard/board.json list
-```
-
-## Common `todo_preview` Workflows
-
-List the current board:
-
-```bash
-pnpm todo_preview list
-```
-
-Add a task into a topic:
-
-```bash
-pnpm todo_preview add "Investigate CI failure" --topic Inbox
-```
-
-Add a task with more detail and a deadline:
-
-```bash
-pnpm todo_preview add "Release v0.5.2" --topic Release --description "Push tag after CI passes" --ddl 2026-03-13
-```
-
-Mark a task as in progress or done:
-
-```bash
-pnpm todo_preview doing "Investigate CI failure"
-pnpm todo_preview done "Investigate CI failure"
-```
-
-Move a finished task back to `todo`:
-
-```bash
-pnpm todo_preview todo "Investigate CI failure"
-```
-
-Rename a task and update metadata:
-
-```bash
-pnpm todo_preview update "Release v0.5.2" "Publish v0.5.2" --description "Close release issue after green CI" --ddl 2026-03-13
-```
-
-Set or clear a deadline:
-
-```bash
-pnpm todo_preview ddl "Publish v0.5.2" 2026-03-14
-pnpm todo_preview ddl "Publish v0.5.2" --clear
-```
-
-Move a task into another topic:
-
-```bash
-pnpm todo_preview move "Publish v0.5.2" Release
-```
-
-Rename or reorganize topics:
-
-```bash
-pnpm todo_preview rename-topic Inbox Triage
-```
-
-Remove an obsolete task or section:
-
-```bash
-pnpm todo_preview remove "Old follow-up"
-```
-
-Import an older Markdown checklist one time into the JSON board:
-
-```bash
-pnpm todo_preview migrate-markdown ./legacy-todo.md
-```
-
-Apply several mutations atomically from one JSON file:
-
-```bash
-pnpm todo_preview batch ./ops.json
-```
-
-Example `ops.json`:
-
-```json
-[
-  { "op": "add", "topic": "Circuit", "name": "SRAM data analysis" },
-  { "op": "add", "topic": "Circuit", "name": "Compute unit analysis" },
-  { "op": "ddl", "name": "SRAM data analysis", "date": "2026-03-20" }
-]
-```
+`pnpm test:e2e` is blocked locally; CI runs the suite via `pnpm test:e2e:ci` (requires `CI=1`).
 
 ## Runtime Data And Logs
 
 The app persists runtime data outside the repository:
 
-- Windows: `%APPDATA%/agent-watchboard/`
-- Linux: `~/.config/agent-watchboard/`
+| Platform | Config path | Board path |
+|---|---|---|
+| Windows | `%APPDATA%/agent-watchboard/` | WSL-side `~/.agent-watchboard/board.json` |
+| Linux | `~/.config/agent-watchboard/` | `~/.agent-watchboard/board.json` |
 
-Shared todo board default path:
-
-- Host / Linux: `~/.agent-watchboard/board.json`
-- Windows app default: WSL-side `~/.agent-watchboard/board.json`
-
-Important runtime files:
-
-- `workspaces.json`
-- `workbench.json`
-- `settings.json`
-- `supervisor-state.json`
-- `logs/main.log`
-- `logs/supervisor.log`
-- `logs/sessions/<workspaceId>/<terminalId>.log`
+Key runtime files: `workspaces.json`, `workbench.json`, `settings.json`, `supervisor-state.json`, `logs/main.log`, `logs/supervisor.log`.

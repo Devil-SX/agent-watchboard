@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Added a project positioning section and features overview to the README; moved `todo_preview` reference docs into `docs/todo-preview.md` to reduce top-level README length.
 - Added a syntax-aware config editor with JSON/TOML highlighting, validation feedback, and regression coverage for settings/config round-trips.
 - Added richer analysis session-browser coverage for project/session expansion state, browser metric rendering, and legacy analysis state normalization.
 - Added analysis session-browser sort controls with progressive metric-driven reordering, plus DOM regressions that keep expanded branches open while lazy statistics arrive.
