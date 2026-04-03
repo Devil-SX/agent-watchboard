@@ -472,6 +472,7 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
+  align-self: center;
   width: 24px;
   flex: 0 0 24px;
 }
@@ -544,46 +545,77 @@ textarea::placeholder {
 }
 
 .workspace-list-copy {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   gap: 2px;
+  align-self: center;
   min-width: 0;
   flex: 1;
 }
 
 .workspace-list-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: block;
   min-width: 0;
 }
 
-.workspace-template-heading .location-badge {
-  flex: 0 0 auto;
+.workspace-template-meta-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-.workspace-template-flags {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
+.workspace-template-meta-row .location-badge {
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 0.18rem;
+  padding: 0.02rem 0.1rem;
+  font-size: 0.46rem;
+  letter-spacing: 0;
+}
+
+.workspace-template-meta-row .location-badge.is-strong {
+  padding-inline: 0.1rem;
+}
+
+.workspace-template-meta-row .location-badge-icon {
+  width: 0.46rem;
+  height: 0.46rem;
+}
+
+.workspace-template-meta-row .location-badge-label {
+  font-size: 0.46rem;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 
 .workspace-template-flag {
   display: inline-flex;
   align-items: center;
-  min-height: 1.05rem;
-  padding: 0.08rem 0.38rem;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0.72rem;
+  padding: 0.02rem 0.1rem;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: 0.46rem;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 
 .workspace-list-copy strong,
 .pane-tab-copy strong {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

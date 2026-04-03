@@ -307,21 +307,19 @@ export function WorkspaceSidebar({
                           return <span className="workspace-agent-icon is-placeholder" aria-hidden="true" />;
                         })()}
                       </span>
-                      <span className="workspace-list-copy">
-                        <span className="workspace-list-title-row workspace-template-heading">
-                          <LocationBadge location={environment} tone="strong" />
+                      <div className="workspace-list-copy">
+                        <div className="workspace-list-title-row workspace-template-heading">
                           <strong>{workspace.name}</strong>
-                        </span>
-                        {compactFlags.length > 0 ? (
-                          <span className="workspace-template-flags" aria-label="Workspace launch flags">
-                            {compactFlags.map((flag) => (
-                              <span key={flag} className="workspace-template-flag">
-                                {flag}
-                              </span>
-                            ))}
-                          </span>
-                        ) : null}
-                      </span>
+                        </div>
+                        <div className="workspace-template-meta-row" aria-label="Workspace launch metadata">
+                          <LocationBadge location={environment} tone="strong" showLabel={false} />
+                          {compactFlags.map((flag) => (
+                            <span key={flag} className="workspace-template-flag">
+                              {flag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                       <span className="workspace-list-status">
                         {isDeleteMode ? (
                           <span className={isMarkedForDelete ? "workspace-delete-check is-selected" : "workspace-delete-check"}>

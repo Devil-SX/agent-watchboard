@@ -95,7 +95,7 @@ test("WorkspaceSidebar path labels wrap instead of widening the sidebar", () => 
   );
 });
 
-test("WorkspaceSidebar template rows use a horizontal environment badge and compact launch flags", () => {
+test("WorkspaceSidebar template rows keep the title first and group environment plus launch flags on the second row", () => {
   const workspace = createWorkspaceTemplate("Codex Workspace", { platform: "linux" });
   workspace.terminals = [
     {
@@ -146,30 +146,44 @@ test("WorkspaceSidebar template rows use a horizontal environment badge and comp
   );
 
   assert.match(html, /workspace-template-heading/);
-  assert.match(html, /workspace-template-flags/);
-  assert.match(html, />WSL<\/span>/);
+  assert.match(html, /workspace-template-meta-row/);
   assert.match(html, /<strong>Codex Workspace<\/strong>/);
+  assert.match(html, /workspace-template-meta-row[^>]*><span class="location-badge is-wsl is-strong"><span class="location-badge-icon"/);
   assert.match(html, /workspace-template-flag">Continue<\/span>/);
   assert.match(html, /workspace-template-flag">Skip<\/span>/);
   assert.match(html, /workspace-template-flag">Cron<\/span>/);
+  assert.match(html, /workspace-template-heading"><strong>Codex Workspace<\/strong><\/div><div class="workspace-template-meta-row"[^>]*><span class="location-badge/s);
   assert.doesNotMatch(html, /workspace-env-rail/);
   assert.doesNotMatch(html, /is-vertical-compact/);
+  assert.doesNotMatch(html, />WSL<\/span>/);
   assert.doesNotMatch(html, /WSL\s*[·-]\s*Codex/i);
   assert.doesNotMatch(html, /Codex \+ Continue \+ Skip/);
 });
 
-test("WorkspaceSidebar keeps the dense horizontal template layout and tighter runtime rows in CSS", () => {
+test("WorkspaceSidebar keeps the icon centered and the metadata row compact in CSS", () => {
   assert.match(
     styles,
-    /\.workspace-identity-stack\s*\{[^}]*justify-content:\s*center;[^}]*width:\s*24px;[^}]*flex:\s*0 0 24px;/s
+    /\.workspace-identity-stack\s*\{[^}]*justify-content:\s*center;[^}]*align-self:\s*center;[^}]*width:\s*24px;[^}]*flex:\s*0 0 24px;/s
   );
   assert.match(
     styles,
-    /\.workspace-template-flags\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*gap:\s*4px;/s
+    /\.workspace-list-copy\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*justify-content:\s*center;[^}]*align-self:\s*center;/s
   );
   assert.match(
     styles,
-    /\.workspace-template-flag\s*\{[^}]*border-radius:\s*999px;[^}]*font-size:\s*0\.72rem;/s
+    /\.workspace-list-title-row\s*\{[^}]*display:\s*block;[^}]*min-width:\s*0;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-template-meta-row\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;[^}]*gap:\s*0;[^}]*overflow:\s*hidden;[^}]*white-space:\s*nowrap;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-template-meta-row \.location-badge\s*\{[^}]*gap:\s*0\.18rem;[^}]*padding:\s*0\.02rem 0\.1rem;[^}]*font-size:\s*0\.46rem;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-template-flag\s*\{[^}]*border-radius:\s*999px;[^}]*font-size:\s*0\.46rem;[^}]*white-space:\s*nowrap;[^}]*overflow-wrap:\s*normal;[^}]*word-break:\s*keep-all;/s
   );
   assert.match(
     styles,
