@@ -32,14 +32,6 @@ Agent Watchboard sits at the **Agent Client** layer — it is the desktop surfac
 
 **Personal experimentation.** Having an independent codebase makes it easy to prototype custom workflows, test new interaction patterns, and iterate on operational tooling without waiting for upstream vendors to ship features.
 
-## Overview
-
-Agent Watchboard combines three layers in one application:
-
-- persistent workspace templates for Codex, Claude Code, bash, and custom terminal profiles
-- a split-pane runtime workbench with reconnectable PTY sessions
-- a shared Todo Board that stays in sync with the [`todo_preview`](docs/todo-preview.md) CLI and skill
-
 ## Platform Support
 
 - Windows
@@ -52,18 +44,6 @@ Agent Watchboard combines three layers in one application:
 - Claude Code
 - plain shell / bash profiles
 - custom terminal profiles built from saved workspace templates
-
-## Why This Exists
-
-Typical agent tooling treats each terminal as an isolated session. That breaks down when you want to:
-
-- keep multiple agents open across different repos and environments
-- reconnect after closing the UI
-- switch between host and WSL paths without losing context
-- track shared tasks in a board that both the desktop UI and CLI can mutate
-- understand which agent is ready, working, stalled, or stopped
-
-Agent Watchboard is designed as the missing operational layer above individual agent CLIs.
 
 ## Features
 
@@ -86,16 +66,6 @@ Powered by [agent-trajectory-profiler](https://github.com/Devil-SX/agent-traject
 ### Cross-Session Task Board <sup>experimental</sup>
 
 A shared task board backed by the [`todo_preview`](docs/todo-preview.md) CLI and local JSON persistence. Multiple sessions can read and write the same board. Frontend renders list and calendar views; agents interact through the skill or CLI.
-
-## Development Priorities
-
-### 1. Seamless Multi-Environment Operation
-
-Make agent execution feel continuous across host, WSL, and remote/server targets. Today the app supports host and WSL workflows; the next step is extending the same runtime model into remote agent environments without forcing separate UIs.
-
-### 2. Multi-Agent Monitoring And Sync
-
-A single surface for supervising several agents at once: unified session state visibility, synchronized task tracking through the board + CLI bridge, and consistent workspace identity across harnesses.
 
 ## Quick Start
 
