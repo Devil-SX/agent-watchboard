@@ -1,8 +1,8 @@
-import { readdir, stat } from "node:fs/promises";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import type { PathCompletionRequest, PathCompletionResult } from "@shared/ipc";
+import type { EnsureDirectoryResult, PathCompletionRequest, PathCompletionResult } from "@shared/ipc";
 import { expandHomePath } from "@shared/nodePath";
 
 import { resolveWslDistro, resolveWslHome } from "./wslPaths";
@@ -15,6 +15,13 @@ export async function completeTerminalPath(request: PathCompletionRequest): Prom
     return completeWslPath(request);
   }
   return completeHostPath(request);
+}
+
+export async function ensureTerminalDirectory(request: PathCompletionRequest): Promise<EnsureDirectoryResult> {
+  if (request.target === "wsl" && process.platform === "win32") {
+    return ensureWslDirectory(request);
+  }
+  return ensureHostDirectory(request);
 }
 
 async function completeHostPath(request: PathCompletionRequest): Promise<PathCompletionResult> {
@@ -40,6 +47,14 @@ async function completeHostPath(request: PathCompletionRequest): Promise<PathCom
   };
 }
 
+async function ensureHostDirectory(request: PathCompletionRequest): Promise<EnsureDirectoryResult> {
+  const pathModule = request.target === "windows" ? path.win32 : path.posix;
+  const rawInput = request.query.trim();
+  const normalizedInput = rawInput || defaultInputForTarget(request.target);
+  const resolvedInput = resolveHostInput(normalizedInput, request.target, pathModule);
+  return ensureResolvedDirectory(normalizedInput, resolvedInput);
+}
+
 async function completeWslPath(request: PathCompletionRequest): Promise<PathCompletionResult> {
   const distro = await resolveWslDistro(request.wslDistro);
   const home = await resolveWslHome(distro);
@@ -63,6 +78,15 @@ async function completeWslPath(request: PathCompletionRequest): Promise<PathComp
     isDirectory: validation.isDirectory,
     message: validation.message
   };
+}
+
+async function ensureWslDirectory(request: PathCompletionRequest): Promise<EnsureDirectoryResult> {
+  const distro = await resolveWslDistro(request.wslDistro);
+  const home = await resolveWslHome(distro);
+  const rawInput = request.query.trim();
+  const normalizedInput = rawInput || "~";
+  const resolvedLinuxPath = resolveWslLinuxInput(normalizedInput, home);
+  return ensureResolvedDirectory(normalizedInput, toWslWindowsPath(distro, resolvedLinuxPath), resolvedLinuxPath);
 }
 
 async function listSuggestions(
@@ -127,6 +151,34 @@ async function validateDirectory(resolvedInput: string): Promise<{
       message: "Directory not found"
     };
   }
+}
+
+async function ensureResolvedDirectory(
+  normalizedInput: string,
+  filesystemPath: string,
+  resolvedPath = filesystemPath
+): Promise<EnsureDirectoryResult> {
+  const validation = await validateDirectory(filesystemPath);
+  if (validation.exists) {
+    return {
+      normalizedInput,
+      resolvedPath,
+      exists: true,
+      created: false,
+      isDirectory: validation.isDirectory,
+      message: validation.message
+    };
+  }
+
+  await mkdir(filesystemPath, { recursive: true });
+  return {
+    normalizedInput,
+    resolvedPath,
+    exists: true,
+    created: true,
+    isDirectory: true,
+    message: "Directory created"
+  };
 }
 
 function resolveHostInput(normalizedInput: string, target: PathCompletionRequest["target"], pathModule: typeof path.posix | typeof path.win32): string {

@@ -36,7 +36,8 @@ import {
   waitForSupervisorSnapshot
 } from "@main/supervisorSnapshotBarrier";
 import { openDebugPath } from "@main/openDebugPath";
-import { completeTerminalPath } from "@main/pathCompletion";
+import { openWorkspaceInEditor } from "@main/openWorkspaceInEditor";
+import { completeTerminalPath, ensureTerminalDirectory } from "@main/pathCompletion";
 import { resolveCronRelaunchCommand } from "@main/codexSessionResolver";
 import { sanitizePathForLogs, sanitizePayloadPaths } from "@main/pathRedaction";
 import { resolveAnalysisWslHomePath } from "@main/analysisWslResolution";
@@ -47,6 +48,16 @@ import { scanClaudeCommandEntries, scanSkillEntries } from "@main/skillDiscovery
 import { sendSupervisorCommandOrThrow, sendSupervisorCommandSafely } from "@main/supervisorSendGuard";
 import { listWslSkillEntries, readWslSkillContent } from "@main/wslSkills";
 import { resolveWslDistro, resolveWslHome } from "@main/wslPaths";
+import {
+  computeMergedConfig,
+  deleteLayerContent,
+  importExistingConfigAsBaseLayer,
+  readLayerContent,
+  readLayerStack,
+  removeLayer,
+  writeLayerContent,
+  writeLayerStack
+} from "@shared/configLayers";
 import { readDoctorDiagnostics, upsertDoctorCheckResult, writeDoctorPersistenceHealth } from "@shared/doctorDiagnostics";
 import { readAppSettings, readAppSettingsWithHealth, writeAppSettings } from "@shared/settings";
 import {
@@ -54,6 +65,7 @@ import {
   type AgentConfigDocument,
   type AgentConfigEntry,
   type AgentConfigFileId,
+  type ConfigLayerStack,
   type DoctorAgent,
   type DoctorCheckResult,
   type DoctorLocation,
@@ -673,7 +685,12 @@ function setupIpc(): void {
     await openDebugPath(debugPath, (targetPath) => shell.openPath(targetPath));
   });
 
+  ipcMain.handle("watchboard:open-workspace-in-editor", async (_event, request) => {
+    await openWorkspaceInEditor(request);
+  });
+
   ipcMain.handle("watchboard:complete-path", async (_event, request) => completeTerminalPath(request));
+  ipcMain.handle("watchboard:ensure-workspace-directory", async (_event, request) => ensureTerminalDirectory(request));
 
   ipcMain.handle("watchboard:resolve-cron-relaunch-command", async (_event, profile) => {
     return resolveCronRelaunchCommand(profile);
@@ -913,7 +930,8 @@ function setupIpc(): void {
   ipcMain.handle(
     "watchboard:list-skills",
     async (_event, location: AgentPathLocation, options?: { forceRefresh?: boolean }): Promise<SkillListResult> => {
-      const cacheKey = `skills:${location}`;
+      const configuredAgentWslDistro = await readConfiguredAgentWslDistro();
+      const cacheKey = `skills:${location}:${configuredAgentWslDistro ?? "__default__"}`;
       if (!options?.forceRefresh) {
         const cachedResult = readSkillScanCache(skillScanCache, cacheKey);
         if (cachedResult) {
@@ -933,9 +951,9 @@ function setupIpc(): void {
         if (process.platform !== "win32") {
           return result;
         }
-        result = await listWslSkillEntries();
+        result = await listWslSkillEntries(configuredAgentWslDistro);
       } else {
-        const home = await resolveAgentHome(location);
+        const home = await resolveAgentHome(location, configuredAgentWslDistro);
         if (!home) {
           return result;
         }
@@ -966,6 +984,7 @@ function setupIpc(): void {
       if (shouldLogSlowSkillScan(durationMs) || result.warningCode) {
         log.warn("skills-scan-slow", {
           location,
+          wslDistro: location === "wsl" ? configuredAgentWslDistro ?? null : null,
           durationMs,
           skillCount: result.entries.length,
           warning: result.warning,
@@ -986,7 +1005,7 @@ function setupIpc(): void {
   ipcMain.handle("watchboard:read-skill-content", async (_event, skillPath: string): Promise<string> => {
     try {
       if (process.platform === "win32" && skillPath.startsWith("/")) {
-        return await readWslSkillContent(undefined, skillPath);
+        return await readWslSkillContent(await readConfiguredAgentWslDistro(), skillPath);
       }
       return await readFile(skillPath, "utf8");
     } catch {
@@ -995,7 +1014,8 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:list-agent-configs", async (_event, location: AgentPathLocation): Promise<AgentConfigEntry[]> => {
-    const entries = await Promise.all(AGENT_CONFIG_FILES.map((entry) => buildAgentConfigEntry(entry.id, location)));
+    const configuredAgentWslDistro = await readConfiguredAgentWslDistro();
+    const entries = await Promise.all(AGENT_CONFIG_FILES.map((entry) => buildAgentConfigEntry(entry.id, location, configuredAgentWslDistro)));
     return entries;
   });
 
@@ -1014,7 +1034,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:read-agent-config", async (_event, configId: AgentConfigFileId, location: AgentPathLocation): Promise<AgentConfigDocument> => {
-    const entry = await buildAgentConfigEntry(configId, location);
+    const entry = await buildAgentConfigEntry(configId, location, await readConfiguredAgentWslDistro());
     try {
       const content = entry.exists ? await readFile(entry.entryPath, "utf8") : "";
       return {
@@ -1032,7 +1052,7 @@ function setupIpc(): void {
   ipcMain.handle(
     "watchboard:write-agent-config",
     async (_event, configId: AgentConfigFileId, location: AgentPathLocation, content: string): Promise<void> => {
-      const entry = await buildAgentConfigEntry(configId, location);
+      const entry = await buildAgentConfigEntry(configId, location, await readConfiguredAgentWslDistro());
       if (!entry.entryPath || entry.entryPath.startsWith("~")) {
         throw new Error(`Unable to resolve ${location.toUpperCase()} path for ${configId}`);
       }
@@ -1041,8 +1061,97 @@ function setupIpc(): void {
     }
   );
 
+  ipcMain.handle(
+    "watchboard:get-layer-stack",
+    async (_event, configId: AgentConfigFileId, location: AgentPathLocation) => {
+      return readLayerStack(configId, location, runtimePaths.configLayersDir);
+    }
+  );
+
+  ipcMain.handle(
+    "watchboard:save-layer-stack",
+    async (_event, stack: ConfigLayerStack) => {
+      return writeLayerStack(stack, runtimePaths.configLayersDir);
+    }
+  );
+
+  ipcMain.handle(
+    "watchboard:read-layer-content",
+    async (_event, configId: AgentConfigFileId, layerId: string, location: AgentPathLocation) => {
+      return readLayerContent(configId, layerId, location, runtimePaths.configLayersDir);
+    }
+  );
+
+  ipcMain.handle(
+    "watchboard:write-layer-content",
+    async (_event, configId: AgentConfigFileId, layerId: string, location: AgentPathLocation, content: string) => {
+      await writeLayerContent(configId, layerId, location, runtimePaths.configLayersDir, content);
+    }
+  );
+
+  ipcMain.handle(
+    "watchboard:delete-layer",
+    async (_event, configId: AgentConfigFileId, layerId: string, location: AgentPathLocation) => {
+      await deleteLayerContent(configId, layerId, location, runtimePaths.configLayersDir);
+      const stack = await readLayerStack(configId, location, runtimePaths.configLayersDir);
+      const updated = removeLayer(stack, layerId);
+      return writeLayerStack(updated, runtimePaths.configLayersDir);
+    }
+  );
+
+  ipcMain.handle(
+    "watchboard:compute-merged-config",
+    async (_event, configId: AgentConfigFileId, location: AgentPathLocation) => {
+      const stack = await readLayerStack(configId, location, runtimePaths.configLayersDir);
+      const enabledLayers = stack.layers.filter((l) => l.enabled);
+      const layerContents = await Promise.all(
+        enabledLayers.map(async (l) => ({
+          id: l.id,
+          name: l.name,
+          content: await readLayerContent(configId, l.id, location, runtimePaths.configLayersDir)
+        }))
+      );
+      return computeMergedConfig(configId, layerContents, stack.layers.length);
+    }
+  );
+
+  ipcMain.handle(
+    "watchboard:apply-merged-config",
+    async (_event, configId: AgentConfigFileId, location: AgentPathLocation) => {
+      const stack = await readLayerStack(configId, location, runtimePaths.configLayersDir);
+      const enabledLayers = stack.layers.filter((l) => l.enabled);
+      const layerContents = await Promise.all(
+        enabledLayers.map(async (l) => ({
+          id: l.id,
+          name: l.name,
+          content: await readLayerContent(configId, l.id, location, runtimePaths.configLayersDir)
+        }))
+      );
+      const result = computeMergedConfig(configId, layerContents, stack.layers.length);
+      const entry = await buildAgentConfigEntry(configId, location, await readConfiguredAgentWslDistro());
+      if (!entry.entryPath || entry.entryPath.startsWith("~")) {
+        throw new Error(`Unable to resolve ${location.toUpperCase()} path for ${configId}`);
+      }
+      mkdirSync(dirname(entry.entryPath), { recursive: true });
+      await writeFile(entry.entryPath, result.content, "utf8");
+    }
+  );
+
+  ipcMain.handle(
+    "watchboard:import-base-layer",
+    async (_event, configId: AgentConfigFileId, location: AgentPathLocation) => {
+      const entry = await buildAgentConfigEntry(configId, location, await readConfiguredAgentWslDistro());
+      let content = "";
+      if (entry.exists && entry.entryPath && !entry.entryPath.startsWith("~")) {
+        content = await readFile(entry.entryPath, "utf8");
+      }
+      const result = await importExistingConfigAsBaseLayer(configId, location, content, runtimePaths.configLayersDir);
+      return { stack: result.stack, importedLayerId: result.layer.id };
+    }
+  );
+
   ipcMain.handle("watchboard:get-analysis-database", async (_event, location: AgentPathLocation) => {
-    const filePath = await resolveAnalysisDatabasePath(location);
+    const filePath = await resolveAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
     log.info("analysis-db-resolve", {
       operation: "inspect",
       location,
@@ -1071,7 +1180,7 @@ function setupIpc(): void {
   ipcMain.handle(
     "watchboard:get-analysis-bootstrap",
     async (_event, location: AgentPathLocation, selectedProjectKey?: string | null, selectedSessionId?: string | null, limit?: number) => {
-      const filePath = await resolveAnalysisDatabasePath(location);
+      const filePath = await resolveAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
       log.info("analysis-db-resolve", {
         operation: "bootstrap",
         location,
@@ -1103,7 +1212,7 @@ function setupIpc(): void {
   );
 
   ipcMain.handle("watchboard:run-analysis-query", async (_event, location: AgentPathLocation, sql: string) => {
-    const filePath = await requireAnalysisDatabasePath(location);
+    const filePath = await requireAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
     log.info("analysis-db-resolve", {
       operation: "query",
       location,
@@ -1119,7 +1228,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:list-analysis-sessions", async (_event, location: AgentPathLocation, limit?: number) => {
-    const filePath = await requireAnalysisDatabasePath(location);
+    const filePath = await requireAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
     log.info("analysis-db-resolve", {
       operation: "list-sessions",
       location,
@@ -1135,7 +1244,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:list-analysis-projects", async (_event, location: AgentPathLocation, limit?: number) => {
-    const filePath = await requireAnalysisDatabasePath(location);
+    const filePath = await requireAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
     log.info("analysis-db-resolve", {
       operation: "list-projects",
       location,
@@ -1153,7 +1262,7 @@ function setupIpc(): void {
   ipcMain.handle(
     "watchboard:list-analysis-project-sessions",
     async (_event, location: AgentPathLocation, projectKey: string, limit?: number) => {
-      const filePath = await requireAnalysisDatabasePath(location);
+      const filePath = await requireAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
       log.info("analysis-db-resolve", {
         operation: "list-project-sessions",
         location,
@@ -1172,7 +1281,7 @@ function setupIpc(): void {
   );
 
   ipcMain.handle("watchboard:list-analysis-session-sections", async (_event, location: AgentPathLocation, sessionId: string, limit?: number) => {
-    const filePath = await requireAnalysisDatabasePath(location);
+    const filePath = await requireAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
     log.info("analysis-db-resolve", {
       operation: "list-session-sections",
       location,
@@ -1190,7 +1299,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:get-analysis-session-detail", async (_event, location: AgentPathLocation, sessionId: string) => {
-    const filePath = await requireAnalysisDatabasePath(location);
+    const filePath = await requireAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
     log.info("analysis-db-resolve", {
       operation: "session-detail",
       location,
@@ -1206,7 +1315,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:get-analysis-section-detail", async (_event, location: AgentPathLocation, sessionId: string, sectionId: string) => {
-    const filePath = await requireAnalysisDatabasePath(location);
+    const filePath = await requireAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
     log.info("analysis-db-resolve", {
       operation: "section-detail",
       location,
@@ -1224,7 +1333,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:get-analysis-session-statistics", async (_event, location: AgentPathLocation, sessionId: string) => {
-    const filePath = await requireAnalysisDatabasePath(location);
+    const filePath = await requireAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
     log.info("analysis-db-resolve", {
       operation: "session-statistics",
       location,
@@ -1240,7 +1349,7 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("watchboard:get-analysis-cross-session-metrics", async (_event, location: AgentPathLocation, limit?: number) => {
-    const filePath = await requireAnalysisDatabasePath(location);
+    const filePath = await requireAnalysisDatabasePath(location, await readConfiguredAgentWslDistro());
     log.info("analysis-db-resolve", {
       operation: "cross-session-metrics",
       location,
@@ -1287,7 +1396,7 @@ async function waitForSessionAttach(sessionId: string, requestId?: string): Prom
   });
 }
 
-async function resolveAgentHome(location: AgentPathLocation): Promise<string | null> {
+async function resolveAgentHome(location: AgentPathLocation, preferredWslDistro?: string): Promise<string | null> {
   const nativeHome = homedir();
   if (location === "host") {
     return nativeHome;
@@ -1296,7 +1405,7 @@ async function resolveAgentHome(location: AgentPathLocation): Promise<string | n
     return null;
   }
   try {
-    const distro = await resolveWslDistro();
+    const distro = await resolveWslDistro(preferredWslDistro);
     const wslLinuxHome = await resolveWslHome(distro);
     return `\\\\wsl.localhost\\${distro}${wslLinuxHome.replaceAll("/", "\\")}`;
   } catch {
@@ -1304,12 +1413,16 @@ async function resolveAgentHome(location: AgentPathLocation): Promise<string | n
   }
 }
 
-async function buildAgentConfigEntry(configId: AgentConfigFileId, location: AgentPathLocation): Promise<AgentConfigEntry> {
+async function buildAgentConfigEntry(
+  configId: AgentConfigFileId,
+  location: AgentPathLocation,
+  preferredWslDistro?: string
+): Promise<AgentConfigEntry> {
   const entry = AGENT_CONFIG_FILES.find((candidate) => candidate.id === configId);
   if (!entry) {
     throw new Error(`Unknown config: ${configId}`);
   }
-  const home = await resolveAgentHome(location);
+  const home = await resolveAgentHome(location, preferredWslDistro);
   const entryPath = home ? entry.path.replace(/^~/, home) : entry.path;
   const exists = home ? existsSync(entryPath) : false;
   const resolvedPath = exists ? canonicalizeFilePath(entryPath) : entryPath;
@@ -1326,7 +1439,7 @@ async function buildAgentConfigEntry(configId: AgentConfigFileId, location: Agen
   };
 }
 
-async function resolveAnalysisDatabasePath(location: AgentPathLocation): Promise<string | null> {
+async function resolveAnalysisDatabasePath(location: AgentPathLocation, preferredWslDistro?: string): Promise<string | null> {
   const startedAt = performance.now();
   const nativeHome = homedir();
   if (location === "host") {
@@ -1346,6 +1459,7 @@ async function resolveAnalysisDatabasePath(location: AgentPathLocation): Promise
 
   const wslHome = await resolveAnalysisWslHomePath({
     platform: process.platform,
+    preferredDistro: preferredWslDistro,
     onPerf: (event) => {
       recordMainPerf({
         category: "analysis",
@@ -1392,12 +1506,18 @@ async function resolveAnalysisDatabasePath(location: AgentPathLocation): Promise
   return filePath;
 }
 
-async function requireAnalysisDatabasePath(location: AgentPathLocation): Promise<string> {
-  const filePath = await resolveAnalysisDatabasePath(location);
+async function requireAnalysisDatabasePath(location: AgentPathLocation, preferredWslDistro?: string): Promise<string> {
+  const filePath = await resolveAnalysisDatabasePath(location, preferredWslDistro);
   if (!filePath) {
     throw new Error(`Unable to resolve ${location.toUpperCase()} profiler database path`);
   }
   return filePath;
+}
+
+async function readConfiguredAgentWslDistro(): Promise<string | undefined> {
+  const settings = await readAppSettings(runtimePaths.settingsStorePath);
+  const normalized = settings.agentWslDistro?.trim();
+  return normalized ? normalized : undefined;
 }
 
 function canonicalizeFilePath(filePath: string): string {
@@ -1421,7 +1541,13 @@ async function bootstrap(): Promise<void> {
     app.disableHardwareAcceleration();
   }
   await app.whenReady();
-  Menu.setApplicationMenu(null);
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: "editMenu" },
+      { role: "viewMenu" },
+      { role: "windowMenu" }
+    ])
+  );
   runtimePaths = resolveElectronRuntimePaths(app);
   mkdirSync(runtimePaths.logsDir, { recursive: true });
   mkdirSync(runtimePaths.sessionLogsDir, { recursive: true });

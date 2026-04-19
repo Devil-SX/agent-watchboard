@@ -1,29 +1,32 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
 import {
-  createIdleAgentConfigValidation,
   formatAgentConfigLabel,
-  highlightAgentConfigContent,
-  validateAgentConfigContent
+  highlightAgentConfigContent
 } from "@renderer/components/agentConfigEditor";
 import { ChatPromptEditor } from "@renderer/components/ChatPromptEditor";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
 import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
-import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
+import { LayerEditor } from "@renderer/components/LayerEditor";
+import { LayerList } from "@renderer/components/LayerList";
+import { LocationBadge } from "@renderer/components/LocationBadge";
+import { MergedPreview } from "@renderer/components/MergedPreview";
 import { areAgentConfigPaneStatesEqual } from "@renderer/components/settingsDraft";
 import { type SkillsChatAgent } from "@renderer/components/skillsChatSession";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
 import { type TerminalViewState } from "@renderer/components/terminalViewState";
 import type {
-  AgentConfigDocument,
   AgentConfigEntry,
   AgentConfigFileId,
   AgentConfigFamily,
+  AgentConfigFormat,
   AgentConfigPaneState,
   AgentPathLocation,
   AppSettings,
+  ConfigLayerStack,
   DiagnosticsInfo,
+  MergedConfigResult,
   SessionState,
   TerminalInstance
 } from "@shared/schema";
@@ -63,17 +66,21 @@ export function AgentConfigPanel({
   const [skipDangerous, setSkipDangerous] = useState(viewState.skipDangerous);
   const [chatPrompts, setChatPrompts] = useState(viewState.chatPrompts);
   const [entries, setEntries] = useState<AgentConfigEntry[]>([]);
-  const [originalContent, setOriginalContent] = useState("");
-  const [editContent, setEditContent] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [reading, setReading] = useState(false);
   const [error, setError] = useState("");
-  const [saveWarning, setSaveWarning] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // Layer state
+  const [layerStack, setLayerStack] = useState<ConfigLayerStack | null>(null);
+  const [activeLayerId, setActiveLayerId] = useState<string | null>(viewState.activeLayerId ?? null);
+  const [layerViewMode, setLayerViewMode] = useState<"current" | "edit" | "merged">(viewState.layerViewMode ?? "current");
+  const [currentFileContent, setCurrentFileContent] = useState("");
+  const [mergedResult, setMergedResult] = useState<MergedConfigResult | null>(null);
+  const [mergedLoading, setMergedLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyConfirm, setApplyConfirm] = useState(false);
+
   const persistReadyRef = useRef(false);
   const isApplyingViewStateRef = useRef(false);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const highlightRef = useRef<HTMLPreElement | null>(null);
 
   const isWindows = diagnostics?.platform === "win32";
   const visibleEntries = useMemo(
@@ -81,18 +88,9 @@ export function AgentConfigPanel({
     [entries, familyFilter]
   );
   const activeEntry = entries.find((entry) => entry.id === activeConfigId) ?? null;
-  const activeFormat = activeEntry?.format ?? null;
-  const isDirty = editContent !== originalContent;
-  const validation = useMemo(() => {
-    if (!activeFormat) {
-      return createIdleAgentConfigValidation(null, "Select a config to inspect.");
-    }
-    if (reading) {
-      return createIdleAgentConfigValidation(activeFormat, `Loading ${formatAgentConfigLabel(activeFormat)} config...`);
-    }
-    return validateAgentConfigContent(editContent, activeFormat);
-  }, [activeFormat, editContent, reading]);
-  const highlightedContent = useMemo(() => highlightAgentConfigContent(editContent, activeFormat), [activeFormat, editContent]);
+  const activeFormat: AgentConfigFormat = activeEntry?.format ?? "json";
+  const activeLayer = layerStack?.layers.find((l) => l.id === activeLayerId) ?? null;
+
   const normalizedActiveConfigId =
     activeConfigId === "codex-config" || activeConfigId === "codex-auth" || activeConfigId === "claude-settings"
       ? activeConfigId
@@ -104,20 +102,12 @@ export function AgentConfigPanel({
     isChatOpen,
     chatAgent,
     skipDangerous,
-    chatPrompts
+    chatPrompts,
+    activeLayerId,
+    layerViewMode
   };
 
-  useEffect(() => {
-    isApplyingViewStateRef.current = true;
-    setLocation(viewState.location);
-    setFamilyFilter(viewState.familyFilter);
-    setActiveConfigId(viewState.activeConfigId);
-    setIsChatOpen(viewState.isChatOpen);
-    setChatAgent(viewState.chatAgent);
-    setSkipDangerous(viewState.skipDangerous);
-    setChatPrompts(viewState.chatPrompts);
-  }, [viewState]);
-
+  // Load config entries when location changes
   useEffect(() => {
     setLoading(true);
     setError("");
@@ -133,129 +123,161 @@ export function AgentConfigPanel({
         setEntries([]);
         setError(loadError instanceof Error ? loadError.message : String(loadError));
       })
-      .finally(() => {
-        setLoading(false);
-      });
+      .finally(() => setLoading(false));
   }, [activeConfigId, location]);
 
+  // Load layer stack when config or location changes
   useEffect(() => {
-    if (!activeConfigId) {
-      setOriginalContent("");
-      setEditContent("");
-      setSaveWarning("");
-      return;
-    }
-    setReading(true);
-    setError("");
+    void window.watchboard
+      .getLayerStack(activeConfigId, location)
+      .then((stack) => {
+        setLayerStack(stack);
+        if (activeLayerId && !stack.layers.some((l) => l.id === activeLayerId)) {
+          setActiveLayerId(stack.layers[0]?.id ?? null);
+        }
+      })
+      .catch(() => setLayerStack(null));
+  }, [activeConfigId, location]);
+
+  // Load current canonical file content
+  useEffect(() => {
     void window.watchboard
       .readAgentConfig(activeConfigId, location)
-      .then((document: AgentConfigDocument) => {
-        setOriginalContent(document.content);
-        setEditContent(document.content);
-        setSaveWarning("");
-      })
-      .catch((readError: unknown) => {
-        setOriginalContent("");
-        setEditContent("");
-        setError(readError instanceof Error ? readError.message : String(readError));
-        setSaveWarning("");
-      })
-      .finally(() => {
-        setReading(false);
-      });
+      .then((doc) => setCurrentFileContent(doc.content))
+      .catch(() => setCurrentFileContent(""));
+  }, [activeConfigId, location]);
+
+  // Compute merged result when viewing merged preview or when stack changes
+  const refreshMerged = useCallback(() => {
+    setMergedLoading(true);
+    void window.watchboard
+      .computeMergedConfig(activeConfigId, location)
+      .then(setMergedResult)
+      .catch(() => setMergedResult(null))
+      .finally(() => setMergedLoading(false));
   }, [activeConfigId, location]);
 
   useEffect(() => {
-    if (visibleEntries.length === 0) {
-      return;
+    if (layerViewMode === "merged") {
+      refreshMerged();
     }
-    if (visibleEntries.some((entry) => entry.id === activeConfigId)) {
-      return;
-    }
+  }, [layerViewMode, refreshMerged]);
+
+  // Sync viewState from parent
+  useEffect(() => {
+    isApplyingViewStateRef.current = true;
+    setLocation(viewState.location);
+    setFamilyFilter(viewState.familyFilter);
+    setActiveConfigId(viewState.activeConfigId);
+    setIsChatOpen(viewState.isChatOpen);
+    setChatAgent(viewState.chatAgent);
+    setSkipDangerous(viewState.skipDangerous);
+    setChatPrompts(viewState.chatPrompts);
+    setActiveLayerId(viewState.activeLayerId ?? null);
+    setLayerViewMode(viewState.layerViewMode ?? "current");
+  }, [viewState]);
+
+  // Ensure activeConfigId stays within visible entries
+  useEffect(() => {
+    if (visibleEntries.length === 0) return;
+    if (visibleEntries.some((entry) => entry.id === activeConfigId)) return;
     setActiveConfigId(visibleEntries[0]?.id ?? activeConfigId);
   }, [activeConfigId, visibleEntries]);
 
+  // Force host on non-Windows
   useEffect(() => {
-    if (isWindows) {
-      return;
-    }
-    setLocation("host");
+    if (!isWindows) setLocation("host");
   }, [isWindows]);
 
+  // Persist pane state changes
   useEffect(() => {
     if (!persistReadyRef.current) {
       persistReadyRef.current = true;
       return;
     }
     if (areAgentConfigPaneStatesEqual(currentPaneState, viewState)) {
-      if (isApplyingViewStateRef.current) {
-        isApplyingViewStateRef.current = false;
-      }
+      if (isApplyingViewStateRef.current) isApplyingViewStateRef.current = false;
       return;
     }
-    if (isApplyingViewStateRef.current) {
-      return;
-    }
+    if (isApplyingViewStateRef.current) return;
     void onViewStateChange(currentPaneState);
-  }, [activeConfigId, chatAgent, skipDangerous, chatPrompts, currentPaneState, familyFilter, isChatOpen, location, onViewStateChange, viewState]);
+  }, [activeConfigId, activeLayerId, chatAgent, skipDangerous, chatPrompts, currentPaneState, familyFilter, isChatOpen, layerViewMode, location, onViewStateChange, viewState]);
 
-  useEffect(() => {
-    setSaveWarning("");
-  }, [activeConfigId, location]);
-
-  function syncEditorScroll(): void {
-    if (!textareaRef.current || !highlightRef.current) {
-      return;
-    }
-    highlightRef.current.scrollTop = textareaRef.current.scrollTop;
-    highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
+  // Layer action handlers
+  async function handleToggleLayer(layerId: string, enabled: boolean): Promise<void> {
+    if (!layerStack) return;
+    const updated = {
+      ...layerStack,
+      layers: layerStack.layers.map((l) => (l.id === layerId ? { ...l, enabled } : l)),
+      updatedAt: new Date().toISOString()
+    };
+    const saved = await window.watchboard.saveLayerStack(updated);
+    setLayerStack(saved);
+    if (layerViewMode === "merged") refreshMerged();
   }
 
-  function handleEditContentChange(value: string): void {
-    setEditContent(value);
-    if (saveWarning) {
-      setSaveWarning("");
-    }
-    if (error) {
-      setError("");
-    }
+  async function handleReorderLayers(orderedIds: string[]): Promise<void> {
+    if (!layerStack) return;
+    const byId = new Map(layerStack.layers.map((l) => [l.id, l]));
+    const reordered = orderedIds.map((id) => byId.get(id)).filter((l): l is NonNullable<typeof l> => l != null);
+    const updated = { ...layerStack, layers: reordered, updatedAt: new Date().toISOString() };
+    const saved = await window.watchboard.saveLayerStack(updated);
+    setLayerStack(saved);
+    if (layerViewMode === "merged") refreshMerged();
   }
 
-  async function handleSave(): Promise<void> {
-    if (!activeConfigId) {
-      return;
+  async function handleAddLayer(): Promise<void> {
+    if (!layerStack) return;
+    const name = `Layer ${layerStack.layers.length + 1}`;
+    const newLayer = { id: globalThis.crypto.randomUUID(), name, enabled: true };
+    const updated = {
+      ...layerStack,
+      layers: [...layerStack.layers, newLayer],
+      updatedAt: new Date().toISOString()
+    };
+    const saved = await window.watchboard.saveLayerStack(updated);
+    setLayerStack(saved);
+    setActiveLayerId(newLayer.id);
+    setLayerViewMode("edit");
+  }
+
+  async function handleDeleteLayer(layerId: string): Promise<void> {
+    const saved = await window.watchboard.deleteLayer(activeConfigId, layerId, location);
+    setLayerStack(saved);
+    if (activeLayerId === layerId) {
+      setActiveLayerId(saved.layers[0]?.id ?? null);
     }
-    if (validation.status === "invalid" && !saveWarning) {
-      setSaveWarning(`Invalid ${formatAgentConfigLabel(validation.format)} syntax. Click Save again to write it anyway.`);
-      return;
-    }
-    setSaving(true);
-    setError("");
+    if (layerViewMode === "merged") refreshMerged();
+  }
+
+  async function handleRenameLayer(layerId: string, name: string): Promise<void> {
+    if (!layerStack) return;
+    const updated = {
+      ...layerStack,
+      layers: layerStack.layers.map((l) => (l.id === layerId ? { ...l, name } : l)),
+      updatedAt: new Date().toISOString()
+    };
+    const saved = await window.watchboard.saveLayerStack(updated);
+    setLayerStack(saved);
+  }
+
+  async function handleImportBaseLayer(): Promise<void> {
+    const { stack: saved, importedLayerId } = await window.watchboard.importBaseLayer(activeConfigId, location);
+    setLayerStack(saved);
+    setActiveLayerId(importedLayerId);
+    setLayerViewMode("edit");
+  }
+
+  async function handleApplyMerged(): Promise<void> {
+    setApplying(true);
     try {
-      await window.watchboard.writeAgentConfig(activeConfigId, location, editContent);
-      setOriginalContent(editContent);
-      setSaveWarning("");
+      await window.watchboard.applyMergedConfig(activeConfigId, location);
+      setApplyConfirm(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setSaving(false);
+      setApplying(false);
     }
-  }
-
-  function handleDiscard(): void {
-    setEditContent(originalContent);
-    setError("");
-    setSaveWarning("");
-    requestAnimationFrame(() => {
-      if (textareaRef.current) {
-        textareaRef.current.scrollTop = 0;
-        textareaRef.current.scrollLeft = 0;
-      }
-      if (highlightRef.current) {
-        highlightRef.current.scrollTop = 0;
-        highlightRef.current.scrollLeft = 0;
-      }
-    });
   }
 
   return (
@@ -325,85 +347,91 @@ export function AgentConfigPanel({
           </nav>
 
           {error ? <div className="toolbar-error">{error}</div> : null}
-          {saveWarning ? <div className="toolbar-error">{saveWarning}</div> : null}
           {loading ? <div className="panel-empty"><p>Loading configs...</p></div> : null}
 
-          <div className="agent-config-editor">
-            <div className="agent-config-editor-status">
-              <div className="agent-config-editor-status-copy">
-                {activeFormat ? <span className="entry-badge">{formatAgentConfigLabel(activeFormat)}</span> : null}
-                <span
-                  className={[
-                    "path-validation",
-                    validation.status === "valid"
-                      ? "is-valid"
-                      : validation.status === "invalid"
-                        ? "is-invalid"
-                        : "is-loading"
-                  ].join(" ")}
-                >
-                  {validation.summary}
-                </span>
+          {activeEntry ? (
+            <div className="agent-config-source-bar">
+              <div className="agent-config-source-badges">
+                <AgentBadge agent={activeEntry.family} tone="strong" />
+                <LocationBadge location={activeEntry.location} tone="strong" />
+                <span className="entry-badge">{activeEntry.label}</span>
               </div>
-              {validation.detail ? <span className="agent-config-validation-detail">{validation.detail}</span> : null}
+              <div className="agent-config-source-paths">
+                <span className="agent-config-source-path" title={activeEntry.entryPath}>
+                  {activeEntry.entryPath}
+                </span>
+                {activeEntry.resolvedPath !== activeEntry.entryPath ? (
+                  <span className="agent-config-source-path is-resolved" title={activeEntry.resolvedPath}>
+                    {activeEntry.resolvedPath}
+                  </span>
+                ) : null}
+              </div>
             </div>
-            <div className="agent-config-editor-surface">
-              <pre
-                ref={highlightRef}
-                aria-hidden="true"
-                className="agent-config-highlight"
-                dangerouslySetInnerHTML={{ __html: highlightedContent || " " }}
-              />
-              <textarea
-                ref={textareaRef}
-                className="agent-config-textarea"
-                value={editContent}
-                onChange={(e) => handleEditContentChange(e.target.value)}
-                onScroll={syncEditorScroll}
-                spellCheck={false}
-                disabled={!activeEntry || reading}
-                wrap="off"
-              />
-            </div>
-          </div>
+          ) : null}
 
-          <footer className="agent-config-footer">
-            <div className="agent-config-actions">
-              <button
-                type="button"
-                className="primary-button"
-                disabled={!activeEntry || !isDirty || saving || reading}
-                onClick={() => void handleSave()}
-              >
-                {saving ? "Saving..." : validation.status === "invalid" && Boolean(saveWarning) ? "Save Anyway" : "Save"}
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={!isDirty || reading}
-                onClick={handleDiscard}
-              >
-                Discard
-              </button>
-            </div>
-            <div className="entry-meta is-compact">
-              {activeEntry ? (
-                <>
-                  <div className="entry-context-strip is-compact">
-                    <AgentBadge agent={activeEntry.family} tone="strong" />
-                    <LocationBadge location={activeEntry.location} tone="strong" />
-                    <span className="entry-context-copy">{getLocationLabel(activeEntry.location)} config source</span>
-                  </div>
-                  <span className="entry-meta-label">Entry</span>
-                  <code>{activeEntry.entryPath}</code>
-                  {activeEntry.resolvedPath !== activeEntry.entryPath ? <span className="entry-meta-label">Resolved</span> : null}
-                  {activeEntry.resolvedPath !== activeEntry.entryPath ? <code>{activeEntry.resolvedPath}</code> : null}
-                </>
+          <div className="agent-config-layer-panel">
+            <LayerList
+              stack={layerStack ?? { version: 1 as const, configId: activeConfigId, location, layers: [], updatedAt: "" }}
+              activeLayerId={activeLayerId}
+              onSelectLayer={(id) => {
+                setActiveLayerId(id);
+                setLayerViewMode("edit");
+              }}
+              onToggleLayer={(id, enabled) => void handleToggleLayer(id, enabled)}
+              onReorderLayers={(ids) => void handleReorderLayers(ids)}
+              onAddLayer={() => void handleAddLayer()}
+              onDeleteLayer={(id) => void handleDeleteLayer(id)}
+              onRenameLayer={(id, name) => void handleRenameLayer(id, name)}
+              onImportBaseLayer={() => void handleImportBaseLayer()}
+            />
+
+            <div className="agent-config-layer-content">
+              <nav className="agent-config-layer-view-tabs">
+                <button
+                  type="button"
+                  className={layerViewMode === "current" ? "agent-config-tab is-active" : "agent-config-tab"}
+                  onClick={() => setLayerViewMode("current")}
+                >
+                  Current File
+                </button>
+                <button
+                  type="button"
+                  className={layerViewMode === "edit" ? "agent-config-tab is-active" : "agent-config-tab"}
+                  onClick={() => setLayerViewMode("edit")}
+                >
+                  Edit Layer
+                </button>
+                <button
+                  type="button"
+                  className={layerViewMode === "merged" ? "agent-config-tab is-active" : "agent-config-tab"}
+                  onClick={() => setLayerViewMode("merged")}
+                >
+                  Merged Preview
+                </button>
+              </nav>
+
+              {layerViewMode === "current" ? (
+                <CurrentFilePreview content={currentFileContent} format={activeFormat} />
+              ) : layerViewMode === "edit" ? (
+                <LayerEditor
+                  layer={activeLayer}
+                  configId={activeConfigId}
+                  format={activeFormat}
+                  location={location}
+                />
               ) : (
-                <span className="agent-config-path">No config matches the current filter.</span>
+                <MergedPreview
+                  mergedResult={mergedResult}
+                  loading={mergedLoading}
+                  format={activeFormat}
+                  onApply={() => void handleApplyMerged()}
+                  applying={applying}
+                  applyConfirm={applyConfirm}
+                  onApplyConfirmToggle={() => setApplyConfirm((c) => !c)}
+                />
               )}
             </div>
-          </footer>
+          </div>
         </div>
 
         {isChatOpen && chatInstance ? (
@@ -448,6 +476,35 @@ export function AgentConfigPanel({
             </div>
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CurrentFilePreview({ content, format }: { content: string; format: AgentConfigFormat }): ReactElement {
+  const highlighted = useMemo(() => highlightAgentConfigContent(content, format), [content, format]);
+
+  if (!content) {
+    return (
+      <div className="layer-editor-empty">
+        <p>Config file is empty or does not exist yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="merged-preview">
+      <div className="agent-config-editor-status">
+        <div className="agent-config-editor-status-copy">
+          <span className="entry-badge">{formatAgentConfigLabel(format)}</span>
+          <span className="entry-badge">Current file on disk</span>
+        </div>
+      </div>
+      <div className="agent-config-editor-surface merged-preview-surface">
+        <pre
+          className="agent-config-highlight"
+          dangerouslySetInnerHTML={{ __html: highlighted || " " }}
+        />
       </div>
     </div>
   );

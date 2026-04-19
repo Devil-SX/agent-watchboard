@@ -6,21 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-04-19
+
+> **Code Stats** | Total: 55,847 lines | Delta: +7,997 (-855) = **+7,142 net** | Change: **+14.66%** vs v0.13.0
+
 ### Added
-- Added a project positioning section and features overview to the README; moved `todo_preview` reference docs into `docs/todo-preview.md` to reduce top-level README length.
-- Added a syntax-aware config editor with JSON/TOML highlighting, validation feedback, and regression coverage for settings/config round-trips.
-- Added richer analysis session-browser coverage for project/session expansion state, browser metric rendering, and legacy analysis state normalization.
-- Added analysis session-browser sort controls with progressive metric-driven reordering, plus DOM regressions that keep expanded branches open while lazy statistics arrive.
+- Added syntax-aware config-layer editing with JSON/TOML highlighting, validation feedback, merged previews, comment-tolerant JSON parsing, and regression coverage for layered config workflows.
+- Added a `session_log` CLI, install/uninstall wiring, and a companion skill so local Codex and Claude session history can be discovered by project path.
+- Added workspace creation helpers that can create missing host/WSL directories from the app, with path completion and confirmation flows that preserve the in-progress form state.
+- Added workspace sidebar fuzzy search plus template context actions for opening the target host/WSL workspace in VS Code or deleting the template.
+- Added richer analysis session-browser coverage for project/session expansion state, browser metric rendering, and lazy browser statistics that keep expanded branches stable while data arrives.
 
 ### Changed
 - Changed analysis navigation and browser state handling to support the current overview/session/cross-session layout, cached project-session snapshots, and stacked role breakdown rendering.
-- Changed workspace, skills, and settings controls to use the newer compact control surface, shared prompt settings, and icon-driven filter affordances.
-- Changed workspace sidebar template rows to place the workspace name on the first line and group the environment badge plus launch flags into a compact second metadata row.
+- Changed workspace, skills, settings, and config-drawer controls to use the newer compact control surface, shared prompt settings, and icon-driven filter affordances.
+- Changed workspace sidebar template rows to place the workspace name on the first line and group environment/launch metadata into a denser second row without widening the sidebar.
+- Changed WSL-facing config, skills, and analysis resolution to share the configurable distro/runtime path plumbing used by the desktop app.
 
 ### Fixed
-- Fixed workspace sidebar path grouping so semantically identical cwd values such as `~/A` and `~/A/` now collapse into the same path section, while root paths remain stable.
+- Fixed workspace sidebar path grouping so semantically identical cwd values such as `~/A` and `~/A/` collapse into the same path section, while root paths remain stable.
 - Fixed workspace sidebar long-path rendering so path-group labels and cwd lines wrap within the existing sidebar width instead of forcing the left panel wider.
 - Fixed workspace sidebar `Last Launch` sorting so path sections now reorder by the newest `lastLaunchedAt` in each group instead of staying alphabetically pinned.
+- Fixed terminal startup command resolution so missing startup command fields no longer break resolved-command generation or its associated tests.
 
 ## [0.13.0] - 2026-03-21
 

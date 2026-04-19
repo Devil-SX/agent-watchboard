@@ -24,7 +24,9 @@ const api: WatchboardApi = {
   selectBoard: () => ipcRenderer.invoke("watchboard:select-board"),
   getDiagnostics: () => ipcRenderer.invoke("watchboard:get-diagnostics"),
   openDebugPath: (debugPath) => ipcRenderer.invoke("watchboard:open-debug-path", debugPath),
+  openWorkspaceInEditor: (request) => ipcRenderer.invoke("watchboard:open-workspace-in-editor", request),
   completePath: (request) => ipcRenderer.invoke("watchboard:complete-path", request),
+  ensureWorkspaceDirectory: (request) => ipcRenderer.invoke("watchboard:ensure-workspace-directory", request),
   testSshEnvironment: (environment, secrets) => ipcRenderer.invoke("watchboard:test-ssh-environment", environment, secrets),
   resolveCronRelaunchCommand: (profile) => ipcRenderer.invoke("watchboard:resolve-cron-relaunch-command", profile),
   onSessionData: (listener) => {
@@ -51,6 +53,15 @@ const api: WatchboardApi = {
   listAgentConfigs: (location) => ipcRenderer.invoke("watchboard:list-agent-configs", location),
   readAgentConfig: (configId, location) => ipcRenderer.invoke("watchboard:read-agent-config", configId, location),
   writeAgentConfig: (configId, location, content) => ipcRenderer.invoke("watchboard:write-agent-config", configId, location, content),
+  getLayerStack: (configId, location) => ipcRenderer.invoke("watchboard:get-layer-stack", configId, location),
+  saveLayerStack: (stack) => ipcRenderer.invoke("watchboard:save-layer-stack", stack),
+  readLayerContent: (configId, layerId, location) => ipcRenderer.invoke("watchboard:read-layer-content", configId, layerId, location),
+  writeLayerContent: (configId, layerId, location, content) =>
+    ipcRenderer.invoke("watchboard:write-layer-content", configId, layerId, location, content),
+  deleteLayer: (configId, layerId, location) => ipcRenderer.invoke("watchboard:delete-layer", configId, layerId, location),
+  computeMergedConfig: (configId, location) => ipcRenderer.invoke("watchboard:compute-merged-config", configId, location),
+  applyMergedConfig: (configId, location) => ipcRenderer.invoke("watchboard:apply-merged-config", configId, location),
+  importBaseLayer: (configId, location) => ipcRenderer.invoke("watchboard:import-base-layer", configId, location),
   getAnalysisDatabase: (location) => ipcRenderer.invoke("watchboard:get-analysis-database", location),
   getAnalysisBootstrap: (location, selectedProjectKey, selectedSessionId, limit) =>
     ipcRenderer.invoke("watchboard:get-analysis-bootstrap", location, selectedProjectKey, selectedSessionId, limit),

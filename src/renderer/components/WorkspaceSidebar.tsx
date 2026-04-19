@@ -43,6 +43,7 @@ type Props = {
   workbench: WorkbenchDocument;
   sessions: Record<string, SessionState>;
   cronCountdownByInstanceId: ReadonlyMap<string, string>;
+  searchQuery: string;
   sortMode: WorkspaceSortMode;
   filterMode: WorkspaceFilterMode;
   environmentFilterMode: WorkspaceEnvironmentFilterMode;
@@ -51,6 +52,7 @@ type Props = {
   isDeleteMode: boolean;
   selectedDeleteIds: string[];
   onCreateWorkspace: () => void;
+  onSearchQueryChange: (query: string) => void;
   onSortModeChange: (mode: WorkspaceSortMode) => void;
   onFilterModeChange: (mode: WorkspaceFilterMode) => void;
   onEnvironmentFilterModeChange: (mode: WorkspaceEnvironmentFilterMode) => void;
@@ -61,6 +63,8 @@ type Props = {
   onDeleteSelected: () => void;
   onToggleDeleteSelection: (workspaceId: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
+  onViewWorkspace: (workspaceId: string) => void;
+  onDeleteWorkspaceQuick: (workspaceId: string) => void;
   onFocusPane: (paneId: string) => void;
   onClosePane: (instanceId: string) => void;
   onCollapsePane: (instanceId: string) => void;
@@ -80,6 +84,18 @@ export type WorkspacePathGroup = {
   templates: WorkspaceTemplateNode[];
 };
 
+type ContextMenuState =
+  | {
+      kind: "instance";
+      instanceId: string;
+      style: CSSProperties;
+    }
+  | {
+      kind: "workspace";
+      workspaceId: string;
+      style: CSSProperties;
+    };
+
 export function WorkspaceSidebar({
   workspaces,
   selectedWorkspaceId,
@@ -87,6 +103,7 @@ export function WorkspaceSidebar({
   workbench,
   sessions,
   cronCountdownByInstanceId,
+  searchQuery,
   sortMode,
   filterMode,
   environmentFilterMode,
@@ -95,6 +112,7 @@ export function WorkspaceSidebar({
   isDeleteMode,
   selectedDeleteIds,
   onCreateWorkspace,
+  onSearchQueryChange,
   onSortModeChange,
   onFilterModeChange,
   onEnvironmentFilterModeChange,
@@ -105,6 +123,8 @@ export function WorkspaceSidebar({
   onDeleteSelected,
   onToggleDeleteSelection,
   onSelectWorkspace,
+  onViewWorkspace,
+  onDeleteWorkspaceQuick,
   onFocusPane,
   onClosePane,
   onCollapsePane,
@@ -113,10 +133,7 @@ export function WorkspaceSidebar({
   onDragInstanceStart
 }: Props): ReactElement {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-  const [contextMenu, setContextMenu] = useState<{
-    instanceId: string;
-    style: CSSProperties;
-  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [hoverPreview, setHoverPreview] = useState<{
     instanceId: string;
     style: CSSProperties;
@@ -131,9 +148,10 @@ export function WorkspaceSidebar({
         filterMode,
         environmentFilterMode,
         sortMode,
-        instanceVisibilityFilterEnabled
+        instanceVisibilityFilterEnabled,
+        searchQuery
       ),
-    [environmentFilterMode, filterMode, instanceVisibilityFilterEnabled, instancesByWorkspace, sortMode, workspaces]
+    [environmentFilterMode, filterMode, instanceVisibilityFilterEnabled, instancesByWorkspace, searchQuery, sortMode, workspaces]
   );
 
   useEffect(() => {
@@ -200,6 +218,16 @@ export function WorkspaceSidebar({
                 icon={instanceVisibilityFilterEnabled ? <EyeIcon /> : <EyeOffIcon />}
                 onClick={() => onInstanceVisibilityFilterChange(!instanceVisibilityFilterEnabled)}
               />
+              <label className="workspace-search-control">
+                <input
+                  type="search"
+                  className="workspace-search-input"
+                  aria-label="Search workspaces"
+                  placeholder="Search name or path"
+                  value={searchQuery}
+                  onChange={(event) => onSearchQueryChange(event.target.value)}
+                />
+              </label>
             </div>
           ) : null}
         </div>
@@ -277,6 +305,18 @@ export function WorkspaceSidebar({
                       type="button"
                       className="workspace-list-main"
                       draggable={!isDeleteMode}
+                      onContextMenu={(event) => {
+                        if (isDeleteMode) {
+                          return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setContextMenu({
+                          kind: "workspace",
+                          workspaceId: workspace.id,
+                          style: getContextMenuStyle(event.clientX, event.clientY, 2)
+                        });
+                      }}
                       onClick={() => {
                         if (isDeleteMode) {
                           onToggleDeleteSelection(workspace.id);
@@ -391,8 +431,9 @@ export function WorkspaceSidebar({
                               event.preventDefault();
                               event.stopPropagation();
                               setContextMenu({
+                                kind: "instance",
                                 instanceId: instance.instanceId,
-                                style: getContextMenuStyle(event.clientX, event.clientY)
+                                style: getContextMenuStyle(event.clientX, event.clientY, 44)
                               });
                             }}
                             onMouseEnter={(event) => {
@@ -432,24 +473,49 @@ export function WorkspaceSidebar({
         ))}
         {!isDeleteMode && visiblePathGroups.length === 0 ? (
           <div className="workspace-list-empty">
-            <p>No workspaces match the current filter.</p>
-            <span>Switch filters or create a new workspace.</span>
+            <p>{searchQuery.trim() ? "No workspaces match the current filter or search." : "No workspaces match the current filter."}</p>
+            <span>{searchQuery.trim() ? "Clear the search or switch filters." : "Switch filters or create a new workspace."}</span>
           </div>
         ) : null}
       </div>
       {contextMenu
         ? createPortal(
             <div className="workspace-context-menu" style={contextMenu.style}>
-              <button
-                type="button"
-                className="workspace-context-menu-item"
-                onClick={() => {
-                  setContextMenu(null);
-                  onClosePane(contextMenu.instanceId);
-                }}
-              >
-                Close
-              </button>
+              {contextMenu.kind === "workspace" ? (
+                <>
+                  <button
+                    type="button"
+                    className="workspace-context-menu-item"
+                    onClick={() => {
+                      setContextMenu(null);
+                      onViewWorkspace(contextMenu.workspaceId);
+                    }}
+                  >
+                    View
+                  </button>
+                  <button
+                    type="button"
+                    className="workspace-context-menu-item is-danger"
+                    onClick={() => {
+                      setContextMenu(null);
+                      onDeleteWorkspaceQuick(contextMenu.workspaceId);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="workspace-context-menu-item"
+                  onClick={() => {
+                    setContextMenu(null);
+                    onClosePane(contextMenu.instanceId);
+                  }}
+                >
+                  Close
+                </button>
+              )}
             </div>,
             document.body
           )
@@ -556,14 +622,34 @@ export function matchesWorkspaceFilter(
   return matchesAgentFilter && matchesEnvironmentFilter;
 }
 
+export function tokenizeWorkspaceSearchQuery(searchQuery: string): string[] {
+  return searchQuery
+    .trim()
+    .toLocaleLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+export function matchesWorkspaceSearch(workspace: Workspace, searchQuery: string): boolean {
+  const tokens = tokenizeWorkspaceSearchQuery(searchQuery);
+  if (tokens.length === 0) {
+    return true;
+  }
+
+  const haystacks = [workspace.name, workspace.terminals[0]?.cwd ?? ""].map((value) => value.toLocaleLowerCase());
+  return tokens.every((token) => haystacks.some((candidate) => candidate.includes(token)));
+}
+
 export function sortAndFilterWorkspaces(
   workspaces: Workspace[],
   filterMode: WorkspaceFilterMode,
   environmentFilterMode: WorkspaceEnvironmentFilterMode,
-  sortMode: WorkspaceSortMode
+  sortMode: WorkspaceSortMode,
+  searchQuery = ""
 ): Workspace[] {
   return [...workspaces]
     .filter((workspace) => matchesWorkspaceFilter(workspace, filterMode, environmentFilterMode))
+    .filter((workspace) => matchesWorkspaceSearch(workspace, searchQuery))
     .sort((left, right) => compareWorkspaces(left, right, sortMode));
 }
 
@@ -572,9 +658,10 @@ export function deriveVisibleWorkspaces(
   instancesByWorkspace: ReadonlyMap<string, TerminalInstance[]>,
   filterMode: WorkspaceFilterMode,
   environmentFilterMode: WorkspaceEnvironmentFilterMode,
-  sortMode: WorkspaceSortMode
+  sortMode: WorkspaceSortMode,
+  searchQuery = ""
 ): Workspace[] {
-  return deriveVisibleWorkspaceGroups(workspaces, instancesByWorkspace, filterMode, environmentFilterMode, sortMode, false).flatMap(
+  return deriveVisibleWorkspaceGroups(workspaces, instancesByWorkspace, filterMode, environmentFilterMode, sortMode, false, searchQuery).flatMap(
     (group) => group.templates.map((template) => template.workspace)
   );
 }
@@ -585,7 +672,8 @@ export function deriveVisibleWorkspaceGroups(
   filterMode: WorkspaceFilterMode,
   environmentFilterMode: WorkspaceEnvironmentFilterMode,
   sortMode: WorkspaceSortMode,
-  instanceVisibilityFilterEnabled: boolean
+  instanceVisibilityFilterEnabled: boolean,
+  searchQuery = ""
 ): WorkspacePathGroup[] {
   const grouped = new Map<string, WorkspacePathGroup>();
 
@@ -593,7 +681,9 @@ export function deriveVisibleWorkspaceGroups(
     const instances = instancesByWorkspace.get(workspace.id) ?? [];
     const hasInstances = instances.length > 0;
     const matchesFilters = matchesWorkspaceFilter(workspace, filterMode, environmentFilterMode);
-    const shouldInclude = instanceVisibilityFilterEnabled ? matchesFilters && hasInstances : matchesFilters || hasInstances;
+    const matchesSearch = matchesWorkspaceSearch(workspace, searchQuery);
+    const matchesStructuredVisibility = instanceVisibilityFilterEnabled ? matchesFilters && hasInstances : matchesFilters || hasInstances;
+    const shouldInclude = matchesStructuredVisibility && matchesSearch;
 
     if (!shouldInclude) {
       continue;
@@ -745,9 +835,9 @@ function handleAction(event: MouseEvent<HTMLButtonElement>, action: () => void):
   action();
 }
 
-export function getContextMenuStyle(clientX: number, clientY: number): CSSProperties {
+export function getContextMenuStyle(clientX: number, clientY: number, itemCount = 1): CSSProperties {
   const menuWidth = 156;
-  const menuHeight = 44;
+  const menuHeight = 8 + itemCount * 36;
   return {
     position: "fixed",
     left: Math.min(clientX, window.innerWidth - menuWidth - 8),

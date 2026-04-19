@@ -42,7 +42,9 @@ const AGENT_CONFIG_PANE_KEYS = [
   "activeConfigId",
   "isChatOpen",
   "chatAgent",
-  "skipDangerous"
+  "skipDangerous",
+  "activeLayerId",
+  "layerViewMode"
 ] as const satisfies readonly (keyof AppSettings["agentConfigPane"])[];
 
 const SETTINGS_PANE_KEYS = ["activeCategory"] as const satisfies readonly (keyof AppSettings["settingsPane"])[];

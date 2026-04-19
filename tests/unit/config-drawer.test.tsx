@@ -34,8 +34,12 @@ test("ConfigDrawer resolved command reflects the cron relaunch prompt", () => {
       diagnostics={null}
       isDirty={false}
       isSaving={false}
+      isCreateMode={false}
+      pendingDirectoryCreation={null}
       onClose={() => undefined}
       onSaveWorkspace={() => undefined}
+      onConfirmPendingDirectoryCreation={() => undefined}
+      onCancelPendingDirectoryCreation={() => undefined}
       onDuplicateWorkspace={() => undefined}
       onResetWorkspace={() => undefined}
       onDeleteWorkspace={() => undefined}
@@ -48,4 +52,38 @@ test("ConfigDrawer resolved command reflects the cron relaunch prompt", () => {
   assert.match(html, /codex resume --last/);
   assert.match(html, /check the repo and report drift/);
   assert.match(html, /Duplicate/);
+});
+
+test("ConfigDrawer switches to create-mode actions and shows directory confirmation copy", () => {
+  const html = renderToStaticMarkup(
+    <ConfigDrawer
+      isOpen={true}
+      workspace={createWorkspace()}
+      sshEnvironments={[]}
+      diagnostics={null}
+      isDirty={false}
+      isSaving={false}
+      isCreateMode={true}
+      pendingDirectoryCreation={{
+        path: "~/notes/new-project",
+        environmentLabel: "WSL"
+      }}
+      onClose={() => undefined}
+      onSaveWorkspace={() => undefined}
+      onConfirmPendingDirectoryCreation={() => undefined}
+      onCancelPendingDirectoryCreation={() => undefined}
+      onDuplicateWorkspace={() => undefined}
+      onResetWorkspace={() => undefined}
+      onDeleteWorkspace={() => undefined}
+      onWorkspaceFieldChange={() => undefined}
+      onTerminalChange={() => undefined}
+    />
+  );
+
+  assert.match(html, /Confirm Directory Creation/);
+  assert.match(html, /Confirm Create/);
+  assert.match(html, /~\/notes\/new-project/);
+  assert.match(html, /created in WSL before the workspace is saved/i);
+  assert.doesNotMatch(html, /Delete Workspace/);
+  assert.doesNotMatch(html, /Duplicate/);
 });

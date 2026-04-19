@@ -22,7 +22,7 @@ type Props = {
   sshSecretDrafts: Record<string, SshSecretInput>;
   sshTestStates: Record<string, { isRunning: boolean; result: SshTestResult | null }>;
   onChange: (
-    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro",
+    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro" | "agentWslDistro",
     value: string | number
   ) => void;
   onAddSshEnvironment: () => void;
@@ -252,6 +252,17 @@ export function SettingsPanel({
 
         {activeCategory === "environments" ? (
           <section className="settings-section">
+            <p className="panel-eyebrow">WSL Environment</p>
+            <div className="form-grid">
+              <label className="field">
+                <span>Agent WSL Distro</span>
+                <input
+                  value={settings.agentWslDistro ?? ""}
+                  onChange={(event) => onChange("agentWslDistro", event.target.value)}
+                />
+              </label>
+            </div>
+
             <div className="settings-debug-hero">
               <div>
                 <p className="panel-eyebrow">SSH Environments</p>

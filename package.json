@@ -1,13 +1,14 @@
 {
   "name": "agent-watchboard",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "description": "Desktop watchboard for orchestrating multiple code agents with PTY-backed terminals and JSON todo boards.",
   "main": "out/main/index.js",
   "bin": {
     "todo_preview": "dist-node/cli/todo-preview.cjs",
-    "watchboard": "dist-node/cli/watchboard.cjs"
+    "watchboard": "dist-node/cli/watchboard.cjs",
+    "session_log": "dist-node/cli/session-log.cjs"
   },
   "scripts": {
     "dev": "electron-vite dev",
@@ -18,6 +19,7 @@
     "preview": "electron-vite preview",
     "todo_preview": "tsx src/cli/todo-preview.ts",
     "watchboard": "tsx src/cli/watchboard.ts",
+    "session_log": "tsx src/cli/session-log.ts",
     "dist:linux": "pnpm build && electron-builder --linux AppImage",
     "dist:win": "node scripts/dist-win.mjs",
     "dist:win:portable": "pnpm build && electron-builder --win portable",

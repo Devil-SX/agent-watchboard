@@ -21,6 +21,7 @@ export type RuntimePaths = {
   sshSecretsPath: string;
   doctorDiagnosticsPath: string;
   supervisorStatePath: string;
+  configLayersDir: string;
   defaultHostBoardPath: string;
   defaultWslBoardPath: string;
 };
@@ -42,6 +43,7 @@ export function resolveRuntimePaths(baseDir: string): RuntimePaths {
     sshSecretsPath: join(baseDir, "ssh-secrets.json"),
     doctorDiagnosticsPath: join(baseDir, "doctor-diagnostics.json"),
     supervisorStatePath: join(baseDir, "supervisor-state.json"),
+    configLayersDir: join(baseDir, "config-layers"),
     defaultHostBoardPath: DEFAULT_BOARD_PATH,
     defaultWslBoardPath: DEFAULT_BOARD_PATH
   };

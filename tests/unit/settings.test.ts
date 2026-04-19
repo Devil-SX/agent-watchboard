@@ -53,6 +53,7 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
       hostBoardPath: "~/host-board.json",
       wslBoardPath: "~/wsl-board.json",
       boardWslDistro: "Ubuntu",
+      agentWslDistro: "Ubuntu-22.04",
       terminalFontFamily: "'JetBrains Mono', monospace",
       terminalFontSize: 14,
       workspaceSortMode: "last-launch",
@@ -132,6 +133,7 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
 
   assert.equal(saved.hostBoardPath, "~/host-board.json");
   assert.equal(saved.wslBoardPath, "~/wsl-board.json");
+  assert.equal(saved.agentWslDistro, "Ubuntu-22.04");
   assert.equal(saved.activeMainTab, "skills");
   assert.deepEqual(saved.workspaceCollapsedPathGroups, { "/repo/demo": true });
   assert.equal(saved.skillsPane.familyFilter, "claude");
@@ -145,6 +147,7 @@ test("writeAppSettings persists separate host and WSL board paths", async () => 
   assert.equal(saved.sshEnvironments[0]?.name, "Prod SSH");
   assert.equal(raw.hostBoardPath, "~/host-board.json");
   assert.equal(raw.wslBoardPath, "~/wsl-board.json");
+  assert.equal(raw.agentWslDistro, "Ubuntu-22.04");
   assert.equal(raw.activeMainTab, "skills");
   assert.deepEqual(raw.settingsPane, { activeCategory: "environments" });
   assert.equal((raw.sshEnvironments as Array<{ host: string }>)[0]?.host, "prod.example.com");

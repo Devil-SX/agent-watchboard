@@ -1,5 +1,6 @@
 import { TomlError, parse as parseToml } from "smol-toml";
 
+import { stripJsonCommentsPreservePositions } from "@shared/jsonComments";
 import type { AgentConfigFormat } from "@shared/schema";
 
 type HighlightTokenKind =
@@ -63,7 +64,7 @@ export function formatAgentConfigLabel(format: AgentConfigFormat): string {
 export function validateAgentConfigContent(content: string, format: AgentConfigFormat): AgentConfigValidation {
   try {
     if (format === "json") {
-      JSON.parse(content);
+      JSON.parse(stripJsonCommentsPreservePositions(content));
     } else {
       parseToml(content);
     }
@@ -171,8 +172,29 @@ function computeLineColumn(content: string, index: number): { line: number; colu
 function tokenizeJson(content: string): HighlightToken[] {
   const tokens: HighlightToken[] = [];
   let index = 0;
+  let inBlockComment = false;
   while (index < content.length) {
     const char = content[index] ?? "";
+    const nextChar = content[index + 1] ?? "";
+    if (inBlockComment) {
+      const endIndex = content.indexOf("*/", index);
+      const boundary = endIndex >= 0 ? endIndex + 2 : content.length;
+      tokens.push({ kind: "comment", text: content.slice(index, boundary) });
+      index = boundary;
+      inBlockComment = false;
+      continue;
+    }
+    if (char === "/" && nextChar === "/") {
+      const lineBreakIndex = content.slice(index).search(/\r?\n/);
+      const boundary = lineBreakIndex >= 0 ? index + lineBreakIndex : content.length;
+      tokens.push({ kind: "comment", text: content.slice(index, boundary) });
+      index = boundary;
+      continue;
+    }
+    if (char === "/" && nextChar === "*") {
+      inBlockComment = true;
+      continue;
+    }
     if (char === "\"") {
       const endIndex = findQuotedStringEnd(content, index, "\"");
       const text = content.slice(index, endIndex);
@@ -351,7 +373,7 @@ function findNextNonWhitespace(content: string, startIndex: number): string | nu
 function findNextJsonBoundary(content: string, startIndex: number): number {
   let index = startIndex;
   while (index < content.length) {
-    if ("\"{}[]:,".includes(content[index] ?? "")) {
+    if ("\"{}[]:,/".includes(content[index] ?? "")) {
       break;
     }
     const literal = readLiteral(content, index);

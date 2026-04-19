@@ -139,7 +139,9 @@ export const AgentConfigPaneStateSchema = z.object({
       mode: "default",
       text: ""
     }
-  })
+  }),
+  activeLayerId: z.string().nullable().default(null),
+  layerViewMode: z.enum(["current", "edit", "merged"]).default("current")
 });
 export type AgentConfigPaneState = z.infer<typeof AgentConfigPaneStateSchema>;
 export const AnalysisPaneSectionSchema = z.preprocess(
@@ -190,6 +192,7 @@ export const AppSettingsSchema = z.object({
   hostBoardPath: z.string().default(DEFAULT_BOARD_PATH),
   wslBoardPath: z.string().default(DEFAULT_BOARD_PATH),
   boardWslDistro: z.string().optional(),
+  agentWslDistro: z.string().optional(),
   terminalFontFamily: z.string().default(DEFAULT_TERMINAL_FONT_FAMILY),
   terminalFontSize: z.number().int().min(10).max(32).default(DEFAULT_TERMINAL_FONT_SIZE),
   workspaceSortMode: WorkspaceSortModeSchema.default("last-launch"),
@@ -234,7 +237,9 @@ export const AppSettingsSchema = z.object({
         mode: "default",
         text: ""
       }
-    }
+    },
+    activeLayerId: null,
+    layerViewMode: "current"
   }),
   analysisPane: AnalysisPaneStateSchema.default({
     location: "host",
@@ -339,6 +344,36 @@ export type AgentConfigEntry = {
 };
 export type AgentConfigDocument = AgentConfigEntry & {
   content: string;
+};
+
+export const ConfigLayerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  enabled: z.boolean().default(true)
+});
+export type ConfigLayer = z.infer<typeof ConfigLayerSchema>;
+
+export const ConfigLayerStackSchema = z.object({
+  version: z.literal(1).default(1),
+  configId: z.enum(["codex-config", "codex-auth", "claude-settings"]),
+  location: z.enum(["host", "wsl"]),
+  layers: z.array(ConfigLayerSchema).default([]),
+  updatedAt: z.string()
+});
+export type ConfigLayerStack = z.infer<typeof ConfigLayerStackSchema>;
+
+export type MergedConfigFieldAnnotation = {
+  path: string;
+  layerId: string;
+  layerName: string;
+};
+
+export type MergedConfigResult = {
+  configId: AgentConfigFileId;
+  content: string;
+  annotations: MergedConfigFieldAnnotation[];
+  layerCount: number;
+  enabledLayerCount: number;
 };
 
 export type StartupPresetId = (typeof STARTUP_PRESETS)[number]["id"];
@@ -937,6 +972,7 @@ export function createDefaultAppSettings(overrides: Partial<AppSettings> & { boa
     hostBoardPath,
     wslBoardPath,
     boardWslDistro: overrides.boardWslDistro,
+    agentWslDistro: overrides.agentWslDistro,
     ...overrides
   });
 }
@@ -999,11 +1035,11 @@ export function resolveTerminalStartupCommand(
       return presetCommand;
     }
   }
-  const customCommand = profile.startupCustomCommand.trim();
+  const customCommand = (profile.startupCustomCommand ?? "").trim();
   if (customCommand) {
     return customCommand;
   }
-  return profile.startupCommand.trim();
+  return (profile.startupCommand ?? "").trim();
 }
 
 export function resolveTerminalStartupCommandWithEnvironment(

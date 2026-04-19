@@ -28,8 +28,15 @@ type Props = {
   isDirty: boolean;
   isSaving: boolean;
   isDeleting?: boolean;
+  isCreateMode?: boolean;
+  pendingDirectoryCreation?: {
+    path: string;
+    environmentLabel: string;
+  } | null;
   onClose: () => void;
   onSaveWorkspace: () => void;
+  onConfirmPendingDirectoryCreation: () => void;
+  onCancelPendingDirectoryCreation: () => void;
   onDuplicateWorkspace: () => void;
   onResetWorkspace: () => void;
   onDeleteWorkspace: () => void;
@@ -45,8 +52,12 @@ export function ConfigDrawer({
   isDirty,
   isSaving,
   isDeleting = false,
+  isCreateMode = false,
+  pendingDirectoryCreation = null,
   onClose,
   onSaveWorkspace,
+  onConfirmPendingDirectoryCreation,
+  onCancelPendingDirectoryCreation,
   onDuplicateWorkspace,
   onResetWorkspace,
   onDeleteWorkspace,
@@ -80,6 +91,7 @@ export function ConfigDrawer({
   const [resolvedCommandPreview, setResolvedCommandPreview] = useState(resolvedStartupCommand);
   const presetState = decomposePresetId(terminal?.startupPresetId);
   const suggestions = cwdCompletion?.suggestions ?? [];
+  const isAwaitingDirectoryConfirmation = pendingDirectoryCreation !== null;
 
   useEffect(() => {
     setResolvedCommandPreview(resolvedStartupCommand);
@@ -180,6 +192,13 @@ export function ConfigDrawer({
     setIsCwdFocused(false);
   }
 
+  const pathValidationMessage = getPathValidationMessage(cwdCompletion, cwdQuery, isCreateMode);
+  const saveLabel = isCreateMode ? "Create" : "Save";
+  const savingLabel = isCreateMode ? "Creating..." : "Saving...";
+  const resetLabel = isCreateMode ? "Reset" : "Discard";
+  const confirmLabel = isCreateMode ? "Confirm Create" : "Create Directory & Save";
+  const saveDisabled = isSaving || (!isCreateMode && !isDirty);
+
   return (
     <>
       <button type="button" className="drawer-backdrop" aria-label="Close configuration drawer" onClick={onClose} />
@@ -190,15 +209,30 @@ export function ConfigDrawer({
             <h2>{activeWorkspace.name}</h2>
           </div>
           <div className="toolbar-actions">
-            <button type="button" className="primary-button" disabled={isSaving || !isDirty} onClick={onSaveWorkspace}>
-              {isSaving ? "Saving..." : "Save"}
-            </button>
-            <button type="button" className="secondary-button" onClick={onDuplicateWorkspace}>
-              Duplicate
-            </button>
-            <button type="button" className="secondary-button" disabled={!isDirty} onClick={onResetWorkspace}>
-              Discard
-            </button>
+            {isAwaitingDirectoryConfirmation ? (
+              <>
+                <button type="button" className="primary-button" disabled={isSaving} onClick={onConfirmPendingDirectoryCreation}>
+                  {isSaving ? savingLabel : confirmLabel}
+                </button>
+                <button type="button" className="secondary-button" onClick={onCancelPendingDirectoryCreation}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="primary-button" disabled={saveDisabled} onClick={onSaveWorkspace}>
+                  {isSaving ? savingLabel : saveLabel}
+                </button>
+                {!isCreateMode ? (
+                  <button type="button" className="secondary-button" onClick={onDuplicateWorkspace}>
+                    Duplicate
+                  </button>
+                ) : null}
+                <button type="button" className="secondary-button" disabled={!isDirty} onClick={onResetWorkspace}>
+                  {resetLabel}
+                </button>
+              </>
+            )}
             <button type="button" className="secondary-button" onClick={onClose}>
               Close
             </button>
@@ -206,6 +240,17 @@ export function ConfigDrawer({
         </header>
 
         <div className="config-drawer-body">
+          {isAwaitingDirectoryConfirmation ? (
+            <section className="drawer-confirmation-card">
+              <p className="panel-eyebrow">Confirm Directory Creation</p>
+              <strong>{pendingDirectoryCreation.path}</strong>
+              <p>
+                This directory does not exist yet. It will be created in {pendingDirectoryCreation.environmentLabel} before the
+                workspace is saved.
+              </p>
+            </section>
+          ) : null}
+
           <section className="drawer-section">
             <div className="form-grid">
               <label className="field">
@@ -294,7 +339,7 @@ export function ConfigDrawer({
                           : "path-validation is-invalid"
                     }
                   >
-                    {isCompletingCwd ? "Checking..." : (cwdCompletion?.message ?? "Path status unavailable")}
+                    {isCompletingCwd ? "Checking..." : pathValidationMessage}
                   </div>
                   {isCwdFocused && cwdCompletion && cwdCompletion.suggestions.length > 0 ? (
                     <div ref={cwdSuggestionListRef} className="path-suggestion-list">
@@ -534,16 +579,18 @@ export function ConfigDrawer({
             </details>
           ) : null}
 
-          <section className="drawer-danger-zone">
-            <div className="drawer-danger-copy">
-              <p className="panel-eyebrow">Danger Zone</p>
-              <h3>Delete Workspace</h3>
-              <p>This removes the saved workspace profile and closes any runtime panes created from it.</p>
-            </div>
-            <button type="button" className="secondary-button danger-button" disabled={isDeleting} onClick={onDeleteWorkspace}>
-              {isDeleting ? "Deleting..." : "Delete Workspace"}
-            </button>
-          </section>
+          {!isCreateMode ? (
+            <section className="drawer-danger-zone">
+              <div className="drawer-danger-copy">
+                <p className="panel-eyebrow">Danger Zone</p>
+                <h3>Delete Workspace</h3>
+                <p>This removes the saved workspace profile and closes any runtime panes created from it.</p>
+              </div>
+              <button type="button" className="secondary-button danger-button" disabled={isDeleting} onClick={onDeleteWorkspace}>
+                {isDeleting ? "Deleting..." : "Delete Workspace"}
+              </button>
+            </section>
+          ) : null}
         </div>
       </aside>
     </>
@@ -557,4 +604,14 @@ function DiagnosticLine({ label, value }: { label: string; value: string }): Rea
       <code>{value}</code>
     </div>
   );
+}
+
+function getPathValidationMessage(completion: PathCompletionResult | null, cwdQuery: string, isCreateMode: boolean): string {
+  if (!completion) {
+    return "Path status unavailable";
+  }
+  if (isCreateMode && cwdQuery.trim().length > 0 && !completion.exists) {
+    return "Directory does not exist and will be created";
+  }
+  return completion.message;
 }

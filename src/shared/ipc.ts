@@ -5,11 +5,13 @@ import type {
   AgentPathLocation,
   AppSettings,
   BoardDocument,
+  ConfigLayerStack,
   DoctorAgent,
   DoctorCheckResult,
   DoctorDiagnosticsDocument,
   DoctorLocation,
   DiagnosticsInfo,
+  MergedConfigResult,
   SessionAttachResult,
   SessionState,
   SshEnvironment,
@@ -34,6 +36,22 @@ export type PathCompletionResult = {
   exists: boolean;
   isDirectory: boolean;
   message: string;
+};
+
+export type EnsureDirectoryResult = {
+  normalizedInput: string;
+  resolvedPath: string;
+  exists: boolean;
+  created: boolean;
+  isDirectory: boolean;
+  message: string;
+};
+
+export type OpenWorkspaceInEditorRequest = {
+  cwd: string;
+  target: TerminalProfile["target"];
+  wslDistro?: string;
+  fallbackWslDistro?: string;
 };
 
 export type SshSecretInput = {
@@ -77,7 +95,9 @@ export type WatchboardApi = {
   selectBoard: () => Promise<BoardDocument>;
   getDiagnostics: () => Promise<DiagnosticsInfo>;
   openDebugPath: (debugPath: string) => Promise<void>;
+  openWorkspaceInEditor: (request: OpenWorkspaceInEditorRequest) => Promise<void>;
   completePath: (request: PathCompletionRequest) => Promise<PathCompletionResult>;
+  ensureWorkspaceDirectory: (request: PathCompletionRequest) => Promise<EnsureDirectoryResult>;
   testSshEnvironment: (environment: SshEnvironment, secrets?: SshSecretInput) => Promise<SshTestResult>;
   resolveCronRelaunchCommand: (profile: TerminalProfile) => Promise<ResolvedCronRelaunchCommand>;
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
@@ -88,6 +108,17 @@ export type WatchboardApi = {
   listAgentConfigs: (location: AgentPathLocation) => Promise<AgentConfigEntry[]>;
   readAgentConfig: (configId: AgentConfigFileId, location: AgentPathLocation) => Promise<AgentConfigDocument>;
   writeAgentConfig: (configId: AgentConfigFileId, location: AgentPathLocation, content: string) => Promise<void>;
+  getLayerStack: (configId: AgentConfigFileId, location: AgentPathLocation) => Promise<ConfigLayerStack>;
+  saveLayerStack: (stack: ConfigLayerStack) => Promise<ConfigLayerStack>;
+  readLayerContent: (configId: AgentConfigFileId, layerId: string, location: AgentPathLocation) => Promise<string>;
+  writeLayerContent: (configId: AgentConfigFileId, layerId: string, location: AgentPathLocation, content: string) => Promise<void>;
+  deleteLayer: (configId: AgentConfigFileId, layerId: string, location: AgentPathLocation) => Promise<ConfigLayerStack>;
+  computeMergedConfig: (configId: AgentConfigFileId, location: AgentPathLocation) => Promise<MergedConfigResult>;
+  applyMergedConfig: (configId: AgentConfigFileId, location: AgentPathLocation) => Promise<void>;
+  importBaseLayer: (
+    configId: AgentConfigFileId,
+    location: AgentPathLocation
+  ) => Promise<{ stack: ConfigLayerStack; importedLayerId: string }>;
   getDoctorDiagnostics: () => Promise<DoctorDiagnosticsDocument>;
   runDoctorCheck: (location: DoctorLocation, agent: DoctorAgent) => Promise<DoctorCheckResult>;
   getAnalysisDatabase: (location: AgentPathLocation) => Promise<AnalysisDatabaseInfo>;

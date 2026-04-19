@@ -7,7 +7,9 @@ import {
   deriveVisibleWorkspaces,
   getContextMenuStyle,
   getPreviewStyle,
-  matchesWorkspaceFilter
+  matchesWorkspaceFilter,
+  matchesWorkspaceSearch,
+  tokenizeWorkspaceSearchQuery
 } from "../../src/renderer/components/WorkspaceSidebar";
 import { createTerminalPreviewSnippet } from "../../src/renderer/components/terminalFallback";
 import { createTerminalInstance, createWorkspaceTemplate, type TerminalInstance, type Workspace } from "../../src/shared/schema";
@@ -50,6 +52,19 @@ test("matchesWorkspaceFilter combines agent and environment filters", () => {
   assert.equal(matchesWorkspaceFilter(claudeHost, "claude", "wsl"), false);
 });
 
+test("tokenizeWorkspaceSearchQuery trims whitespace and normalizes case", () => {
+  assert.deepEqual(tokenizeWorkspaceSearchQuery("  Codex   Repo A  "), ["codex", "repo", "a"]);
+});
+
+test("matchesWorkspaceSearch checks workspace name and path with AND semantics", () => {
+  const workspace = makeWorkspace("Codex Research", "wsl", "codex", "/repo/Quantization Notes");
+
+  assert.equal(matchesWorkspaceSearch(workspace, "codex repo"), true);
+  assert.equal(matchesWorkspaceSearch(workspace, "research notes"), true);
+  assert.equal(matchesWorkspaceSearch(workspace, "codex missing"), false);
+  assert.equal(matchesWorkspaceSearch(workspace, ""), true);
+});
+
 test("compareWorkspaces keeps last-launch ordering ahead of alphabetical fallback", () => {
   const older = makeWorkspace("Bravo", "linux", "codex", "~", "2026-03-12T10:00:00.000Z");
   const newer = makeWorkspace("Alpha", "linux", "codex", "~", "2026-03-13T10:00:00.000Z");
@@ -71,6 +86,19 @@ test("deriveVisibleWorkspaces keeps instance-owning workspaces visible across ag
   assert.deepEqual(
     visible.map((workspace) => workspace.id),
     [claudeWorkspace.id, codexWorkspace.id]
+  );
+});
+
+test("deriveVisibleWorkspaces applies search after structured filters", () => {
+  const codexWorkspace = makeWorkspace("Codex WSL", "wsl", "codex", "/repo/alpha");
+  const claudeWorkspace = makeWorkspace("Claude Host", "linux", "claude", "/repo/beta");
+  const instancesByWorkspace = new Map([[codexWorkspace.id, [makeInstance(codexWorkspace)]]]);
+
+  const visible = deriveVisibleWorkspaces([codexWorkspace, claudeWorkspace], instancesByWorkspace, "all", "all", "alphabetical", "beta");
+
+  assert.deepEqual(
+    visible.map((workspace) => workspace.id),
+    [claudeWorkspace.id]
   );
 });
 
@@ -158,6 +186,16 @@ test("deriveVisibleWorkspaceGroups applies agent filter before instance-only vis
   const grouped = deriveVisibleWorkspaceGroups([codex, claude], instancesByWorkspace, "claude", "all", "alphabetical", true);
 
   assert.deepEqual(grouped[0]?.templates.map((template) => template.workspace.name), ["Claude"]);
+});
+
+test("deriveVisibleWorkspaceGroups narrows results by workspace search tokens", () => {
+  const alpha = makeWorkspace("Alpha Quant", "linux", "codex", "/repo/quantization");
+  const beta = makeWorkspace("Beta Vision", "linux", "codex", "/repo/vision");
+
+  const grouped = deriveVisibleWorkspaceGroups([alpha, beta], new Map(), "all", "all", "alphabetical", false, "quant repo");
+
+  assert.deepEqual(grouped.map((group) => group.label), ["/repo/quantization"]);
+  assert.deepEqual(grouped[0]?.templates.map((template) => template.workspace.name), ["Alpha Quant"]);
 });
 
 test("getContextMenuStyle keeps instance context menu within the viewport", () => {

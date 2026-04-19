@@ -59,6 +59,29 @@ test("resolveAnalysisWslHomePath emits a warning path when WSL resolution fails"
   assert.equal(logEvents[0]?.payload.error, "wsl.exe timeout");
 });
 
+test("resolveAnalysisWslHomePath prefers the configured distro when provided", async () => {
+  let preferredDistro: string | undefined;
+
+  const homePath = await resolveAnalysisWslHomePath({
+    platform: "win32",
+    preferredDistro: "Ubuntu-22.04",
+    resolveDistro: async (preferred) => {
+      preferredDistro = preferred;
+      return {
+        value: preferred ?? "Ubuntu",
+        source: "preferred"
+      };
+    },
+    resolveHome: async (distro) => ({
+      value: distro === "Ubuntu-22.04" ? "/home/demo" : "/home/fallback",
+      source: "wsl.exe"
+    })
+  });
+
+  assert.equal(preferredDistro, "Ubuntu-22.04");
+  assert.equal(homePath, "\\\\wsl.localhost\\Ubuntu-22.04\\home\\demo");
+});
+
 test("resolveAnalysisWslHomePath skips WSL probing outside Windows", async () => {
   let called = false;
 

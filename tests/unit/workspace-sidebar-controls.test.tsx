@@ -29,6 +29,7 @@ test("WorkspaceSidebar uses icon-led compact filter controls without visible fie
       workbench={createEmptyWorkbenchDocument()}
       sessions={{}}
       cronCountdownByInstanceId={new Map()}
+      searchQuery=""
       sortMode="alphabetical"
       filterMode="codex"
       environmentFilterMode="wsl"
@@ -37,6 +38,7 @@ test("WorkspaceSidebar uses icon-led compact filter controls without visible fie
       isDeleteMode={false}
       selectedDeleteIds={[]}
       onCreateWorkspace={() => undefined}
+      onSearchQueryChange={() => undefined}
       onSortModeChange={() => undefined}
       onFilterModeChange={() => undefined}
       onEnvironmentFilterModeChange={() => undefined}
@@ -47,6 +49,8 @@ test("WorkspaceSidebar uses icon-led compact filter controls without visible fie
       onDeleteSelected={() => undefined}
       onToggleDeleteSelection={() => undefined}
       onSelectWorkspace={() => undefined}
+      onViewWorkspace={() => undefined}
+      onDeleteWorkspaceQuick={() => undefined}
       onFocusPane={() => undefined}
       onClosePane={() => undefined}
       onCollapsePane={() => undefined}
@@ -59,6 +63,7 @@ test("WorkspaceSidebar uses icon-led compact filter controls without visible fie
   assert.match(html, /aria-label="Filter workspaces by agent"/);
   assert.match(html, /aria-label="Filter workspaces by environment"/);
   assert.match(html, /aria-label="Show all templates"/);
+  assert.match(html, /aria-label="Search workspaces"/);
   assert.match(html, /compact-control-icon/);
   assert.match(html, /agent-badge-icon/);
   assert.match(html, /location-badge-icon/);
@@ -119,6 +124,7 @@ test("WorkspaceSidebar template rows keep the title first and group environment 
       workbench={createEmptyWorkbenchDocument()}
       sessions={{}}
       cronCountdownByInstanceId={new Map()}
+      searchQuery=""
       sortMode="alphabetical"
       filterMode="all"
       environmentFilterMode="all"
@@ -127,6 +133,7 @@ test("WorkspaceSidebar template rows keep the title first and group environment 
       isDeleteMode={false}
       selectedDeleteIds={[]}
       onCreateWorkspace={() => undefined}
+      onSearchQueryChange={() => undefined}
       onSortModeChange={() => undefined}
       onFilterModeChange={() => undefined}
       onEnvironmentFilterModeChange={() => undefined}
@@ -137,6 +144,8 @@ test("WorkspaceSidebar template rows keep the title first and group environment 
       onDeleteSelected={() => undefined}
       onToggleDeleteSelection={() => undefined}
       onSelectWorkspace={() => undefined}
+      onViewWorkspace={() => undefined}
+      onDeleteWorkspaceQuick={() => undefined}
       onFocusPane={() => undefined}
       onClosePane={() => undefined}
       onCollapsePane={() => undefined}
@@ -188,6 +197,14 @@ test("WorkspaceSidebar keeps the icon centered and the metadata row compact in C
   assert.match(
     styles,
     /\.workspace-instance-item\s*\{[^}]*gap:\s*7px;[^}]*padding:\s*6px 9px;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-search-control\s*\{[^}]*flex:\s*1 1 100%;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-search-input\s*\{[^}]*width:\s*100%;[^}]*height:\s*30px;/s
   );
   assert.doesNotMatch(styles, /\.workspace-env-rail\s*\{/);
 });

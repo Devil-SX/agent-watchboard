@@ -5,7 +5,12 @@ import React from "react";
 import ReactDOMClient from "react-dom/client";
 import { act } from "react";
 
-import { createDefaultAppSettings, type AgentConfigDocument, type AgentConfigEntry } from "../../src/shared/schema";
+import {
+  createDefaultAppSettings,
+  type AgentConfigDocument,
+  type AgentConfigEntry,
+  type ConfigLayerStack
+} from "../../src/shared/schema";
 import { createDomTestHarness } from "./helpers/domTestHarness";
 
 (globalThis as Record<string, unknown>).self = globalThis;
@@ -72,7 +77,8 @@ async function renderAgentConfigPanel(options?: {
 }) {
   const harness = createDomTestHarness();
   const entries = createEntries();
-  const writes: Array<{ configId: string; content: string }> = [];
+  const configWrites: Array<{ configId: string; content: string }> = [];
+  const layerWrites: Array<{ configId: string; layerId: string; content: string }> = [];
   const reads: string[] = [];
   const listCalls: string[] = [];
   const container = harness.document.createElement("div");
@@ -84,6 +90,29 @@ async function renderAgentConfigPanel(options?: {
     "claude-settings": "{\n  \"theme\": \"dark\"\n}\n",
     ...options?.documents
   } as Record<AgentConfigEntry["id"], string>;
+  const emptyLayerStackByConfigId: Record<AgentConfigEntry["id"], ConfigLayerStack> = {
+    "codex-config": {
+      version: 1,
+      configId: "codex-config",
+      location: "host",
+      layers: [{ id: "base-layer", name: "Base Layer", enabled: true }],
+      updatedAt: "2026-04-19T00:00:00.000Z"
+    },
+    "codex-auth": {
+      version: 1,
+      configId: "codex-auth",
+      location: "host",
+      layers: [{ id: "base-layer", name: "Base Layer", enabled: true }],
+      updatedAt: "2026-04-19T00:00:00.000Z"
+    },
+    "claude-settings": {
+      version: 1,
+      configId: "claude-settings",
+      location: "host",
+      layers: [{ id: "base-layer", name: "Base Layer", enabled: true }],
+      updatedAt: "2026-04-19T00:00:00.000Z"
+    }
+  };
 
   globalThis.window.watchboard = {
     listAgentConfigs: async (location) => {
@@ -97,8 +126,36 @@ async function renderAgentConfigPanel(options?: {
       return createDocument(entry, documents[configId as AgentConfigEntry["id"]] ?? "");
     },
     writeAgentConfig: async (configId, _location, content) => {
-      writes.push({ configId, content });
-    }
+      configWrites.push({ configId, content });
+    },
+    getLayerStack: async (configId, location) => ({
+      ...emptyLayerStackByConfigId[configId as AgentConfigEntry["id"]],
+      location
+    }),
+    saveLayerStack: async (stack) => stack,
+    readLayerContent: async (configId) => documents[configId as AgentConfigEntry["id"]] ?? "",
+    writeLayerContent: async (configId, layerId, _location, content) => {
+      layerWrites.push({ configId, layerId, content });
+    },
+    deleteLayer: async (configId, _layerId, location) => ({
+      ...emptyLayerStackByConfigId[configId as AgentConfigEntry["id"]],
+      location
+    }),
+    computeMergedConfig: async (configId) => ({
+      configId,
+      content: "",
+      annotations: [],
+      layerCount: 0,
+      enabledLayerCount: 0
+    }),
+    applyMergedConfig: async () => undefined,
+    importBaseLayer: async (configId, location) => ({
+      stack: {
+        ...emptyLayerStackByConfigId[configId as AgentConfigEntry["id"]],
+        location
+      },
+      importedLayerId: "base"
+    })
   } as never;
 
   await act(async () => {
@@ -113,10 +170,13 @@ async function renderAgentConfigPanel(options?: {
           activeConfigId: options?.activeConfigId ?? "claude-settings",
           isChatOpen: false,
           chatAgent: "codex",
+          skipDangerous: false,
           chatPrompts: {
             codex: { mode: "default", text: "" },
             claude: { mode: "default", text: "" }
-          }
+          },
+          activeLayerId: "base-layer",
+          layerViewMode: "current"
         }}
         chatInstance={null}
         chatError=""
@@ -149,7 +209,8 @@ async function renderAgentConfigPanel(options?: {
     container,
     root,
     entries,
-    writes,
+    configWrites,
+    layerWrites,
     reads,
     listCalls,
     getTextarea,
@@ -198,6 +259,7 @@ test("AgentConfigPanel validates JSON drafts and requires explicit second save f
     activeConfigId: "claude-settings"
   });
   try {
+    await view.clickTab("Edit Layer");
     assert.match(view.container.textContent ?? "", /JSON syntax is valid\./);
 
     await view.input("{\n  \"theme\": \n}\n");
@@ -205,36 +267,29 @@ test("AgentConfigPanel validates JSON drafts and requires explicit second save f
     assert.match(view.container.textContent ?? "", /JSON syntax is invalid/i);
 
     await view.clickSave();
-    assert.equal(view.writes.length, 0);
-    assert.match(view.container.textContent ?? "", /Click Save again to write it anyway\./);
-    assert.match(view.getSaveButton().textContent ?? "", /Save Anyway/);
-
-    await view.clickSave();
-    assert.equal(view.writes.length, 1);
-    assert.equal(view.writes[0]?.configId, "claude-settings");
-    assert.equal(view.writes[0]?.content, "{\n  \"theme\": \n}\n");
+    assert.equal(view.configWrites.length, 0);
+    assert.equal(view.layerWrites.length, 1);
+    assert.equal(view.layerWrites[0]?.configId, "claude-settings");
+    assert.equal(view.layerWrites[0]?.layerId, "base-layer");
+    assert.equal(view.layerWrites[0]?.content, "{\n  \"theme\": \n}\n");
   } finally {
     await view.cleanup();
   }
 });
 
-test("AgentConfigPanel resets the invalid-save confirmation after the draft changes", async () => {
+test("AgentConfigPanel updates JSON validation state after the draft changes", async () => {
   const view = await renderAgentConfigPanel({
     activeConfigId: "claude-settings"
   });
   try {
+    await view.clickTab("Edit Layer");
     await view.input("{\n  \"theme\": \n}\n");
-    await view.clickSave();
-    assert.match(view.getSaveButton().textContent ?? "", /Save Anyway/);
+    assert.match(view.container.textContent ?? "", /JSON syntax is invalid/i);
 
-    await view.input("{\n  \"theme\": \n \n}\n");
+    await view.input("{\n  \"theme\": \"light\"\n}\n");
 
-    assert.doesNotMatch(view.container.textContent ?? "", /Click Save again to write it anyway\./);
-    assert.equal((view.getSaveButton().textContent ?? "").trim(), "Save");
-
-    await view.clickSave();
-    assert.equal(view.writes.length, 0);
-    assert.match(view.container.textContent ?? "", /Click Save again to write it anyway\./);
+    assert.match(view.container.textContent ?? "", /JSON syntax is valid\./);
+    assert.doesNotMatch(view.container.textContent ?? "", /JSON syntax is invalid/i);
   } finally {
     await view.cleanup();
   }
@@ -245,6 +300,7 @@ test("AgentConfigPanel highlights TOML configs and reports TOML syntax errors", 
     activeConfigId: "codex-config"
   });
   try {
+    await view.clickTab("Edit Layer");
     assert.match(view.container.textContent ?? "", /TOML syntax is valid\./);
     const sectionToken = view.container.querySelector(".agent-config-token.is-section");
     const keyToken = view.container.querySelector(".agent-config-token.is-key");

@@ -18,6 +18,7 @@ type WslHomeResolver = typeof resolveWslHomeWithSource;
 
 type ResolveAnalysisWslHomePathOptions = {
   platform: NodeJS.Platform;
+  preferredDistro?: string;
   resolveDistro?: WslDistroResolver;
   resolveHome?: WslHomeResolver;
   onPerf?: (event: AnalysisWslPerfEvent) => void;
@@ -35,7 +36,7 @@ export async function resolveAnalysisWslHomePath(options: ResolveAnalysisWslHome
 
   try {
     const distroStartedAt = performance.now();
-    const distroResult = await resolveDistro();
+    const distroResult = await resolveDistro(options.preferredDistro);
     const distroDurationMs = round(performance.now() - distroStartedAt);
     options.onPerf?.({
       name: "wsl-distro-resolve",

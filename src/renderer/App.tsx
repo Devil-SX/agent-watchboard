@@ -20,6 +20,11 @@ import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
+import {
+  buildWorkspaceDirectoryRequest,
+  resolvePendingWorkspaceDirectoryCreation,
+  type PendingWorkspaceDirectoryCreation
+} from "@renderer/workspaceCreation";
 import { appendSessionBacklogChunk } from "@shared/sessionBacklog";
 import {
   buildCronRelaunchProfile,
@@ -96,6 +101,7 @@ export function App(): ReactElement {
   const [workspaceList, setWorkspaceList] = useState<WorkspaceList | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>("");
   const [draftWorkspace, setDraftWorkspace] = useState<Workspace | null>(null);
+  const [newWorkspaceSeed, setNewWorkspaceSeed] = useState<Workspace | null>(null);
   const [workbench, setWorkbench] = useState<WorkbenchDocument | null>(null);
   const [workbenchDirty, setWorkbenchDirty] = useState(false);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -111,8 +117,11 @@ export function App(): ReactElement {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false);
+  const [pendingDirectoryCreation, setPendingDirectoryCreation] = useState<PendingWorkspaceDirectoryCreation | null>(null);
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [deleteSelection, setDeleteSelection] = useState<string[]>([]);
+  const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<MainTabId>("terminal");
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
   const [skillsChatInstance, setSkillsChatInstance] = useState<TerminalInstance | null>(null);
@@ -436,6 +445,9 @@ export function App(): ReactElement {
     if (!workspaceList || workspaceList.workspaces.length === 0) {
       return;
     }
+    if (isCreatingWorkspace && draftWorkspace && selectedWorkspaceId === draftWorkspace.id) {
+      return;
+    }
     if (selectedWorkspaceId && workspaceList.workspaces.some((workspace) => workspace.id === selectedWorkspaceId)) {
       return;
     }
@@ -443,7 +455,7 @@ export function App(): ReactElement {
     if (fallback) {
       loadWorkspaceIntoEditor(fallback, setSelectedWorkspaceId, setDraftWorkspace, setIsDirty);
     }
-  }, [selectedWorkspaceId, workspaceList]);
+  }, [draftWorkspace, isCreatingWorkspace, selectedWorkspaceId, workspaceList]);
 
   useEffect(() => {
     if (!workbench) {
@@ -762,8 +774,15 @@ export function App(): ReactElement {
     if (!workspaceList) {
       return;
     }
-    if (isDirty) {
-      await handleWorkspaceSave();
+    if (isCreatingWorkspace) {
+      setIsCreatingWorkspace(false);
+      setNewWorkspaceSeed(null);
+      setPendingDirectoryCreation(null);
+    } else if (isDirty) {
+      const saved = await handleWorkspaceSave();
+      if (!saved) {
+        return;
+      }
     }
     const workspace = workspaceList.workspaces.find((item) => item.id === workspaceId) ?? null;
     if (!workspace) {
@@ -892,15 +911,47 @@ export function App(): ReactElement {
     );
   }
 
-  async function handleWorkspaceSave(workspaceOverride?: Workspace): Promise<void> {
+  async function handleWorkspaceSave(
+    workspaceOverride?: Workspace,
+    options?: {
+      confirmDirectoryCreation?: boolean;
+    }
+  ): Promise<boolean> {
     const workspace = workspaceOverride ?? selectedWorkspace;
     if (!workspace) {
-      return;
+      return false;
     }
     const normalizedWorkspace: Workspace = {
       ...workspace,
       terminals: [normalizeTerminal(workspace, diagnostics, settingsDraft)]
     };
+    const directoryRequest = buildWorkspaceDirectoryRequest(normalizedWorkspace);
+    if (directoryRequest) {
+      try {
+        const completion = await window.watchboard.completePath(directoryRequest);
+        if (completion.exists && !completion.isDirectory) {
+          setPendingDirectoryCreation(null);
+          setError(completion.message);
+          return false;
+        }
+        const nextPendingDirectoryCreation = resolvePendingWorkspaceDirectoryCreation(normalizedWorkspace, completion);
+        if (nextPendingDirectoryCreation && !options?.confirmDirectoryCreation) {
+          setPendingDirectoryCreation(nextPendingDirectoryCreation);
+          setError("");
+          return false;
+        }
+        if (nextPendingDirectoryCreation && options?.confirmDirectoryCreation) {
+          const ensured = await window.watchboard.ensureWorkspaceDirectory(nextPendingDirectoryCreation.request);
+          if (!ensured.isDirectory) {
+            setError(ensured.message);
+            return false;
+          }
+        }
+      } catch (saveError) {
+        setError(messageOf(saveError));
+        return false;
+      }
+    }
     setIsSaving(true);
     try {
       const next = await window.watchboard.saveWorkspace({
@@ -933,10 +984,15 @@ export function App(): ReactElement {
         }
         loadWorkspaceIntoEditor(saved, setSelectedWorkspaceId, setDraftWorkspace, setIsDirty);
       }
+      setIsCreatingWorkspace(false);
+      setNewWorkspaceSeed(null);
+      setPendingDirectoryCreation(null);
       setError("");
       setIsConfigOpen(false);
+      return true;
     } catch (saveError) {
       setError(messageOf(saveError));
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -1018,8 +1074,10 @@ export function App(): ReactElement {
     }
     const duplicateName = getNextDuplicateWorkspaceName(selectedWorkspace.name, workspaceList.workspaces);
     const duplicatedWorkspace = duplicateWorkspaceTemplate(selectedWorkspace, duplicateName);
-    await handleWorkspaceSave(duplicatedWorkspace);
-    setIsConfigOpen(true);
+    const duplicated = await handleWorkspaceSave(duplicatedWorkspace);
+    if (duplicated) {
+      setIsConfigOpen(true);
+    }
   }
 
   async function handleSkillsPaneStateChange(state: SkillsPaneState): Promise<void> {
@@ -1097,12 +1155,22 @@ export function App(): ReactElement {
   }
 
   async function handleCreateWorkspace(): Promise<void> {
+    if (isCreatingWorkspace && draftWorkspace) {
+      setSelectedWorkspaceId(draftWorkspace.id);
+      setIsConfigOpen(true);
+      setError("");
+      return;
+    }
     const currentCount = workspaceList?.workspaces.length ?? 0;
     const workspace = createWorkspaceTemplate(`Workspace ${currentCount + 1}`, {
       platform: diagnostics?.platform
     });
-    await handleWorkspaceSave(workspace);
+    loadWorkspaceIntoEditor(workspace, setSelectedWorkspaceId, setDraftWorkspace, setIsDirty);
+    setNewWorkspaceSeed(structuredClone(workspace));
+    setIsCreatingWorkspace(true);
+    setPendingDirectoryCreation(null);
     setIsConfigOpen(true);
+    setError("");
   }
 
   async function handleDeleteWorkspace(workspaceId = savedWorkspace?.id): Promise<void> {
@@ -1185,12 +1253,32 @@ export function App(): ReactElement {
     }
   }
 
-  function handleResetWorkspace(): void {
-    if (!savedWorkspace) {
+  async function handleDeleteWorkspaceQuick(workspaceId: string): Promise<void> {
+    const workspace = workspaceList?.workspaces.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      setError(`Workspace ${workspaceId} not found`);
       return;
     }
-    loadWorkspaceIntoEditor(savedWorkspace, setSelectedWorkspaceId, setDraftWorkspace, setIsDirty);
-    setError("");
+
+    if (!window.confirm(`Delete workspace "${workspace.name}"?`)) {
+      return;
+    }
+
+    await handleDeleteWorkspace(workspace.id);
+  }
+
+  function handleResetWorkspace(): void {
+    if (savedWorkspace) {
+      loadWorkspaceIntoEditor(savedWorkspace, setSelectedWorkspaceId, setDraftWorkspace, setIsDirty);
+      setPendingDirectoryCreation(null);
+      setError("");
+      return;
+    }
+    if (isCreatingWorkspace && newWorkspaceSeed) {
+      loadWorkspaceIntoEditor(newWorkspaceSeed, setSelectedWorkspaceId, setDraftWorkspace, setIsDirty);
+      setPendingDirectoryCreation(null);
+      setError("");
+    }
   }
 
   function handleWorkspaceFieldChange(field: "name", value: string): void {
@@ -1208,6 +1296,7 @@ export function App(): ReactElement {
       updatedAt: new Date().toISOString()
     });
     setIsDirty(true);
+    setPendingDirectoryCreation(null);
   }
 
   function handleTerminalChange(update: Partial<TerminalProfile>): void {
@@ -1228,10 +1317,11 @@ export function App(): ReactElement {
       updatedAt: new Date().toISOString()
     });
     setIsDirty(true);
+    setPendingDirectoryCreation(null);
   }
 
   function handleSettingsFieldChange(
-    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro",
+    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro" | "agentWslDistro",
     value: string | number
   ): void {
     if (!settingsDraft) {
@@ -1422,6 +1512,27 @@ export function App(): ReactElement {
     }
   }
 
+  async function handleViewWorkspace(workspaceId: string): Promise<void> {
+    const workspace = workspaceList?.workspaces.find((item) => item.id === workspaceId);
+    const terminal = workspace?.terminals[0];
+    if (!workspace || !terminal) {
+      setError(`Workspace ${workspaceId} not found`);
+      return;
+    }
+
+    try {
+      await window.watchboard.openWorkspaceInEditor({
+        cwd: terminal.cwd,
+        target: terminal.target,
+        wslDistro: terminal.wslDistro,
+        fallbackWslDistro: settingsDraft?.agentWslDistro
+      });
+      setError("");
+    } catch (openError) {
+      setError(messageOf(openError));
+    }
+  }
+
   async function handleBoardLocationChange(location: "host" | "wsl"): Promise<void> {
     if (!settingsDraft) {
       return;
@@ -1602,6 +1713,7 @@ export function App(): ReactElement {
               workbench={workbench}
               sessions={sessions}
               cronCountdownByInstanceId={cronCountdownByInstanceId}
+              searchQuery={workspaceSearchQuery}
               sortMode={settingsDraft.workspaceSortMode}
               filterMode={settingsDraft.workspaceFilterMode}
               environmentFilterMode={settingsDraft.workspaceEnvironmentFilterMode}
@@ -1610,6 +1722,7 @@ export function App(): ReactElement {
               isDeleteMode={isDeleteMode}
               selectedDeleteIds={deleteSelection}
               onCreateWorkspace={() => void handleCreateWorkspace()}
+              onSearchQueryChange={setWorkspaceSearchQuery}
               onSortModeChange={(sortMode: WorkspaceSortMode) => void handleWorkspaceSidebarPreferenceChange({ workspaceSortMode: sortMode })}
               onFilterModeChange={(filterMode: WorkspaceFilterMode) =>
                 void handleWorkspaceSidebarPreferenceChange({ workspaceFilterMode: filterMode })
@@ -1639,6 +1752,8 @@ export function App(): ReactElement {
                 );
               }}
               onSelectWorkspace={(workspaceId) => void selectWorkspace(workspaceId, { openConfig: true })}
+              onViewWorkspace={(workspaceId) => void handleViewWorkspace(workspaceId)}
+              onDeleteWorkspaceQuick={(workspaceId) => void handleDeleteWorkspaceQuick(workspaceId)}
               onFocusPane={handleFocusPane}
               onClosePane={(instanceId) => void handleClosePane(instanceId)}
               onCollapsePane={handleCollapsePane}
@@ -1813,8 +1928,15 @@ export function App(): ReactElement {
         isDirty={isDirty}
         isSaving={isSaving}
         isDeleting={isDeletingWorkspace}
-        onClose={() => setIsConfigOpen(false)}
+        isCreateMode={isCreatingWorkspace}
+        pendingDirectoryCreation={pendingDirectoryCreation}
+        onClose={() => {
+          setPendingDirectoryCreation(null);
+          setIsConfigOpen(false);
+        }}
         onSaveWorkspace={() => void handleWorkspaceSave()}
+        onConfirmPendingDirectoryCreation={() => void handleWorkspaceSave(undefined, { confirmDirectoryCreation: true })}
+        onCancelPendingDirectoryCreation={() => setPendingDirectoryCreation(null)}
         onDuplicateWorkspace={() => void handleDuplicateWorkspace()}
         onResetWorkspace={handleResetWorkspace}
         onDeleteWorkspace={() => void handleDeleteWorkspace()}

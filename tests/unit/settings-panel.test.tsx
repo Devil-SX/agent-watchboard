@@ -140,6 +140,7 @@ test("SettingsPanel renders SSH environment management controls", () => {
         settingsPane: {
           activeCategory: "environments"
         },
+        agentWslDistro: "Ubuntu-22.04",
         sshEnvironments: [
           {
             id: "env-1",
@@ -177,6 +178,8 @@ test("SettingsPanel renders SSH environment management controls", () => {
     />
   );
 
+  assert.match(html, /Agent WSL Distro/);
+  assert.match(html, /Ubuntu-22\.04/);
   assert.match(html, /Environment Management/);
   assert.match(html, /Add SSH Environment/);
   assert.match(html, /Prod SSH/);

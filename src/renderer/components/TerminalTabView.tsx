@@ -25,7 +25,7 @@ import {
 import { createTerminalRuntime } from "@renderer/components/terminalRuntime";
 import { resolveTerminalSessionLifecycle } from "@renderer/components/terminalSessionLifecycle";
 import { createTerminalViewState, type TerminalViewState } from "@renderer/components/terminalViewState";
-import { type AppSettings, type SessionState, type TerminalInstance } from "@shared/schema";
+import { detectAgentKind, type AppSettings, type SessionState, type TerminalInstance } from "@shared/schema";
 
 type Props = {
   instance: TerminalInstance;
@@ -105,8 +105,13 @@ export function TerminalTabView({
     }
     const host = hostRef.current;
 
+    const agentKind = detectAgentKind(instance.terminalProfileSnapshot);
+    const isAgentTerminal = agentKind === "claude" || agentKind === "codex";
+
     const { terminal: xterm, fitAddon } = createTerminalRuntime({
-      cursorBlink: true,
+      cursorBlink: !isAgentTerminal,
+      cursorStyle: isAgentTerminal ? "bar" : "block",
+      cursorInactiveStyle: isAgentTerminal ? "none" : "outline",
       fontFamily: settings.terminalFontFamily,
       fontSize: settings.terminalFontSize,
       lineHeight: 1.15,
@@ -118,7 +123,7 @@ export function TerminalTabView({
       theme: {
         background: "#071118",
         foreground: "#d7e0e6",
-        cursor: "#f5c26b",
+        cursor: isAgentTerminal ? "transparent" : "#f5c26b",
         black: "#0d171f",
         red: "#ff7a7a",
         green: "#73d4a6",
