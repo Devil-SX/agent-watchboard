@@ -172,6 +172,10 @@ test("WorkspaceSidebar template rows keep the title first and group environment 
 test("WorkspaceSidebar keeps the icon centered and the metadata row compact in CSS", () => {
   assert.match(
     styles,
+    /\.workspace-sidebar-controls\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/s
+  );
+  assert.match(
+    styles,
     /\.workspace-identity-stack\s*\{[^}]*justify-content:\s*center;[^}]*align-self:\s*center;[^}]*width:\s*24px;[^}]*flex:\s*0 0 24px;/s
   );
   assert.match(
@@ -200,11 +204,26 @@ test("WorkspaceSidebar keeps the icon centered and the metadata row compact in C
   );
   assert.match(
     styles,
-    /\.workspace-search-control\s*\{[^}]*flex:\s*1 1 100%;/s
+    /\.workspace-search-control\s*\{[^}]*grid-column:\s*1 \/ -1;/s
   );
   assert.match(
     styles,
     /\.workspace-search-input\s*\{[^}]*width:\s*100%;[^}]*height:\s*30px;/s
   );
   assert.doesNotMatch(styles, /\.workspace-env-rail\s*\{/);
+});
+
+test("WorkspaceSidebar lets the workspace status orbit extend past the card without parent clipping", () => {
+  assert.match(
+    styles,
+    /\.workspace-list-item\s*\{[^}]*isolation:\s*isolate;[^}]*overflow:\s*visible;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-list-item\s*>\s*\.status-orbit\s*\{[^}]*inset:\s*-7px;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-list-item\s*>\s*\.status-orbit\s+\.status-orbit-dot\.is-primary\s*\{[^}]*drop-shadow\(0 0 4px rgba\(126,\s*194,\s*255,\s*0\.62\)\);/s
+  );
 });

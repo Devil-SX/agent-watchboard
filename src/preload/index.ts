@@ -15,6 +15,7 @@ const api: WatchboardApi = {
   writeToSession: (sessionId, data, sentAtUnixMs) => {
     ipcRenderer.send("watchboard:write-session", sessionId, data, sentAtUnixMs);
   },
+  syncTerminalSelection: (text) => ipcRenderer.invoke("watchboard:sync-terminal-selection", text),
   resizeSession: (sessionId, cols, rows, requestId) => {
     ipcRenderer.send("watchboard:resize-session", sessionId, cols, rows, requestId);
   },
@@ -23,6 +24,10 @@ const api: WatchboardApi = {
   listSessions: () => ipcRenderer.invoke("watchboard:list-sessions"),
   selectBoard: () => ipcRenderer.invoke("watchboard:select-board"),
   getDiagnostics: () => ipcRenderer.invoke("watchboard:get-diagnostics"),
+  getWindowState: () => ipcRenderer.invoke("watchboard:get-window-state"),
+  minimizeWindow: () => ipcRenderer.invoke("watchboard:minimize-window"),
+  toggleMaximizeWindow: () => ipcRenderer.invoke("watchboard:toggle-maximize-window"),
+  closeWindow: () => ipcRenderer.invoke("watchboard:close-window"),
   openDebugPath: (debugPath) => ipcRenderer.invoke("watchboard:open-debug-path", debugPath),
   openWorkspaceInEditor: (request) => ipcRenderer.invoke("watchboard:open-workspace-in-editor", request),
   completePath: (request) => ipcRenderer.invoke("watchboard:complete-path", request),
@@ -47,6 +52,11 @@ const api: WatchboardApi = {
     const wrapped = (_event: unknown, document: unknown) => listener(document as never);
     ipcRenderer.on("board-update", wrapped);
     return () => ipcRenderer.removeListener("board-update", wrapped);
+  },
+  onWindowState: (listener) => {
+    const wrapped = (_event: unknown, state: unknown) => listener(state as never);
+    ipcRenderer.on("window-state", wrapped);
+    return () => ipcRenderer.removeListener("window-state", wrapped);
   },
   listSkills: (location, options) => ipcRenderer.invoke("watchboard:list-skills", location, options),
   readSkillContent: (skillPath) => ipcRenderer.invoke("watchboard:read-skill-content", skillPath),

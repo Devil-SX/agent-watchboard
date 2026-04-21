@@ -9,7 +9,12 @@ export class FakeTerminal {
   resetCount = 0;
   focusCount = 0;
   disposed = false;
+  selection = "";
+  modes: { mouseTrackingMode: "none" | "x10" | "vt200" | "drag" | "any" } = {
+    mouseTrackingMode: "none"
+  };
   private dataListeners = new Set<(data: string) => void>();
+  private selectionListeners = new Set<() => void>();
 
   constructor(_options?: unknown) {
     FakeTerminal.instances.push(this);
@@ -35,6 +40,26 @@ export class FakeTerminal {
         this.dataListeners.delete(listener);
       }
     };
+  }
+
+  onSelectionChange(listener: () => void): { dispose: () => void } {
+    this.selectionListeners.add(listener);
+    return {
+      dispose: () => {
+        this.selectionListeners.delete(listener);
+      }
+    };
+  }
+
+  getSelection(): string {
+    return this.selection;
+  }
+
+  emitSelection(selection: string): void {
+    this.selection = selection;
+    for (const listener of this.selectionListeners) {
+      listener();
+    }
   }
 
   emitData(data: string): void {

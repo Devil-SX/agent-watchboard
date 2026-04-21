@@ -18,7 +18,7 @@ test("single-view analysis host preserves a constrained height chain", () => {
 test("analysis panel body keeps an explicit vertical scroll path", () => {
   assert.match(
     styles,
-    /\.analysis-panel-body\s*\{[^}]*overflow-y:\s*auto;[^}]*overflow-x:\s*hidden;[^}]*scrollbar-gutter:\s*stable;/s
+    /\.analysis-panel-body\s*\{[^}]*overflow:\s*hidden auto;[^}]*scrollbar-gutter:\s*stable;/s
   );
 });
 
@@ -54,11 +54,11 @@ test("analysis and settings side rails stay compact and avoid per-tab helper cop
 test("workspace header controls wrap instead of introducing horizontal scrolling", () => {
   assert.match(
     styles,
-    /\.workspace-sidebar-controls\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/s
+    /\.workspace-sidebar-controls\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*overflow:\s*visible;/s
   );
   assert.match(
     styles,
-    /\.workspace-compact-control\s*\{[^}]*flex:\s*1 1 calc\(50% - 3px\);[^}]*min-width:\s*0;/s
+    /\.workspace-search-control\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*min-width:\s*0;/s
   );
   assert.match(
     styles,
@@ -69,7 +69,7 @@ test("workspace header controls wrap instead of introducing horizontal scrolling
 test("analysis session browser truncates rows and avoids horizontal scrolling", () => {
   assert.match(
     styles,
-    /\.analysis-tree\s*\{[^}]*overflow-y:\s*auto;[^}]*overflow-x:\s*hidden;/s
+    /\.analysis-tree\s*\{[^}]*overflow:\s*hidden auto;[^}]*scrollbar-gutter:\s*stable both-edges;/s
   );
   assert.match(
     styles,

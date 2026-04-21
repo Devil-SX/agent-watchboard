@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Added a custom desktop title bar with workspace-aware context, version display, and native-style minimize/maximize/close controls for non-macOS builds, plus regression coverage for the new window chrome contract.
+- Added persistent config-layer sort presets so Agent Config stacks can save multiple layer-order views, switch between them, and recover cleanly from legacy or malformed layer metadata.
+
+### Changed
+- Changed the main section rail to use icon-first navigation chrome and updated Agent Config tabs/layer management to resolve merged content through the active saved sort preset instead of the raw layer array.
+
+### Fixed
+- Fixed Claude Code's newer Render terminal output not copying on selection by bridging xterm selection changes into Electron clipboard sync for the embedded terminal surface.
+- Fixed merged config preview/apply so Codex and Claude layer stacks now respect the active saved layer order and enabled state when computing the canonical output.
+
 ## [0.14.0] - 2026-04-19
 
 > **Code Stats** | Total: 55,847 lines | Delta: +7,997 (-855) = **+7,142 net** | Change: **+14.66%** vs v0.13.0

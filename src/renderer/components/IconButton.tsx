@@ -119,6 +119,40 @@ export function TrashIcon({ className }: IconProps): ReactElement {
   );
 }
 
+export function MinimizeWindowIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M4 8.5h8" />
+    </svg>
+  );
+}
+
+export function MaximizeWindowIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round">
+      <rect x="3.25" y="3.25" width="9.5" height="9.5" rx="1.8" />
+    </svg>
+  );
+}
+
+export function RestoreWindowIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round">
+      <path d="M5.75 3.25h4.45a1.8 1.8 0 0 1 1.8 1.8v4.45" />
+      <rect x="3.25" y="5.25" width="7.5" height="7.5" rx="1.6" />
+    </svg>
+  );
+}
+
+export function CloseWindowIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="m4.25 4.25 7.5 7.5" />
+      <path d="m11.75 4.25-7.5 7.5" />
+    </svg>
+  );
+}
+
 export function SplitRightIcon({ className }: IconProps): ReactElement {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -211,6 +245,63 @@ export function DoctorIcon({ className }: IconProps): ReactElement {
       <path d="M6.25 9h3.5" />
       <path d="M8 7.25v3.5" />
       <rect x="2.75" y="4.75" width="10.5" height="8.5" rx="2.25" />
+    </svg>
+  );
+}
+
+export function TerminalNavIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3.25" y="4.25" width="17.5" height="15.5" rx="4.25" />
+      <path d="m7.75 10.1 2.7 2.2-2.7 2.2" />
+      <path d="M12.85 15.1h3.5" />
+    </svg>
+  );
+}
+
+export function SkillsNavIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 4.25 1.48 3.9 3.94 1.49-3.94 1.48L12 15.05l-1.48-3.93-3.94-1.49 3.94-1.48z" />
+      <path d="m17.2 14.7.82 2.15 2.14.82-2.14.81-.82 2.16-.81-2.16-2.15-.81 2.15-.82z" />
+    </svg>
+  );
+}
+
+export function ConfigNavIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5.25" y="6" width="13.5" height="11.5" rx="4.2" />
+      <path d="M9 3.75v2.1" />
+      <path d="M15 3.75v2.1" />
+      <circle cx="9.5" cy="11.2" r="1.15" fill="currentColor" stroke="none" />
+      <circle cx="14.5" cy="11.2" r="1.15" fill="currentColor" stroke="none" />
+      <path d="M9.2 14.7h5.6" />
+      <path d="M3.8 10.8h1.45" />
+      <path d="M18.75 10.8h1.45" />
+    </svg>
+  );
+}
+
+export function AnalysisNavIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 18.5V13" />
+      <path d="M12 18.5V9" />
+      <path d="M18 18.5V6" />
+      <path d="M4.25 18.5h15.5" />
+      <circle cx="18" cy="6" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function SettingsNavIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 7.25h14" />
+      <path d="M5 16.75h14" />
+      <circle cx="9" cy="7.25" r="2.25" />
+      <circle cx="15" cy="16.75" r="2.25" />
     </svg>
   );
 }

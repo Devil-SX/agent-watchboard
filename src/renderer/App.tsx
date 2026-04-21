@@ -16,9 +16,18 @@ import { createTerminalViewState, type TerminalViewState } from "@renderer/compo
 import { buildSkillsChatSessionKey, createSkillsChatInstance } from "@renderer/components/skillsChatSession";
 import { canStartSkillsChatSession } from "@renderer/components/skillsChatStartup";
 import { applyOptimisticSettingsPreference, hasSettingsPreferenceChange } from "@renderer/components/settingsDraft";
+import { TitleBar } from "@renderer/components/TitleBar";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
-import { DoctorIcon, IconButton } from "@renderer/components/IconButton";
+import {
+  AnalysisNavIcon,
+  ConfigNavIcon,
+  DoctorIcon,
+  IconButton,
+  SettingsNavIcon,
+  SkillsNavIcon,
+  TerminalNavIcon
+} from "@renderer/components/IconButton";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import {
   buildWorkspaceDirectoryRequest,
@@ -76,11 +85,11 @@ import {
 } from "@shared/workbenchModel";
 
 const MAIN_TABS = [
-  { id: "terminal", label: "terminal" },
-  { id: "skills", label: "skills" },
-  { id: "config", label: "config" },
-  { id: "analysis", label: "analysis" },
-  { id: "settings", label: "settings" }
+  { id: "terminal", label: "Terminal", icon: TerminalNavIcon },
+  { id: "skills", label: "Skills", icon: SkillsNavIcon },
+  { id: "config", label: "Agent Config", icon: ConfigNavIcon },
+  { id: "analysis", label: "Analysis", icon: AnalysisNavIcon },
+  { id: "settings", label: "Settings", icon: SettingsNavIcon }
 ] as const;
 
 type MainTabId = (typeof MAIN_TABS)[number]["id"];
@@ -146,6 +155,7 @@ export function App(): ReactElement {
   const savedWorkspace = workspaceList?.workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedWorkspace =
     draftWorkspace && draftWorkspace.id === selectedWorkspaceId ? draftWorkspace : savedWorkspace ?? draftWorkspace;
+  const activeTabLabel = MAIN_TABS.find((tab) => tab.id === activeTab)?.label ?? "Terminal";
   const activePaneInstance = workbench?.instances.find((instance) => instance.paneId === workbench.activePaneId) ?? null;
   const cronCountdownByInstanceId = useMemo(
     () => {
@@ -1875,76 +1885,92 @@ export function App(): ReactElement {
     );
 
   return (
-    <main className="app-shell">
-      <div
-        className="content-tabs-shell"
-        style={
-          {
-            "--active-index": activeTabIndex
-          } as CSSProperties
-        }
-      >
-        <nav className="content-tab-rail" aria-label="Main sections">
-          <div className="content-tab-peninsula" aria-hidden="true" />
-          {MAIN_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={tab.id === activeTab ? "content-tab-button is-active" : "content-tab-button"}
-              onClick={() => {
-                if (tab.id === activeTab) {
-                  return;
-                }
-                tabSwitchStartedAtRef.current = performance.now();
-                startTransition(() => {
-                  setActiveTab(tab.id);
-                });
-                void persistSettingsPreference({ activeMainTab: tab.id });
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-          <div className="content-tab-spacer" />
-          <IconButton
-            className="content-tab-utility-button"
-            label="Doctor"
-            icon={<DoctorIcon />}
-            onClick={() => setIsDoctorOpen(true)}
-          />
-        </nav>
-
-        <div className="content-tab-panel">
-          {error ? <div className="toolbar-error">{error}</div> : null}
-          {activeContent}
-        </div>
-      </div>
-
-      <ConfigDrawer
-        isOpen={isConfigOpen}
-        workspace={selectedWorkspace}
-        sshEnvironments={settingsDraft.sshEnvironments}
-        diagnostics={diagnostics}
-        isDirty={isDirty}
-        isSaving={isSaving}
-        isDeleting={isDeletingWorkspace}
-        isCreateMode={isCreatingWorkspace}
-        pendingDirectoryCreation={pendingDirectoryCreation}
-        onClose={() => {
-          setPendingDirectoryCreation(null);
-          setIsConfigOpen(false);
-        }}
-        onSaveWorkspace={() => void handleWorkspaceSave()}
-        onConfirmPendingDirectoryCreation={() => void handleWorkspaceSave(undefined, { confirmDirectoryCreation: true })}
-        onCancelPendingDirectoryCreation={() => setPendingDirectoryCreation(null)}
-        onDuplicateWorkspace={() => void handleDuplicateWorkspace()}
-        onResetWorkspace={handleResetWorkspace}
-        onDeleteWorkspace={() => void handleDeleteWorkspace()}
-        onWorkspaceFieldChange={handleWorkspaceFieldChange}
-        onTerminalChange={handleTerminalChange}
+    <div className="window-shell">
+      <TitleBar
+        activeTabLabel={activeTabLabel}
+        workspaceName={selectedWorkspace?.name ?? null}
+        appVersion={diagnostics?.appVersion ?? null}
+        platform={diagnostics?.platform}
       />
-      <DoctorModal diagnostics={diagnostics} isOpen={isDoctorOpen} onClose={() => setIsDoctorOpen(false)} />
-    </main>
+      <main className="app-shell">
+        <div
+          className="content-tabs-shell"
+          style={
+            {
+              "--active-index": activeTabIndex
+            } as CSSProperties
+          }
+        >
+          <nav className="content-tab-rail" aria-label="Main sections">
+            <div className="content-tab-peninsula" aria-hidden="true" />
+            {MAIN_TABS.map((tab) => {
+              const TabIcon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={tab.id === activeTab ? "content-tab-button is-active" : "content-tab-button"}
+                  aria-label={tab.label}
+                  title={tab.label}
+                  data-tooltip={tab.label}
+                  onClick={() => {
+                    if (tab.id === activeTab) {
+                      return;
+                    }
+                    tabSwitchStartedAtRef.current = performance.now();
+                    startTransition(() => {
+                      setActiveTab(tab.id);
+                    });
+                    void persistSettingsPreference({ activeMainTab: tab.id });
+                  }}
+                >
+                  <span className="content-tab-icon" aria-hidden="true">
+                    <TabIcon />
+                  </span>
+                  <span className="sr-only">{tab.label}</span>
+                </button>
+              );
+            })}
+            <div className="content-tab-spacer" />
+            <IconButton
+              className="content-tab-utility-button"
+              label="Doctor"
+              icon={<DoctorIcon />}
+              onClick={() => setIsDoctorOpen(true)}
+            />
+          </nav>
+
+          <div className="content-tab-panel">
+            {error ? <div className="toolbar-error">{error}</div> : null}
+            {activeContent}
+          </div>
+        </div>
+        <ConfigDrawer
+          isOpen={isConfigOpen}
+          workspace={selectedWorkspace}
+          sshEnvironments={settingsDraft.sshEnvironments}
+          diagnostics={diagnostics}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          isDeleting={isDeletingWorkspace}
+          isCreateMode={isCreatingWorkspace}
+          pendingDirectoryCreation={pendingDirectoryCreation}
+          onClose={() => {
+            setPendingDirectoryCreation(null);
+            setIsConfigOpen(false);
+          }}
+          onSaveWorkspace={() => void handleWorkspaceSave()}
+          onConfirmPendingDirectoryCreation={() => void handleWorkspaceSave(undefined, { confirmDirectoryCreation: true })}
+          onCancelPendingDirectoryCreation={() => setPendingDirectoryCreation(null)}
+          onDuplicateWorkspace={() => void handleDuplicateWorkspace()}
+          onResetWorkspace={handleResetWorkspace}
+          onDeleteWorkspace={() => void handleDeleteWorkspace()}
+          onWorkspaceFieldChange={handleWorkspaceFieldChange}
+          onTerminalChange={handleTerminalChange}
+        />
+        <DoctorModal diagnostics={diagnostics} isOpen={isDoctorOpen} onClose={() => setIsDoctorOpen(false)} />
+      </main>
+    </div>
   );
 }
 

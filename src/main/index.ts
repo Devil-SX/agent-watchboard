@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Menu, app, BrowserWindow, ipcMain, shell } from "electron";
+import { Menu, app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
 import log from "electron-log/main.js";
 
 import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
@@ -82,6 +82,7 @@ import {
   type TerminalInstance,
   Workspace,
   createDefaultAppSettings,
+  getResolvedConfigSortLayers,
   getActiveBoardPath,
   resolveTerminalStartupCommand
 } from "@shared/schema";
@@ -104,7 +105,8 @@ import type {
   AnalysisSessionSectionSummary,
   AnalysisSessionStatistics,
   AnalysisSessionSummary,
-  SkillListResult
+  SkillListResult,
+  WindowState
 } from "@shared/ipc";
 
 let mainWindow: BrowserWindow | null = null;
@@ -234,6 +236,15 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: "#0d1418",
+    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
+    titleBarOverlay:
+      process.platform === "darwin"
+        ? false
+        : {
+            color: "#0d1418",
+            symbolColor: "#d7e0e6",
+            height: 40
+          },
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
       contextIsolation: true,
@@ -246,10 +257,25 @@ function createWindow(): void {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  const relayWindowState = (): void => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    mainWindow.webContents.send("window-state", resolveWindowState(mainWindow));
+  };
+
+  mainWindow.on("maximize", relayWindowState);
+  mainWindow.on("unmaximize", relayWindowState);
+  mainWindow.on("enter-full-screen", relayWindowState);
+  mainWindow.on("leave-full-screen", relayWindowState);
+  mainWindow.on("focus", relayWindowState);
+  mainWindow.on("blur", relayWindowState);
   mainWindow.setMenuBarVisibility(false);
   mainWindow.removeMenu();
 
   mainWindow.on("ready-to-show", () => {
+    relayWindowState();
     if (!isHeadlessTest) {
       mainWindow?.show();
     }
@@ -293,6 +319,21 @@ function createWindow(): void {
   } else {
     void mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
+}
+
+function resolveWindowState(targetWindow: BrowserWindow | null): WindowState {
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return {
+      isMaximized: false,
+      isFullScreen: false,
+      isFocused: false
+    };
+  }
+  return {
+    isMaximized: targetWindow.isMaximized(),
+    isFullScreen: targetWindow.isFullScreen(),
+    isFocused: targetWindow.isFocused()
+  };
 }
 
 function logRendererSnapshot(label: string): void {
@@ -681,6 +722,25 @@ function setupIpc(): void {
     storeHealth: persistenceHealth
   }));
 
+  ipcMain.handle("watchboard:get-window-state", async (): Promise<WindowState> => resolveWindowState(mainWindow));
+  ipcMain.handle("watchboard:minimize-window", async () => {
+    mainWindow?.minimize();
+  });
+  ipcMain.handle("watchboard:toggle-maximize-window", async (): Promise<WindowState> => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return resolveWindowState(null);
+    }
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+    return resolveWindowState(mainWindow);
+  });
+  ipcMain.handle("watchboard:close-window", async () => {
+    mainWindow?.close();
+  });
+
   ipcMain.handle("watchboard:open-debug-path", async (_event, debugPath: string) => {
     await openDebugPath(debugPath, (targetPath) => shell.openPath(targetPath));
   });
@@ -902,6 +962,20 @@ function setupIpc(): void {
     );
   });
 
+  ipcMain.handle("watchboard:sync-terminal-selection", async (_event, text: string) => {
+    if (typeof text !== "string") {
+      return;
+    }
+    const normalized = text.replace(/\r\n/g, "\n");
+    if (!normalized.trim()) {
+      return;
+    }
+    clipboard.writeText(normalized, "clipboard");
+    if (process.platform === "linux") {
+      clipboard.writeText(normalized, "selection");
+    }
+  });
+
   ipcMain.on("watchboard:resize-session", (_event, sessionId: string, cols: number, rows: number, requestId?: string) => {
     sendSupervisorCommandSafely(
       supervisorClient,
@@ -1103,12 +1177,12 @@ function setupIpc(): void {
     "watchboard:compute-merged-config",
     async (_event, configId: AgentConfigFileId, location: AgentPathLocation) => {
       const stack = await readLayerStack(configId, location, runtimePaths.configLayersDir);
-      const enabledLayers = stack.layers.filter((l) => l.enabled);
+      const enabledLayers = getResolvedConfigSortLayers(stack).filter((entry) => entry.enabled);
       const layerContents = await Promise.all(
-        enabledLayers.map(async (l) => ({
-          id: l.id,
-          name: l.name,
-          content: await readLayerContent(configId, l.id, location, runtimePaths.configLayersDir)
+        enabledLayers.map(async ({ layer }) => ({
+          id: layer.id,
+          name: layer.name,
+          content: await readLayerContent(configId, layer.id, location, runtimePaths.configLayersDir)
         }))
       );
       return computeMergedConfig(configId, layerContents, stack.layers.length);
@@ -1119,12 +1193,12 @@ function setupIpc(): void {
     "watchboard:apply-merged-config",
     async (_event, configId: AgentConfigFileId, location: AgentPathLocation) => {
       const stack = await readLayerStack(configId, location, runtimePaths.configLayersDir);
-      const enabledLayers = stack.layers.filter((l) => l.enabled);
+      const enabledLayers = getResolvedConfigSortLayers(stack).filter((entry) => entry.enabled);
       const layerContents = await Promise.all(
-        enabledLayers.map(async (l) => ({
-          id: l.id,
-          name: l.name,
-          content: await readLayerContent(configId, l.id, location, runtimePaths.configLayersDir)
+        enabledLayers.map(async ({ layer }) => ({
+          id: layer.id,
+          name: layer.name,
+          content: await readLayerContent(configId, layer.id, location, runtimePaths.configLayersDir)
         }))
       );
       const result = computeMergedConfig(configId, layerContents, stack.layers.length);

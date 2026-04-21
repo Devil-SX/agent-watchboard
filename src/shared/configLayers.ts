@@ -4,18 +4,29 @@ import { join } from "node:path";
 
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 
-import { readJsonStore, writeJsonStore } from "@shared/jsonStore";
 import { stripJsonCommentsPreservePositions } from "@shared/jsonComments";
+import { readJsonStore, writeJsonStore } from "@shared/jsonStore";
 import type {
   AgentConfigFileId,
   AgentConfigFormat,
   AgentPathLocation,
   ConfigLayer,
   ConfigLayerStack,
+  ConfigSortLayerState,
+  ConfigSortPreset,
   MergedConfigFieldAnnotation,
   MergedConfigResult
 } from "@shared/schema";
-import { AGENT_CONFIG_FILES, ConfigLayerStackSchema } from "@shared/schema";
+import {
+  AGENT_CONFIG_FILES,
+  ConfigLayerSchema,
+  ConfigLayerStackSchema,
+  ConfigSortPresetSchema,
+  DEFAULT_CONFIG_SORT_PRESET_ID,
+  DEFAULT_CONFIG_SORT_PRESET_NAME,
+  createDefaultConfigSortPreset,
+  getResolvedConfigSortLayers
+} from "@shared/schema";
 
 function resolveStackPath(configLayersDir: string, location: AgentPathLocation, configId: AgentConfigFileId): string {
   return join(configLayersDir, location, configId, "stack.json");
@@ -36,6 +47,215 @@ function formatForConfig(configId: AgentConfigFileId): AgentConfigFormat {
   return AGENT_CONFIG_FILES.find((f) => f.id === configId)?.format === "toml" ? "toml" : "json";
 }
 
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function createEmptyLayerStack(configId: AgentConfigFileId, location: AgentPathLocation): ConfigLayerStack {
+  return ConfigLayerStackSchema.parse({
+    version: 2,
+    configId,
+    location,
+    layers: [],
+    sortPresets: [createDefaultConfigSortPreset([])],
+    activeSortPresetId: DEFAULT_CONFIG_SORT_PRESET_ID,
+    updatedAt: nowIso()
+  });
+}
+
+function normalizeLayers(rawLayers: unknown[]): { layers: ConfigLayer[]; legacyEnabledByLayerId: Map<string, boolean> } {
+  const layers: ConfigLayer[] = [];
+  const legacyEnabledByLayerId = new Map<string, boolean>();
+  const seen = new Set<string>();
+
+  for (const candidate of rawLayers) {
+    const parsed = ConfigLayerSchema.safeParse(candidate);
+    if (!parsed.success || seen.has(parsed.data.id)) {
+      continue;
+    }
+    seen.add(parsed.data.id);
+    layers.push(parsed.data);
+
+    if (
+      typeof candidate === "object" &&
+      candidate !== null &&
+      "enabled" in candidate &&
+      typeof candidate.enabled === "boolean"
+    ) {
+      legacyEnabledByLayerId.set(parsed.data.id, candidate.enabled);
+    }
+  }
+
+  return { layers, legacyEnabledByLayerId };
+}
+
+function normalizePresetItems(
+  layers: ConfigLayer[],
+  items: unknown[],
+  fallbackEnabledByLayerId?: Map<string, boolean>
+): ConfigSortLayerState[] {
+  const layerById = new Set(layers.map((layer) => layer.id));
+  const normalized: ConfigSortLayerState[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of items) {
+    if (typeof candidate !== "object" || candidate === null) {
+      continue;
+    }
+    const layerId = "layerId" in candidate && typeof candidate.layerId === "string" ? candidate.layerId : null;
+    if (!layerId || !layerById.has(layerId) || seen.has(layerId)) {
+      continue;
+    }
+    const enabled = "enabled" in candidate && typeof candidate.enabled === "boolean" ? candidate.enabled : true;
+    seen.add(layerId);
+    normalized.push({ layerId, enabled });
+  }
+
+  for (const layer of layers) {
+    if (seen.has(layer.id)) {
+      continue;
+    }
+    normalized.push({
+      layerId: layer.id,
+      enabled: fallbackEnabledByLayerId?.get(layer.id) ?? true
+    });
+  }
+
+  return normalized;
+}
+
+function normalizePreset(
+  candidate: unknown,
+  layers: ConfigLayer[],
+  presetIndex: number,
+  fallbackEnabledByLayerId?: Map<string, boolean>
+): ConfigSortPreset | null {
+  if (typeof candidate !== "object" || candidate === null) {
+    return null;
+  }
+
+  const id =
+    "id" in candidate && typeof candidate.id === "string" && candidate.id.trim().length > 0
+      ? candidate.id
+      : presetIndex === 0
+        ? DEFAULT_CONFIG_SORT_PRESET_ID
+        : `sort-${presetIndex + 1}`;
+  const name =
+    "name" in candidate && typeof candidate.name === "string" && candidate.name.trim().length > 0
+      ? candidate.name
+      : presetIndex === 0
+        ? DEFAULT_CONFIG_SORT_PRESET_NAME
+        : `Preset ${presetIndex + 1}`;
+  const rawItems = "items" in candidate && Array.isArray(candidate.items) ? candidate.items : [];
+
+  return ConfigSortPresetSchema.parse({
+    id,
+    name,
+    items: normalizePresetItems(layers, rawItems, fallbackEnabledByLayerId)
+  });
+}
+
+export function normalizeLayerStack(
+  rawValue: unknown,
+  fallbackConfigId: AgentConfigFileId,
+  fallbackLocation: AgentPathLocation
+): ConfigLayerStack {
+  const raw = typeof rawValue === "object" && rawValue !== null ? (rawValue as Record<string, unknown>) : {};
+  const configId = AGENT_CONFIG_FILES.some((file) => file.id === raw.configId)
+    ? (raw.configId as AgentConfigFileId)
+    : fallbackConfigId;
+  const location = raw.location === "host" || raw.location === "wsl" ? raw.location : fallbackLocation;
+  const updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : nowIso();
+  const { layers, legacyEnabledByLayerId } = normalizeLayers(Array.isArray(raw.layers) ? raw.layers : []);
+  const rawSortPresets = Array.isArray(raw.sortPresets) ? raw.sortPresets : [];
+
+  let sortPresets = rawSortPresets
+    .map((preset, index) => normalizePreset(preset, layers, index, legacyEnabledByLayerId))
+    .filter((preset): preset is ConfigSortPreset => preset != null);
+
+  if (sortPresets.length === 0) {
+    sortPresets = [
+      ConfigSortPresetSchema.parse({
+        id: DEFAULT_CONFIG_SORT_PRESET_ID,
+        name: DEFAULT_CONFIG_SORT_PRESET_NAME,
+        items: layers.map((layer) => ({
+          layerId: layer.id,
+          enabled: legacyEnabledByLayerId.get(layer.id) ?? true
+        }))
+      })
+    ];
+  }
+
+  const uniqueSortPresets: ConfigSortPreset[] = [];
+  const seenPresetIds = new Set<string>();
+  for (const preset of sortPresets) {
+    if (seenPresetIds.has(preset.id)) {
+      uniqueSortPresets.push({
+        ...preset,
+        id: randomUUID()
+      });
+      continue;
+    }
+    seenPresetIds.add(preset.id);
+    uniqueSortPresets.push(preset);
+  }
+
+  const activeSortPresetId =
+    typeof raw.activeSortPresetId === "string" && uniqueSortPresets.some((preset) => preset.id === raw.activeSortPresetId)
+      ? raw.activeSortPresetId
+      : uniqueSortPresets[0]?.id ?? DEFAULT_CONFIG_SORT_PRESET_ID;
+
+  return ConfigLayerStackSchema.parse({
+    version: 2,
+    configId,
+    location,
+    layers,
+    sortPresets: uniqueSortPresets,
+    activeSortPresetId,
+    updatedAt
+  });
+}
+
+function withUpdatedTimestamp(stack: ConfigLayerStack): ConfigLayerStack {
+  return ConfigLayerStackSchema.parse({
+    ...stack,
+    updatedAt: nowIso()
+  });
+}
+
+function updatePreset(
+  stack: ConfigLayerStack,
+  presetId: string | null | undefined,
+  updater: (preset: ConfigSortPreset) => ConfigSortPreset
+): ConfigLayerStack {
+  const targetPresetId = presetId ?? stack.activeSortPresetId ?? stack.sortPresets[0]?.id ?? DEFAULT_CONFIG_SORT_PRESET_ID;
+  const nextSortPresets = stack.sortPresets.map((preset) => (preset.id === targetPresetId ? updater(preset) : preset));
+  return withUpdatedTimestamp({
+    ...stack,
+    sortPresets: nextSortPresets
+  });
+}
+
+function insertLayer(stack: ConfigLayerStack, layer: ConfigLayer, position: "append" | "prepend"): ConfigLayerStack {
+  const nextLayers = position === "prepend" ? [layer, ...stack.layers] : [...stack.layers, layer];
+  const nextSortPresets =
+    stack.sortPresets.length > 0
+      ? stack.sortPresets.map((preset) => ({
+          ...preset,
+          items:
+            position === "prepend"
+              ? [{ layerId: layer.id, enabled: true }, ...preset.items]
+              : [...preset.items, { layerId: layer.id, enabled: true }]
+        }))
+      : [createDefaultConfigSortPreset(nextLayers)];
+
+  return withUpdatedTimestamp({
+    ...stack,
+    layers: nextLayers,
+    sortPresets: nextSortPresets
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Stack I/O
 // ---------------------------------------------------------------------------
@@ -48,28 +268,18 @@ export async function readLayerStack(
   const filePath = resolveStackPath(configLayersDir, location, configId);
   const result = await readJsonStore<ConfigLayerStack>({
     filePath,
-    fallback: () => ({
-      version: 1 as const,
-      configId,
-      location,
-      layers: [],
-      updatedAt: new Date().toISOString()
-    }),
-    parse: (raw) => ConfigLayerStackSchema.parse(JSON.parse(raw))
+    fallback: () => createEmptyLayerStack(configId, location),
+    parse: (raw) => normalizeLayerStack(JSON.parse(raw), configId, location)
   });
   return result.value;
 }
 
-export async function writeLayerStack(
-  stack: ConfigLayerStack,
-  configLayersDir: string
-): Promise<ConfigLayerStack> {
+export async function writeLayerStack(stack: ConfigLayerStack, configLayersDir: string): Promise<ConfigLayerStack> {
   const filePath = resolveStackPath(configLayersDir, stack.location, stack.configId);
-  const updated = { ...stack, updatedAt: new Date().toISOString() };
   return writeJsonStore<ConfigLayerStack>({
     filePath,
-    data: updated,
-    normalize: (data) => data
+    data: stack,
+    normalize: (value) => withUpdatedTimestamp(normalizeLayerStack(value, value.configId, value.location))
   });
 }
 
@@ -122,40 +332,129 @@ export async function deleteLayerContent(
 // ---------------------------------------------------------------------------
 
 export function addLayer(stack: ConfigLayerStack, name: string): { stack: ConfigLayerStack; layer: ConfigLayer } {
-  const layer: ConfigLayer = { id: randomUUID(), name, enabled: true };
+  const layer: ConfigLayer = { id: randomUUID(), name };
   return {
-    stack: { ...stack, layers: [...stack.layers, layer], updatedAt: new Date().toISOString() },
+    stack: insertLayer(stack, layer, "append"),
     layer
   };
 }
 
 export function removeLayer(stack: ConfigLayerStack, layerId: string): ConfigLayerStack {
-  return {
+  const nextLayers = stack.layers.filter((layer) => layer.id !== layerId);
+  const nextSortPresets = stack.sortPresets.map((preset) => ({
+    ...preset,
+    items: preset.items.filter((item) => item.layerId !== layerId)
+  }));
+  return withUpdatedTimestamp({
     ...stack,
-    layers: stack.layers.filter((l) => l.id !== layerId),
-    updatedAt: new Date().toISOString()
-  };
+    layers: nextLayers,
+    sortPresets: nextSortPresets
+  });
 }
 
-export function reorderLayers(stack: ConfigLayerStack, orderedIds: string[]): ConfigLayerStack {
-  const byId = new Map(stack.layers.map((l) => [l.id, l]));
-  const reordered = orderedIds.map((id) => byId.get(id)).filter((l): l is ConfigLayer => l != null);
-  return { ...stack, layers: reordered, updatedAt: new Date().toISOString() };
+export function reorderLayers(
+  stack: ConfigLayerStack,
+  orderedIds: string[],
+  presetId?: string | null
+): ConfigLayerStack {
+  return updatePreset(stack, presetId, (preset) => {
+    const byId = new Map(preset.items.map((item) => [item.layerId, item]));
+    const reordered = orderedIds
+      .map((layerId) => byId.get(layerId))
+      .filter((item): item is ConfigSortLayerState => item != null);
+
+    for (const item of preset.items) {
+      if (!orderedIds.includes(item.layerId)) {
+        reordered.push(item);
+      }
+    }
+
+    return {
+      ...preset,
+      items: reordered
+    };
+  });
 }
 
-export function toggleLayer(stack: ConfigLayerStack, layerId: string, enabled: boolean): ConfigLayerStack {
-  return {
-    ...stack,
-    layers: stack.layers.map((l) => (l.id === layerId ? { ...l, enabled } : l)),
-    updatedAt: new Date().toISOString()
-  };
+export function toggleLayer(
+  stack: ConfigLayerStack,
+  layerId: string,
+  enabled: boolean,
+  presetId?: string | null
+): ConfigLayerStack {
+  return updatePreset(stack, presetId, (preset) => ({
+    ...preset,
+    items: preset.items.map((item) => (item.layerId === layerId ? { ...item, enabled } : item))
+  }));
 }
 
 export function renameLayer(stack: ConfigLayerStack, layerId: string, name: string): ConfigLayerStack {
-  return {
+  return withUpdatedTimestamp({
     ...stack,
-    layers: stack.layers.map((l) => (l.id === layerId ? { ...l, name } : l)),
-    updatedAt: new Date().toISOString()
+    layers: stack.layers.map((layer) => (layer.id === layerId ? { ...layer, name } : layer))
+  });
+}
+
+export function createSortPreset(stack: ConfigLayerStack, name: string): ConfigLayerStack {
+  const resolvedLayers = getResolvedConfigSortLayers(stack);
+  const preset: ConfigSortPreset = ConfigSortPresetSchema.parse({
+    id: randomUUID(),
+    name,
+    items: resolvedLayers.map(({ layer, enabled }) => ({
+      layerId: layer.id,
+      enabled
+    }))
+  });
+  return withUpdatedTimestamp({
+    ...stack,
+    sortPresets: [...stack.sortPresets, preset],
+    activeSortPresetId: preset.id
+  });
+}
+
+export function renameSortPreset(stack: ConfigLayerStack, presetId: string, name: string): ConfigLayerStack {
+  return withUpdatedTimestamp({
+    ...stack,
+    sortPresets: stack.sortPresets.map((preset) => (preset.id === presetId ? { ...preset, name } : preset))
+  });
+}
+
+export function deleteSortPreset(stack: ConfigLayerStack, presetId: string): ConfigLayerStack {
+  if (stack.sortPresets.length <= 1) {
+    const resetPreset = createDefaultConfigSortPreset(stack.layers);
+    return withUpdatedTimestamp({
+      ...stack,
+      sortPresets: [resetPreset],
+      activeSortPresetId: resetPreset.id
+    });
+  }
+
+  const nextSortPresets = stack.sortPresets.filter((preset) => preset.id !== presetId);
+  const activeSortPresetId =
+    stack.activeSortPresetId === presetId ? nextSortPresets[0]?.id ?? DEFAULT_CONFIG_SORT_PRESET_ID : stack.activeSortPresetId;
+
+  return withUpdatedTimestamp({
+    ...stack,
+    sortPresets: nextSortPresets,
+    activeSortPresetId
+  });
+}
+
+export function activateSortPreset(stack: ConfigLayerStack, presetId: string): ConfigLayerStack {
+  if (!stack.sortPresets.some((preset) => preset.id === presetId)) {
+    return stack;
+  }
+  return withUpdatedTimestamp({
+    ...stack,
+    activeSortPresetId: presetId
+  });
+}
+
+export function importExistingLayerAtBase(stack: ConfigLayerStack, name: string): { stack: ConfigLayerStack; layer: ConfigLayer } {
+  const layer: ConfigLayer = { id: randomUUID(), name };
+  return {
+    stack: insertLayer(stack, layer, "prepend"),
+    layer
   };
 }
 
@@ -199,12 +498,12 @@ function deepMergeObjects(
       deepMergeObjects(target[key] as Record<string, unknown>, sourceVal, annotations, layerId, layerName, currentPath);
     } else {
       target[key] = sourceVal;
-      const existing = annotations.findIndex((a) => a.path === currentPath);
-      const annotation: MergedConfigFieldAnnotation = { path: currentPath, layerId, layerName };
+      const existing = annotations.findIndex((annotation) => annotation.path === currentPath);
+      const nextAnnotation: MergedConfigFieldAnnotation = { path: currentPath, layerId, layerName };
       if (existing >= 0) {
-        annotations[existing] = annotation;
+        annotations[existing] = nextAnnotation;
       } else {
-        annotations.push(annotation);
+        annotations.push(nextAnnotation);
       }
     }
   }
@@ -263,13 +562,8 @@ export async function importExistingConfigAsBaseLayer(
 ): Promise<{ stack: ConfigLayerStack; layer: ConfigLayer }> {
   const stack = await readLayerStack(configId, location, configLayersDir);
   const name = buildImportedLayerName(stack.layers.length);
-  const layer: ConfigLayer = { id: randomUUID(), name, enabled: true };
-  const next: ConfigLayerStack = {
-    ...stack,
-    layers: [layer, ...stack.layers],
-    updatedAt: new Date().toISOString()
-  };
+  const { stack: nextStack, layer } = importExistingLayerAtBase(stack, name);
   await writeLayerContent(configId, layer.id, location, configLayersDir, existingContent);
-  const saved = await writeLayerStack(next, configLayersDir);
+  const saved = await writeLayerStack(nextStack, configLayersDir);
   return { stack: saved, layer };
 }

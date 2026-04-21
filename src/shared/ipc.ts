@@ -76,6 +76,12 @@ export type SkillListResult = {
   warningCode: SkillListWarningCode | null;
 };
 
+export type WindowState = {
+  isMaximized: boolean;
+  isFullScreen: boolean;
+  isFocused: boolean;
+};
+
 export type WatchboardApi = {
   listWorkspaces: () => Promise<WorkspaceList>;
   getWorkbench: () => Promise<WorkbenchDocument>;
@@ -88,12 +94,17 @@ export type WatchboardApi = {
   attachSession: (sessionId: string, requestId?: string) => Promise<SessionAttachResult>;
   stopSession: (sessionId: string, requestId?: string) => Promise<void>;
   writeToSession: (sessionId: string, data: string, sentAtUnixMs?: number) => void;
+  syncTerminalSelection: (text: string) => Promise<void>;
   resizeSession: (sessionId: string, cols: number, rows: number, requestId?: string) => void;
   debugLog: (message: string, details?: unknown) => Promise<void>;
   reportPerfEvent: (event: PerfEvent) => Promise<void>;
   listSessions: () => Promise<SessionState[]>;
   selectBoard: () => Promise<BoardDocument>;
   getDiagnostics: () => Promise<DiagnosticsInfo>;
+  getWindowState: () => Promise<WindowState>;
+  minimizeWindow: () => Promise<void>;
+  toggleMaximizeWindow: () => Promise<WindowState>;
+  closeWindow: () => Promise<void>;
   openDebugPath: (debugPath: string) => Promise<void>;
   openWorkspaceInEditor: (request: OpenWorkspaceInEditorRequest) => Promise<void>;
   completePath: (request: PathCompletionRequest) => Promise<PathCompletionResult>;
@@ -103,6 +114,7 @@ export type WatchboardApi = {
   onSessionData: (listener: (payload: { sessionId: string; data: string; emittedAt: number }) => void) => () => void;
   onSessionState: (listener: (payload: SessionState | SessionState[]) => void) => () => void;
   onBoardUpdate: (listener: (document: BoardDocument) => void) => () => void;
+  onWindowState: (listener: (state: WindowState) => void) => () => void;
   listSkills: (location: AgentPathLocation, options?: SkillListOptions) => Promise<SkillListResult>;
   readSkillContent: (skillPath: string) => Promise<string>;
   listAgentConfigs: (location: AgentPathLocation) => Promise<AgentConfigEntry[]>;

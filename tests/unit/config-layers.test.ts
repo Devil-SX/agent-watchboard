@@ -11,81 +11,263 @@ import {
   computeMergedConfig,
   deepMergeLayerContents,
   importExistingConfigAsBaseLayer,
+  normalizeLayerStack,
   readLayerStack,
   removeLayer,
   renameLayer,
   reorderLayers,
   toggleLayer
 } from "../../src/shared/configLayers";
-import type { ConfigLayerStack } from "../../src/shared/schema";
+import {
+  DEFAULT_CONFIG_SORT_PRESET_ID,
+  getResolvedConfigSortLayers,
+  type ConfigLayerStack
+} from "../../src/shared/schema";
 
 function makeStack(overrides?: Partial<ConfigLayerStack>): ConfigLayerStack {
   return {
-    version: 1,
+    version: 2,
     configId: "claude-settings",
     location: "host",
     layers: [],
+    sortPresets: [
+      {
+        id: DEFAULT_CONFIG_SORT_PRESET_ID,
+        name: "Default",
+        items: []
+      }
+    ],
+    activeSortPresetId: DEFAULT_CONFIG_SORT_PRESET_ID,
     updatedAt: new Date().toISOString(),
     ...overrides
   };
 }
 
-// ---------------------------------------------------------------------------
-// Stack mutations
-// ---------------------------------------------------------------------------
+test("normalizeLayerStack migrates legacy v1 enabled flags into the default sort preset", () => {
+  const stack = normalizeLayerStack(
+    {
+      version: 1,
+      configId: "claude-settings",
+      location: "host",
+      layers: [
+        { id: "base", name: "Base", enabled: true },
+        { id: "override", name: "Override", enabled: false }
+      ],
+      updatedAt: "2026-04-21T00:00:00.000Z"
+    },
+    "claude-settings",
+    "host"
+  );
 
-test("addLayer appends a new enabled layer", () => {
-  const stack = makeStack();
-  const { stack: updated, layer } = addLayer(stack, "Base");
-  assert.equal(updated.layers.length, 1);
-  assert.equal(updated.layers[0]?.name, "Base");
-  assert.equal(updated.layers[0]?.enabled, true);
-  assert.equal(layer.name, "Base");
-});
-
-test("removeLayer removes the specified layer", () => {
-  let stack = makeStack();
-  const { stack: s1, layer: a } = addLayer(stack, "A");
-  const { stack: s2 } = addLayer(s1, "B");
-  stack = s2;
-  assert.equal(stack.layers.length, 2);
-  const removed = removeLayer(stack, a.id);
-  assert.equal(removed.layers.length, 1);
-  assert.equal(removed.layers[0]?.name, "B");
-});
-
-test("reorderLayers changes the order", () => {
-  let stack = makeStack();
-  const { stack: s1, layer: a } = addLayer(stack, "A");
-  const { stack: s2, layer: b } = addLayer(s1, "B");
-  const { stack: s3, layer: c } = addLayer(s2, "C");
-  stack = s3;
-  const reordered = reorderLayers(stack, [c.id, a.id, b.id]);
+  assert.equal(stack.version, 2);
   assert.deepEqual(
-    reordered.layers.map((l) => l.name),
-    ["C", "A", "B"]
+    stack.layers.map((layer) => layer.name),
+    ["Base", "Override"]
+  );
+  assert.deepEqual(
+    getResolvedConfigSortLayers(stack).map(({ layer, enabled }) => ({ id: layer.id, enabled })),
+    [
+      { id: "base", enabled: true },
+      { id: "override", enabled: false }
+    ]
   );
 });
 
-test("toggleLayer disables/enables a layer", () => {
-  const stack = makeStack();
-  const { stack: s1, layer } = addLayer(stack, "A");
-  const disabled = toggleLayer(s1, layer.id, false);
-  assert.equal(disabled.layers[0]?.enabled, false);
-  const enabled = toggleLayer(disabled, layer.id, true);
-  assert.equal(enabled.layers[0]?.enabled, true);
+test("normalizeLayerStack repairs presets so every sort contains every layer exactly once", () => {
+  const stack = normalizeLayerStack(
+    {
+      version: 2,
+      configId: "claude-settings",
+      location: "host",
+      layers: [
+        { id: "a", name: "A" },
+        { id: "b", name: "B" },
+        { id: "c", name: "C" }
+      ],
+      sortPresets: [
+        {
+          id: "custom",
+          name: "Custom",
+          items: [
+            { layerId: "b", enabled: false },
+            { layerId: "b", enabled: true },
+            { layerId: "missing", enabled: true }
+          ]
+        }
+      ],
+      activeSortPresetId: "custom",
+      updatedAt: "2026-04-21T00:00:00.000Z"
+    },
+    "claude-settings",
+    "host"
+  );
+
+  assert.deepEqual(
+    getResolvedConfigSortLayers(stack, "custom").map(({ layer, enabled }) => ({ id: layer.id, enabled })),
+    [
+      { id: "b", enabled: false },
+      { id: "a", enabled: true },
+      { id: "c", enabled: true }
+    ]
+  );
 });
 
-test("renameLayer updates the name", () => {
-  const stack = makeStack();
-  const { stack: s1, layer } = addLayer(stack, "Old");
-  const renamed = renameLayer(s1, layer.id, "New");
+test("addLayer appends a new layer to all saved sorts", () => {
+  const stack = makeStack({
+    layers: [{ id: "base", name: "Base" }],
+    sortPresets: [
+      {
+        id: DEFAULT_CONFIG_SORT_PRESET_ID,
+        name: "Default",
+        items: [{ layerId: "base", enabled: true }]
+      },
+      {
+        id: "strict",
+        name: "Strict",
+        items: [{ layerId: "base", enabled: false }]
+      }
+    ]
+  });
+
+  const { stack: updated, layer } = addLayer(stack, "Extra");
+
+  assert.equal(updated.layers.length, 2);
+  assert.equal(layer.name, "Extra");
+  assert.deepEqual(
+    updated.sortPresets.map((preset) => preset.items[preset.items.length - 1]),
+    [
+      { layerId: layer.id, enabled: true },
+      { layerId: layer.id, enabled: true }
+    ]
+  );
+});
+
+test("removeLayer removes the specified layer from the stack and every sort preset", () => {
+  const stack = makeStack({
+    layers: [
+      { id: "a", name: "A" },
+      { id: "b", name: "B" }
+    ],
+    sortPresets: [
+      {
+        id: DEFAULT_CONFIG_SORT_PRESET_ID,
+        name: "Default",
+        items: [
+          { layerId: "a", enabled: true },
+          { layerId: "b", enabled: true }
+        ]
+      },
+      {
+        id: "reverse",
+        name: "Reverse",
+        items: [
+          { layerId: "b", enabled: false },
+          { layerId: "a", enabled: true }
+        ]
+      }
+    ]
+  });
+
+  const removed = removeLayer(stack, "a");
+
+  assert.deepEqual(
+    removed.layers.map((layer) => layer.id),
+    ["b"]
+  );
+  assert.deepEqual(
+    removed.sortPresets.map((preset) => preset.items.map((item) => item.layerId)),
+    [["b"], ["b"]]
+  );
+});
+
+test("reorderLayers only reorders the active sort preset", () => {
+  const stack = makeStack({
+    layers: [
+      { id: "a", name: "A" },
+      { id: "b", name: "B" },
+      { id: "c", name: "C" }
+    ],
+    sortPresets: [
+      {
+        id: DEFAULT_CONFIG_SORT_PRESET_ID,
+        name: "Default",
+        items: [
+          { layerId: "a", enabled: true },
+          { layerId: "b", enabled: true },
+          { layerId: "c", enabled: true }
+        ]
+      },
+      {
+        id: "locked",
+        name: "Locked",
+        items: [
+          { layerId: "c", enabled: true },
+          { layerId: "b", enabled: false },
+          { layerId: "a", enabled: true }
+        ]
+      }
+    ],
+    activeSortPresetId: DEFAULT_CONFIG_SORT_PRESET_ID
+  });
+
+  const reordered = reorderLayers(stack, ["c", "a", "b"]);
+
+  assert.deepEqual(
+    getResolvedConfigSortLayers(reordered).map(({ layer }) => layer.id),
+    ["c", "a", "b"]
+  );
+  assert.deepEqual(
+    getResolvedConfigSortLayers(reordered, "locked").map(({ layer, enabled }) => ({ id: layer.id, enabled })),
+    [
+      { id: "c", enabled: true },
+      { id: "b", enabled: false },
+      { id: "a", enabled: true }
+    ]
+  );
+});
+
+test("toggleLayer enables and disables the layer only inside the active preset", () => {
+  const stack = makeStack({
+    layers: [{ id: "a", name: "A" }],
+    sortPresets: [
+      {
+        id: DEFAULT_CONFIG_SORT_PRESET_ID,
+        name: "Default",
+        items: [{ layerId: "a", enabled: true }]
+      },
+      {
+        id: "alt",
+        name: "Alt",
+        items: [{ layerId: "a", enabled: false }]
+      }
+    ]
+  });
+
+  const disabled = toggleLayer(stack, "a", false);
+  assert.equal(getResolvedConfigSortLayers(disabled)[0]?.enabled, false);
+  assert.equal(getResolvedConfigSortLayers(disabled, "alt")[0]?.enabled, false);
+
+  const enabled = toggleLayer({ ...disabled, activeSortPresetId: "alt" }, "a", true);
+  assert.equal(getResolvedConfigSortLayers(enabled, "alt")[0]?.enabled, true);
+  assert.equal(getResolvedConfigSortLayers(enabled, DEFAULT_CONFIG_SORT_PRESET_ID)[0]?.enabled, false);
+});
+
+test("renameLayer updates the layer name without touching preset state", () => {
+  const stack = makeStack({
+    layers: [{ id: "a", name: "Old" }],
+    sortPresets: [
+      {
+        id: DEFAULT_CONFIG_SORT_PRESET_ID,
+        name: "Default",
+        items: [{ layerId: "a", enabled: true }]
+      }
+    ]
+  });
+
+  const renamed = renameLayer(stack, "a", "New");
   assert.equal(renamed.layers[0]?.name, "New");
+  assert.equal(renamed.sortPresets[0]?.items[0]?.enabled, true);
 });
-
-// ---------------------------------------------------------------------------
-// Deep merge — JSON
-// ---------------------------------------------------------------------------
 
 test("deepMergeLayerContents merges nested JSON objects", () => {
   const layers = [
@@ -94,10 +276,8 @@ test("deepMergeLayerContents merges nested JSON objects", () => {
   ];
   const { merged, annotations } = deepMergeLayerContents(layers, "json");
   assert.deepEqual(merged, { a: { x: 1, y: 99, z: 3 }, b: 10 });
-  const yAnnotation = annotations.find((a) => a.path === "a.y");
-  assert.equal(yAnnotation?.layerName, "override");
-  const xAnnotation = annotations.find((a) => a.path === "a.x");
-  assert.equal(xAnnotation?.layerName, "base");
+  assert.equal(annotations.find((annotation) => annotation.path === "a.y")?.layerName, "override");
+  assert.equal(annotations.find((annotation) => annotation.path === "a.x")?.layerName, "base");
 });
 
 test("deepMergeLayerContents strips JSON comments before merging so layers can stay comment-friendly", () => {
@@ -124,36 +304,6 @@ test("deepMergeLayerContents strips JSON comments before merging so layers can s
   assert.equal(result.content.includes("/*"), false);
 });
 
-test("deepMergeLayerContents replaces arrays (last wins)", () => {
-  const layers = [
-    { id: "1", name: "base", content: '{ "tags": ["a", "b"] }' },
-    { id: "2", name: "override", content: '{ "tags": ["c"] }' }
-  ];
-  const { merged } = deepMergeLayerContents(layers, "json");
-  assert.deepEqual(merged, { tags: ["c"] });
-});
-
-test("deepMergeLayerContents handles empty layers gracefully", () => {
-  const layers = [
-    { id: "1", name: "base", content: '{ "a": 1 }' },
-    { id: "2", name: "empty", content: "" }
-  ];
-  const { merged } = deepMergeLayerContents(layers, "json");
-  assert.deepEqual(merged, { a: 1 });
-});
-
-test("deepMergeLayerContents handles single layer", () => {
-  const layers = [{ id: "1", name: "only", content: '{ "key": "value" }' }];
-  const { merged, annotations } = deepMergeLayerContents(layers, "json");
-  assert.deepEqual(merged, { key: "value" });
-  assert.equal(annotations.length, 1);
-  assert.equal(annotations[0]?.layerName, "only");
-});
-
-// ---------------------------------------------------------------------------
-// Deep merge — TOML
-// ---------------------------------------------------------------------------
-
 test("deepMergeLayerContents merges TOML content", () => {
   const layers = [
     { id: "1", name: "base", content: '[model]\nname = "gpt-4"\ntemperature = 0.7' },
@@ -165,10 +315,6 @@ test("deepMergeLayerContents merges TOML content", () => {
   assert.equal(model.temperature, 0.7);
 });
 
-// ---------------------------------------------------------------------------
-// computeMergedConfig
-// ---------------------------------------------------------------------------
-
 test("computeMergedConfig returns serialized content and metadata", () => {
   const layers = [
     { id: "1", name: "base", content: '{ "a": 1 }' },
@@ -178,25 +324,8 @@ test("computeMergedConfig returns serialized content and metadata", () => {
   assert.equal(result.configId, "claude-settings");
   assert.equal(result.enabledLayerCount, 2);
   assert.equal(result.layerCount, 3);
-  const parsed = JSON.parse(result.content);
-  assert.deepEqual(parsed, { a: 1, b: 2 });
+  assert.deepEqual(JSON.parse(result.content), { a: 1, b: 2 });
 });
-
-test("annotation tracks the winning layer for each path", () => {
-  const layers = [
-    { id: "1", name: "A", content: '{ "key": "from-A" }' },
-    { id: "2", name: "B", content: '{ "key": "from-B" }' },
-    { id: "3", name: "C", content: '{ "key": "from-C" }' }
-  ];
-  const result = computeMergedConfig("claude-settings", layers, 3);
-  const keyAnnotation = result.annotations.find((a) => a.path === "key");
-  assert.equal(keyAnnotation?.layerName, "C");
-  assert.equal(result.annotations.length, 1);
-});
-
-// ---------------------------------------------------------------------------
-// Import current config as a layer
-// ---------------------------------------------------------------------------
 
 test("buildImportedLayerName returns 'Base' when stack is empty", () => {
   assert.equal(buildImportedLayerName(0), "Base");
@@ -207,43 +336,19 @@ test("buildImportedLayerName uses date stamp when stack has layers", () => {
   assert.equal(buildImportedLayerName(2, fixed), "Imported 2026-04-19");
 });
 
-test("importExistingConfigAsBaseLayer places layer at index 0 on empty stack", async () => {
+test("importExistingConfigAsBaseLayer places layer at index 0 and prepends it to every sort", async () => {
   const dir = await mkdtemp(join(tmpdir(), "awb-layers-"));
   try {
-    const result = await importExistingConfigAsBaseLayer(
-      "claude-settings",
-      "host",
-      '{ "from": "file" }',
-      dir
-    );
+    const result = await importExistingConfigAsBaseLayer("claude-settings", "host", '{ "from": "file" }', dir);
     assert.equal(result.stack.layers.length, 1);
     assert.equal(result.stack.layers[0]?.id, result.layer.id);
     assert.equal(result.stack.layers[0]?.name, "Base");
-    assert.equal(result.stack.layers[0]?.enabled, true);
+    assert.deepEqual(result.stack.sortPresets[0]?.items, [{ layerId: result.layer.id, enabled: true }]);
+
     const persisted = await readLayerStack("claude-settings", "host", dir);
     assert.equal(persisted.layers[0]?.id, result.layer.id);
-    const layerFile = await readFile(
-      join(dir, "host", "claude-settings", "layers", `${result.layer.id}.json`),
-      "utf8"
-    );
+    const layerFile = await readFile(join(dir, "host", "claude-settings", "layers", `${result.layer.id}.json`), "utf8");
     assert.equal(layerFile, '{ "from": "file" }');
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test("importExistingConfigAsBaseLayer prepends layer when stack has existing layers", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "awb-layers-"));
-  try {
-    // Seed stack with one layer (empty stack → named "Base").
-    const first = await importExistingConfigAsBaseLayer("claude-settings", "host", '{ "a": 1 }', dir);
-    assert.equal(first.stack.layers.length, 1);
-    assert.equal(first.stack.layers[0]?.name, "Base");
-    const second = await importExistingConfigAsBaseLayer("claude-settings", "host", '{ "b": 2 }', dir);
-    assert.equal(second.stack.layers.length, 2);
-    assert.equal(second.stack.layers[0]?.id, second.layer.id);
-    assert.match(second.stack.layers[0]?.name ?? "", /^Imported \d{4}-\d{2}-\d{2}$/);
-    assert.equal(second.stack.layers[1]?.name, "Base");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

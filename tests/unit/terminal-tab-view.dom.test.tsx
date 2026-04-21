@@ -82,6 +82,7 @@ async function renderTerminal(options?: {
   const debugLogs: Array<{ message: string; details: unknown }> = [];
   const perfEvents: Array<Record<string, unknown>> = [];
   const resizeCalls: Array<{ cols: number; rows: number }> = [];
+  const selectionSyncs: string[] = [];
   let attachCalls = 0;
   let currentProps = {
     instance: createInstance() as never,
@@ -97,6 +98,9 @@ async function renderTerminal(options?: {
       resizeCalls.push({ cols, rows });
     },
     writeToSession: () => undefined,
+    syncTerminalSelection: async (text: string) => {
+      selectionSyncs.push(text);
+    },
     debugLog: async (message: string, details?: unknown) => {
       debugLogs.push({ message, details });
     },
@@ -179,6 +183,7 @@ async function renderTerminal(options?: {
     getDebugLogs: () => debugLogs,
     getPerfEvents: () => perfEvents,
     getResizeCalls: () => resizeCalls,
+    getSelectionSyncs: () => selectionSyncs,
     getAttachCalls: () => attachCalls,
     rerender: async (
       next: Partial<{
@@ -589,6 +594,126 @@ test("TerminalTabView resets cancelled frame refs before a new session starts st
     });
 
     assert.equal(view.getTerminal().writes.includes("fresh output\r\n"), true);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView syncs non-empty xterm selections into the clipboard bridge", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    attachResult: "ready\r\n",
+    session: createSession("2026-03-15T00:00:00.000Z", "running-active")
+  });
+  try {
+    await view.flushBoot();
+    const terminal = view.getTerminal();
+
+    await act(async () => {
+      terminal.emitSelection("claude render block");
+    });
+
+    assert.deepEqual(view.getSelectionSyncs(), ["claude render block"]);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView converts modifier-drag into selection mode while mouse tracking is active", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    attachResult: "ready\r\n",
+    session: createSession("2026-03-15T00:00:00.000Z", "running-active")
+  });
+  try {
+    await view.flushBoot();
+    const terminal = view.getTerminal();
+    terminal.modes.mouseTrackingMode = "any";
+    const forcedSelectionEvents: MouseEvent[] = [];
+
+    view.host.addEventListener("mousedown", (event) => {
+      if (!(event as MouseEvent & { __watchboardForcedSelection?: true }).__watchboardForcedSelection) {
+        return;
+      }
+      forcedSelectionEvents.push(event);
+      terminal.emitSelection("claude mouse-tracked copy");
+    });
+
+    await act(async () => {
+      view.host.dispatchEvent(
+        new view.harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          buttons: 1,
+          altKey: true,
+          clientX: 24,
+          clientY: 18,
+          detail: 1
+        })
+      );
+    });
+
+    assert.equal(forcedSelectionEvents.length, 1);
+    assert.equal(forcedSelectionEvents[0]?.shiftKey, true);
+    assert.equal(forcedSelectionEvents[0]?.altKey, false);
+    assert.deepEqual(view.getSelectionSyncs(), ["claude mouse-tracked copy"]);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView does not synthesize a selection drag when mouse tracking is inactive", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    attachResult: "ready\r\n",
+    session: createSession("2026-03-15T00:00:00.000Z", "running-active")
+  });
+  try {
+    await view.flushBoot();
+    const forcedSelectionEvents: MouseEvent[] = [];
+
+    view.host.addEventListener("mousedown", (event) => {
+      if ((event as MouseEvent & { __watchboardForcedSelection?: true }).__watchboardForcedSelection) {
+        forcedSelectionEvents.push(event);
+      }
+    });
+
+    await act(async () => {
+      view.host.dispatchEvent(
+        new view.harness.window.MouseEvent("mousedown", {
+          bubbles: true,
+          cancelable: true,
+          button: 0,
+          buttons: 1,
+          altKey: true,
+          clientX: 24,
+          clientY: 18,
+          detail: 1
+        })
+      );
+    });
+
+    assert.deepEqual(forcedSelectionEvents, []);
+    assert.deepEqual(view.getSelectionSyncs(), []);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView ignores empty or whitespace-only selections", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    attachResult: "ready\r\n",
+    session: createSession("2026-03-15T00:00:00.000Z", "running-active")
+  });
+  try {
+    await view.flushBoot();
+    const terminal = view.getTerminal();
+
+    await act(async () => {
+      terminal.emitSelection("");
+      terminal.emitSelection("   ");
+      terminal.emitSelection("\n");
+    });
+
+    assert.deepEqual(view.getSelectionSyncs(), []);
   } finally {
     await view.cleanup();
   }

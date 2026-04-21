@@ -27,6 +27,52 @@ import { resolveTerminalSessionLifecycle } from "@renderer/components/terminalSe
 import { createTerminalViewState, type TerminalViewState } from "@renderer/components/terminalViewState";
 import { detectAgentKind, type AppSettings, type SessionState, type TerminalInstance } from "@shared/schema";
 
+type TerminalMouseTrackingMode = "none" | "x10" | "vt200" | "drag" | "any";
+type ForcedSelectionMouseEvent = MouseEvent & { __watchboardForcedSelection?: true };
+
+function isMacPointerSelectionPlatform(): boolean {
+  const navigatorValue = globalThis.navigator as (Navigator & { userAgentData?: { platform?: string } }) | undefined;
+  const userAgentDataPlatform = navigatorValue?.userAgentData?.platform;
+  const platform = userAgentDataPlatform ?? navigatorValue?.platform ?? navigatorValue?.userAgent ?? "";
+  return /mac/i.test(platform);
+}
+
+function shouldTriggerMouseTrackingSelectionCompatibility(
+  event: MouseEvent,
+  mouseTrackingMode: TerminalMouseTrackingMode | undefined
+): boolean {
+  if ((event as ForcedSelectionMouseEvent).__watchboardForcedSelection) {
+    return false;
+  }
+  if (mouseTrackingMode == null || mouseTrackingMode === "none") {
+    return false;
+  }
+  if (event.button !== 0 || event.shiftKey) {
+    return false;
+  }
+  return event.altKey || event.ctrlKey || event.metaKey;
+}
+
+function buildForcedSelectionMouseEvent(sourceEvent: MouseEvent, useAltModifier: boolean): ForcedSelectionMouseEvent {
+  const MouseEventCtor = sourceEvent.constructor as typeof MouseEvent;
+  const syntheticEvent = new MouseEventCtor("mousedown", {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    button: sourceEvent.button,
+    buttons: sourceEvent.buttons || 1,
+    clientX: sourceEvent.clientX,
+    clientY: sourceEvent.clientY,
+    screenX: sourceEvent.screenX,
+    screenY: sourceEvent.screenY,
+    detail: sourceEvent.detail,
+    shiftKey: !useAltModifier,
+    altKey: useAltModifier
+  }) as ForcedSelectionMouseEvent;
+  syntheticEvent.__watchboardForcedSelection = true;
+  return syntheticEvent;
+}
+
 type Props = {
   instance: TerminalInstance;
   session: SessionState | null;
@@ -118,6 +164,7 @@ export function TerminalTabView({
       scrollback: 5000,
       allowTransparency: false,
       customGlyphs: false,
+      macOptionClickForcesSelection: true,
       minimumContrastRatio: 1,
       rescaleOverlappingGlyphs: false,
       theme: {
@@ -421,6 +468,27 @@ export function TerminalTabView({
     xterm.onData((data) => {
       window.watchboard.writeToSession(sessionId, data, Date.now());
     });
+    const selectionDisposable = xterm.onSelectionChange?.(() => {
+      const selection = xterm.getSelection?.() ?? "";
+      if (!selection.trim()) {
+        return;
+      }
+      void window.watchboard.syncTerminalSelection(selection).catch(() => undefined);
+    });
+    const handleMouseTrackingSelectionCompatibility = (event: MouseEvent): void => {
+      const mouseTrackingMode = xterm.modes?.mouseTrackingMode;
+      if (!shouldTriggerMouseTrackingSelectionCompatibility(event, mouseTrackingMode)) {
+        return;
+      }
+      // Claude Code enables mouse tracking for its custom renderer. xterm.js only force-enables
+      // text selection via Shift on non-macOS and Option on macOS. Normalize Alt/Ctrl/Cmd drag
+      // into that native force-selection path so mouse-tracked TUIs still reach our clipboard bridge.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const syntheticEvent = buildForcedSelectionMouseEvent(event, isMacPointerSelectionPlatform());
+      (xterm.element ?? host).dispatchEvent(syntheticEvent);
+    };
+    host.addEventListener("mousedown", handleMouseTrackingSelectionCompatibility, true);
     window.addEventListener("watchboard:terminal-data", handleTerminalData);
 
     const observer = new ResizeObserver(() => {
@@ -474,6 +542,8 @@ export function TerminalTabView({
       redrawNudgeAttemptedRef.current = false;
       sessionStartMeasureRef.current = null;
       observer.disconnect();
+      selectionDisposable?.dispose?.();
+      host.removeEventListener("mousedown", handleMouseTrackingSelectionCompatibility, true);
       window.removeEventListener("watchboard:terminal-data", handleTerminalData);
       terminalRef.current = null;
       fitAddonRef.current = null;

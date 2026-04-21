@@ -92,24 +92,48 @@ async function renderAgentConfigPanel(options?: {
   } as Record<AgentConfigEntry["id"], string>;
   const emptyLayerStackByConfigId: Record<AgentConfigEntry["id"], ConfigLayerStack> = {
     "codex-config": {
-      version: 1,
+      version: 2,
       configId: "codex-config",
       location: "host",
-      layers: [{ id: "base-layer", name: "Base Layer", enabled: true }],
+      layers: [{ id: "base-layer", name: "Base Layer" }],
+      sortPresets: [
+        {
+          id: "default-sort",
+          name: "Default",
+          items: [{ layerId: "base-layer", enabled: true }]
+        }
+      ],
+      activeSortPresetId: "default-sort",
       updatedAt: "2026-04-19T00:00:00.000Z"
     },
     "codex-auth": {
-      version: 1,
+      version: 2,
       configId: "codex-auth",
       location: "host",
-      layers: [{ id: "base-layer", name: "Base Layer", enabled: true }],
+      layers: [{ id: "base-layer", name: "Base Layer" }],
+      sortPresets: [
+        {
+          id: "default-sort",
+          name: "Default",
+          items: [{ layerId: "base-layer", enabled: true }]
+        }
+      ],
+      activeSortPresetId: "default-sort",
       updatedAt: "2026-04-19T00:00:00.000Z"
     },
     "claude-settings": {
-      version: 1,
+      version: 2,
       configId: "claude-settings",
       location: "host",
-      layers: [{ id: "base-layer", name: "Base Layer", enabled: true }],
+      layers: [{ id: "base-layer", name: "Base Layer" }],
+      sortPresets: [
+        {
+          id: "default-sort",
+          name: "Default",
+          items: [{ layerId: "base-layer", enabled: true }]
+        }
+      ],
+      activeSortPresetId: "default-sort",
       updatedAt: "2026-04-19T00:00:00.000Z"
     }
   };
@@ -254,6 +278,22 @@ async function renderAgentConfigPanel(options?: {
   };
 }
 
+test("AgentConfigPanel renders agent icons on config tabs and shows the active sort preset", async () => {
+  const view = await renderAgentConfigPanel({
+    activeConfigId: "codex-config"
+  });
+  try {
+    const tabButtons = [...view.container.querySelectorAll(".agent-config-tabs .agent-config-tab")];
+    assert.equal(tabButtons.length, 3);
+    assert.ok(tabButtons.every((button) => button.querySelector("svg")));
+    assert.match(view.container.textContent ?? "", /Default/);
+    assert.match(view.container.textContent ?? "", /Active/);
+    assert.match(view.container.textContent ?? "", /Merge order from active sort/);
+  } finally {
+    await view.cleanup();
+  }
+});
+
 test("AgentConfigPanel validates JSON drafts and requires explicit second save for invalid syntax", async () => {
   const view = await renderAgentConfigPanel({
     activeConfigId: "claude-settings"
@@ -272,6 +312,30 @@ test("AgentConfigPanel validates JSON drafts and requires explicit second save f
     assert.equal(view.layerWrites[0]?.configId, "claude-settings");
     assert.equal(view.layerWrites[0]?.layerId, "base-layer");
     assert.equal(view.layerWrites[0]?.content, "{\n  \"theme\": \n}\n");
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("AgentConfigPanel accepts JSON layer drafts with comments and preserves them in layer storage", async () => {
+  const view = await renderAgentConfigPanel({
+    activeConfigId: "claude-settings"
+  });
+  const commentFriendlyDraft = '{\n  // prefer the faster profile\n  "theme": "light",\n  /* keep telemetry enabled */\n  "telemetry": true\n}\n';
+  try {
+    await view.clickTab("Edit Layer");
+    assert.match(view.container.textContent ?? "", /Comments OK/);
+
+    await view.input(commentFriendlyDraft);
+
+    assert.match(view.container.textContent ?? "", /JSON syntax is valid\./);
+
+    await view.clickSave();
+
+    assert.equal(view.layerWrites.length, 1);
+    assert.equal(view.layerWrites[0]?.configId, "claude-settings");
+    assert.equal(view.layerWrites[0]?.layerId, "base-layer");
+    assert.equal(view.layerWrites[0]?.content, commentFriendlyDraft);
   } finally {
     await view.cleanup();
   }

@@ -346,21 +346,101 @@ export type AgentConfigDocument = AgentConfigEntry & {
   content: string;
 };
 
+export const DEFAULT_CONFIG_SORT_PRESET_ID = "default-sort";
+export const DEFAULT_CONFIG_SORT_PRESET_NAME = "Default";
+
 export const ConfigLayerSchema = z.object({
   id: z.string(),
-  name: z.string(),
-  enabled: z.boolean().default(true)
+  name: z.string()
 });
 export type ConfigLayer = z.infer<typeof ConfigLayerSchema>;
 
+export const ConfigSortLayerStateSchema = z.object({
+  layerId: z.string(),
+  enabled: z.boolean().default(true)
+});
+export type ConfigSortLayerState = z.infer<typeof ConfigSortLayerStateSchema>;
+
+export const ConfigSortPresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  items: z.array(ConfigSortLayerStateSchema).default([])
+});
+export type ConfigSortPreset = z.infer<typeof ConfigSortPresetSchema>;
+
 export const ConfigLayerStackSchema = z.object({
-  version: z.literal(1).default(1),
+  version: z.literal(2).default(2),
   configId: z.enum(["codex-config", "codex-auth", "claude-settings"]),
   location: z.enum(["host", "wsl"]),
   layers: z.array(ConfigLayerSchema).default([]),
+  sortPresets: z.array(ConfigSortPresetSchema).default([]),
+  activeSortPresetId: z.string().nullable().default(DEFAULT_CONFIG_SORT_PRESET_ID),
   updatedAt: z.string()
 });
 export type ConfigLayerStack = z.infer<typeof ConfigLayerStackSchema>;
+
+export type ResolvedConfigSortLayer = {
+  layer: ConfigLayer;
+  enabled: boolean;
+};
+
+export function createDefaultConfigSortPreset(
+  layers: ConfigLayer[],
+  overrides: Partial<Pick<ConfigSortPreset, "id" | "name">> = {}
+): ConfigSortPreset {
+  return ConfigSortPresetSchema.parse({
+    id: overrides.id ?? DEFAULT_CONFIG_SORT_PRESET_ID,
+    name: overrides.name ?? DEFAULT_CONFIG_SORT_PRESET_NAME,
+    items: layers.map((layer) => ({
+      layerId: layer.id,
+      enabled: true
+    }))
+  });
+}
+
+export function getConfigSortPreset(
+  stack: Pick<ConfigLayerStack, "sortPresets" | "activeSortPresetId" | "layers">,
+  presetId?: string | null
+): ConfigSortPreset | null {
+  const requestedId = presetId ?? stack.activeSortPresetId;
+  const preset = stack.sortPresets.find((candidate) => candidate.id === requestedId) ?? stack.sortPresets[0] ?? null;
+  if (preset) {
+    return preset;
+  }
+  if (stack.layers.length === 0) {
+    return null;
+  }
+  return createDefaultConfigSortPreset(stack.layers);
+}
+
+export function getResolvedConfigSortLayers(
+  stack: Pick<ConfigLayerStack, "layers" | "sortPresets" | "activeSortPresetId">,
+  presetId?: string | null
+): ResolvedConfigSortLayer[] {
+  const preset = getConfigSortPreset(stack, presetId);
+  const layerById = new Map(stack.layers.map((layer) => [layer.id, layer]));
+  const resolved: ResolvedConfigSortLayer[] = [];
+  const seen = new Set<string>();
+
+  for (const item of preset?.items ?? []) {
+    const layer = layerById.get(item.layerId);
+    if (!layer || seen.has(layer.id)) {
+      continue;
+    }
+    seen.add(layer.id);
+    resolved.push({ layer, enabled: item.enabled });
+  }
+
+  for (const layer of stack.layers) {
+    if (seen.has(layer.id)) {
+      continue;
+    }
+    seen.add(layer.id);
+    resolved.push({ layer, enabled: true });
+  }
+
+  return resolved;
+}
 
 export type MergedConfigFieldAnnotation = {
   path: string;

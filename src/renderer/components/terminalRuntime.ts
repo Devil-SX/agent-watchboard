@@ -22,6 +22,8 @@ export function createTerminalRuntime(options: unknown): {
     open: (host: HTMLElement) => void;
     write: (data: string, callback?: () => void) => void;
     onData: (listener: (data: string) => void) => unknown;
+    onSelectionChange?: (listener: () => void) => { dispose: () => void } | void;
+    getSelection?: () => string;
     refresh: (start: number, end: number) => void;
     reset: () => void;
     focus: () => void;
@@ -29,6 +31,9 @@ export function createTerminalRuntime(options: unknown): {
     element: HTMLElement | null;
     cols: number;
     rows: number;
+    modes?: {
+      mouseTrackingMode?: "none" | "x10" | "vt200" | "drag" | "any";
+    };
   };
   fitAddon: {
     fit: () => void;
@@ -47,6 +52,9 @@ export function createTerminalRuntime(options: unknown): {
       element: HTMLElement | null;
       cols: number;
       rows: number;
+      modes?: {
+        mouseTrackingMode?: "none" | "x10" | "vt200" | "drag" | "any";
+      };
     },
     fitAddon: runtimeFactory.createFitAddon() as {
       fit: () => void;

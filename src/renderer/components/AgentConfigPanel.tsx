@@ -30,6 +30,7 @@ import type {
   SessionState,
   TerminalInstance
 } from "@shared/schema";
+import { createDefaultConfigSortPreset, getResolvedConfigSortLayers } from "@shared/schema";
 
 type Props = {
   settings: AppSettings;
@@ -44,6 +45,22 @@ type Props = {
   onTerminalViewStateChange: (sessionId: string, state: TerminalViewState) => void;
   onViewStateChange: (state: AgentConfigPaneState) => void;
 };
+
+function createEmptyLayerStack(configId: AgentConfigFileId, location: AgentPathLocation): ConfigLayerStack {
+  return {
+    version: 2,
+    configId,
+    location,
+    layers: [],
+    sortPresets: [createDefaultConfigSortPreset([])],
+    activeSortPresetId: null,
+    updatedAt: ""
+  };
+}
+
+function buildAgentConfigTabIcon(entry: AgentConfigEntry): ReactElement {
+  return entry.family === "claude" ? <ClaudeIcon className="agent-config-tab-agent-icon" /> : <CodexIcon className="agent-config-tab-agent-icon" />;
+}
 
 export function AgentConfigPanel({
   settings,
@@ -89,7 +106,8 @@ export function AgentConfigPanel({
   );
   const activeEntry = entries.find((entry) => entry.id === activeConfigId) ?? null;
   const activeFormat: AgentConfigFormat = activeEntry?.format ?? "json";
-  const activeLayer = layerStack?.layers.find((l) => l.id === activeLayerId) ?? null;
+  const resolvedLayers = useMemo(() => (layerStack ? getResolvedConfigSortLayers(layerStack) : []), [layerStack]);
+  const activeLayer = resolvedLayers.find(({ layer }) => layer.id === activeLayerId)?.layer ?? null;
 
   const normalizedActiveConfigId =
     activeConfigId === "codex-config" || activeConfigId === "codex-auth" || activeConfigId === "claude-settings"
@@ -132,12 +150,24 @@ export function AgentConfigPanel({
       .getLayerStack(activeConfigId, location)
       .then((stack) => {
         setLayerStack(stack);
-        if (activeLayerId && !stack.layers.some((l) => l.id === activeLayerId)) {
-          setActiveLayerId(stack.layers[0]?.id ?? null);
-        }
+        const firstLayerId = getResolvedConfigSortLayers(stack)[0]?.layer.id ?? null;
+        setActiveLayerId((current) => (current && stack.layers.some((layer) => layer.id === current) ? current : firstLayerId));
       })
       .catch(() => setLayerStack(null));
   }, [activeConfigId, location]);
+
+  useEffect(() => {
+    if (resolvedLayers.length === 0) {
+      if (activeLayerId !== null) {
+        setActiveLayerId(null);
+      }
+      return;
+    }
+    if (activeLayerId && resolvedLayers.some(({ layer }) => layer.id === activeLayerId)) {
+      return;
+    }
+    setActiveLayerId(resolvedLayers[0]?.layer.id ?? null);
+  }, [activeLayerId, resolvedLayers]);
 
   // Load current canonical file content
   useEffect(() => {
@@ -203,40 +233,74 @@ export function AgentConfigPanel({
     void onViewStateChange(currentPaneState);
   }, [activeConfigId, activeLayerId, chatAgent, skipDangerous, chatPrompts, currentPaneState, familyFilter, isChatOpen, layerViewMode, location, onViewStateChange, viewState]);
 
+  async function persistLayerStack(nextStack: ConfigLayerStack): Promise<ConfigLayerStack> {
+    const saved = await window.watchboard.saveLayerStack(nextStack);
+    setLayerStack(saved);
+    if (layerViewMode === "merged") {
+      refreshMerged();
+    }
+    return saved;
+  }
+
   // Layer action handlers
   async function handleToggleLayer(layerId: string, enabled: boolean): Promise<void> {
     if (!layerStack) return;
-    const updated = {
+    const activeSortPresetId = layerStack.activeSortPresetId ?? layerStack.sortPresets[0]?.id ?? null;
+    if (!activeSortPresetId) return;
+    await persistLayerStack({
       ...layerStack,
-      layers: layerStack.layers.map((l) => (l.id === layerId ? { ...l, enabled } : l)),
-      updatedAt: new Date().toISOString()
-    };
-    const saved = await window.watchboard.saveLayerStack(updated);
-    setLayerStack(saved);
-    if (layerViewMode === "merged") refreshMerged();
+      activeSortPresetId,
+      sortPresets: layerStack.sortPresets.map((preset) =>
+        preset.id === activeSortPresetId
+          ? {
+              ...preset,
+              items: preset.items.map((item) => (item.layerId === layerId ? { ...item, enabled } : item))
+            }
+          : preset
+      )
+    });
   }
 
   async function handleReorderLayers(orderedIds: string[]): Promise<void> {
     if (!layerStack) return;
-    const byId = new Map(layerStack.layers.map((l) => [l.id, l]));
-    const reordered = orderedIds.map((id) => byId.get(id)).filter((l): l is NonNullable<typeof l> => l != null);
-    const updated = { ...layerStack, layers: reordered, updatedAt: new Date().toISOString() };
-    const saved = await window.watchboard.saveLayerStack(updated);
-    setLayerStack(saved);
-    if (layerViewMode === "merged") refreshMerged();
+    const activeSortPresetId = layerStack.activeSortPresetId ?? layerStack.sortPresets[0]?.id ?? null;
+    if (!activeSortPresetId) return;
+    await persistLayerStack({
+      ...layerStack,
+      activeSortPresetId,
+      sortPresets: layerStack.sortPresets.map((preset) => {
+        if (preset.id !== activeSortPresetId) {
+          return preset;
+        }
+        const byId = new Map(preset.items.map((item) => [item.layerId, item]));
+        const reordered = orderedIds
+          .map((layerId) => byId.get(layerId))
+          .filter((item): item is NonNullable<typeof item> => item != null);
+        for (const item of preset.items) {
+          if (!orderedIds.includes(item.layerId)) {
+            reordered.push(item);
+          }
+        }
+        return {
+          ...preset,
+          items: reordered
+        };
+      })
+    });
   }
 
   async function handleAddLayer(): Promise<void> {
     if (!layerStack) return;
     const name = `Layer ${layerStack.layers.length + 1}`;
-    const newLayer = { id: globalThis.crypto.randomUUID(), name, enabled: true };
-    const updated = {
+    const newLayer = { id: globalThis.crypto.randomUUID(), name };
+    await persistLayerStack({
       ...layerStack,
       layers: [...layerStack.layers, newLayer],
-      updatedAt: new Date().toISOString()
-    };
-    const saved = await window.watchboard.saveLayerStack(updated);
-    setLayerStack(saved);
+      sortPresets: layerStack.sortPresets.map((preset) => ({
+        ...preset,
+        items: [...preset.items, { layerId: newLayer.id, enabled: true }]
+      }))
+    });
     setActiveLayerId(newLayer.id);
     setLayerViewMode("edit");
   }
@@ -245,20 +309,17 @@ export function AgentConfigPanel({
     const saved = await window.watchboard.deleteLayer(activeConfigId, layerId, location);
     setLayerStack(saved);
     if (activeLayerId === layerId) {
-      setActiveLayerId(saved.layers[0]?.id ?? null);
+      setActiveLayerId(getResolvedConfigSortLayers(saved)[0]?.layer.id ?? null);
     }
     if (layerViewMode === "merged") refreshMerged();
   }
 
   async function handleRenameLayer(layerId: string, name: string): Promise<void> {
     if (!layerStack) return;
-    const updated = {
+    await persistLayerStack({
       ...layerStack,
-      layers: layerStack.layers.map((l) => (l.id === layerId ? { ...l, name } : l)),
-      updatedAt: new Date().toISOString()
-    };
-    const saved = await window.watchboard.saveLayerStack(updated);
-    setLayerStack(saved);
+      layers: layerStack.layers.map((layer) => (layer.id === layerId ? { ...layer, name } : layer))
+    });
   }
 
   async function handleImportBaseLayer(): Promise<void> {
@@ -266,6 +327,53 @@ export function AgentConfigPanel({
     setLayerStack(saved);
     setActiveLayerId(importedLayerId);
     setLayerViewMode("edit");
+  }
+
+  async function handleSelectSortPreset(presetId: string): Promise<void> {
+    if (!layerStack || presetId === layerStack.activeSortPresetId) return;
+    await persistLayerStack({
+      ...layerStack,
+      activeSortPresetId: presetId
+    });
+  }
+
+  async function handleCreateSortPreset(): Promise<void> {
+    if (!layerStack) return;
+    const presetId = globalThis.crypto.randomUUID();
+    await persistLayerStack({
+      ...layerStack,
+      sortPresets: [
+        ...layerStack.sortPresets,
+        {
+          id: presetId,
+          name: `Sort ${layerStack.sortPresets.length + 1}`,
+          items: resolvedLayers.map(({ layer, enabled }) => ({
+            layerId: layer.id,
+            enabled
+          }))
+        }
+      ],
+      activeSortPresetId: presetId
+    });
+  }
+
+  async function handleRenameSortPreset(presetId: string, name: string): Promise<void> {
+    if (!layerStack) return;
+    await persistLayerStack({
+      ...layerStack,
+      sortPresets: layerStack.sortPresets.map((preset) => (preset.id === presetId ? { ...preset, name } : preset))
+    });
+  }
+
+  async function handleDeleteSortPreset(presetId: string): Promise<void> {
+    if (!layerStack || layerStack.sortPresets.length <= 1) return;
+    const nextSortPresets = layerStack.sortPresets.filter((preset) => preset.id !== presetId);
+    await persistLayerStack({
+      ...layerStack,
+      sortPresets: nextSortPresets,
+      activeSortPresetId:
+        layerStack.activeSortPresetId === presetId ? nextSortPresets[0]?.id ?? null : layerStack.activeSortPresetId
+    });
   }
 
   async function handleApplyMerged(): Promise<void> {
@@ -340,6 +448,7 @@ export function AgentConfigPanel({
                 className={entry.id === activeConfigId ? "agent-config-tab is-active" : "agent-config-tab"}
                 onClick={() => setActiveConfigId(entry.id)}
               >
+                {buildAgentConfigTabIcon(entry)}
                 {entry.label}
                 {entry.isSymlink ? <span className="entry-badge">Softlink</span> : null}
               </button>
@@ -371,18 +480,22 @@ export function AgentConfigPanel({
 
           <div className="agent-config-layer-panel">
             <LayerList
-              stack={layerStack ?? { version: 1 as const, configId: activeConfigId, location, layers: [], updatedAt: "" }}
+              stack={layerStack ?? createEmptyLayerStack(activeConfigId, location)}
               activeLayerId={activeLayerId}
               onSelectLayer={(id) => {
                 setActiveLayerId(id);
                 setLayerViewMode("edit");
               }}
-              onToggleLayer={(id, enabled) => void handleToggleLayer(id, enabled)}
+              onToggleLayerEnabled={(id, enabled) => void handleToggleLayer(id, enabled)}
               onReorderLayers={(ids) => void handleReorderLayers(ids)}
               onAddLayer={() => void handleAddLayer()}
               onDeleteLayer={(id) => void handleDeleteLayer(id)}
               onRenameLayer={(id, name) => void handleRenameLayer(id, name)}
               onImportBaseLayer={() => void handleImportBaseLayer()}
+              onSelectSortPreset={(presetId) => void handleSelectSortPreset(presetId)}
+              onCreateSortPreset={() => void handleCreateSortPreset()}
+              onRenameSortPreset={(presetId, name) => void handleRenameSortPreset(presetId, name)}
+              onDeleteSortPreset={(presetId) => void handleDeleteSortPreset(presetId)}
             />
 
             <div className="agent-config-layer-content">
