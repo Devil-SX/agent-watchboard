@@ -30,6 +30,14 @@ test("sanitizePathForLogs redacts Windows and WSL home paths", () => {
     sanitizePathForLogs("/home/tester/.agent-vis/profiler.db"),
     "~/.agent-vis/profiler.db"
   );
+  assert.equal(
+    sanitizePathForLogs("stdout: /home/tester/.agent-vis/profiler.db\nstderr: C:\\Users\\tester\\notes"),
+    "stdout: ~/.agent-vis/profiler.db\nstderr: ~\\notes"
+  );
+  assert.equal(
+    sanitizePathForLogs("motd\n\\\\wsl.localhost\\Ubuntu\\home\\tester\\.agent-vis\\profiler.db"),
+    "motd\n\\\\wsl.localhost\\Ubuntu\\~\\.agent-vis\\profiler.db"
+  );
 });
 
 test(

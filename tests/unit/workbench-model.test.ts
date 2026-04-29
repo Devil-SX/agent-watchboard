@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createTerminalInstance, createWorkspaceTemplate } from "../../src/shared/schema";
-import { addInstanceToWorkbench, attachExistingInstance, collapseInstance, reconcileWorkbenchLayoutChange } from "../../src/shared/workbenchModel";
+import { addInstanceToWorkbench, attachExistingInstance, collapseInstance, reconcileWorkbenchLayoutChange, updateWorkbenchInstance } from "../../src/shared/workbenchModel";
 
 test("attachExistingInstance restores a collapsed instance into the requested position", () => {
   const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
@@ -99,6 +99,22 @@ test("collapse and restore keep the same terminal session identity across pane l
   assert.equal(restoredInstance?.sessionId, first.sessionId);
   assert.equal(restoredInstance?.paneId, first.paneId);
   assert.equal(restoredInstance?.collapsed, false);
+});
+
+test("updateWorkbenchInstance keeps layout tab names aligned with renamed runtime titles", () => {
+  const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
+  const first = createTerminalInstance(workspace, []);
+  const workbench = addInstanceToWorkbench(createEmptyWorkbench(), first);
+
+  const renamed = updateWorkbenchInstance(workbench, first.instanceId, (instance) => ({
+    ...instance,
+    title: "Alpha Research"
+  }));
+
+  assert.equal(renamed.instances[0]?.title, "Alpha Research");
+  const tabset = renamed.layoutModel.layout.children[0];
+  assert.ok(tabset && tabset.type === "tabset");
+  assert.equal(tabset.children[0]?.name, "Alpha Research");
 });
 
 function createEmptyWorkbench() {

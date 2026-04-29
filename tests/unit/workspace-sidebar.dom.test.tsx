@@ -42,9 +42,19 @@ function createSidebarHarness(options?: {
   initialSearchQuery?: string;
   onViewWorkspace?: (workspaceId: string) => void;
   onDeleteWorkspaceQuick?: (workspaceId: string) => void;
+  onRenameInstance?: (instanceId: string, title: string) => void;
   onClosePane?: (instanceId: string) => void;
 }) {
   const harness = createDomTestHarness();
+  const legacyInputShim = () => undefined;
+  Object.defineProperty(harness.window.HTMLElement.prototype, "attachEvent", {
+    configurable: true,
+    value: legacyInputShim
+  });
+  Object.defineProperty(harness.window.HTMLElement.prototype, "detachEvent", {
+    configurable: true,
+    value: legacyInputShim
+  });
   const container = harness.document.createElement("div");
   harness.document.body.appendChild(container);
   const root = ReactDOMClient.createRoot(container);
@@ -81,6 +91,7 @@ function createSidebarHarness(options?: {
         onSelectWorkspace={() => undefined}
         onViewWorkspace={options?.onViewWorkspace ?? (() => undefined)}
         onDeleteWorkspaceQuick={options?.onDeleteWorkspaceQuick ?? (() => undefined)}
+        onRenameInstance={options?.onRenameInstance ?? (() => undefined)}
         onFocusPane={() => undefined}
         onClosePane={options?.onClosePane ?? (() => undefined)}
         onCollapsePane={() => undefined}
@@ -188,7 +199,7 @@ test("WorkspaceSidebar template context menu exposes view and delete actions", {
   }
 });
 
-test("WorkspaceSidebar keeps the runtime instance context menu on close-only actions", { concurrency: false }, async () => {
+test("WorkspaceSidebar runtime instance context menu exposes rename and close actions", { concurrency: false }, async () => {
   const workspace = makeWorkspace("Alpha Quant", "/repo/quantization");
   const instance: TerminalInstance = createTerminalInstance(workspace, [], { ordinal: 1 });
   const workbench: WorkbenchDocument = {
@@ -226,14 +237,92 @@ test("WorkspaceSidebar keeps the runtime instance context menu on close-only act
     });
 
     const menuItems = [...view.harness.document.querySelectorAll(".workspace-context-menu-item")];
-    assert.deepEqual(menuItems.map((item) => item.textContent?.trim()), ["Close"]);
+    assert.deepEqual(menuItems.map((item) => item.textContent?.trim()), ["Rename", "Close"]);
 
-    const closeButton = menuItems[0];
+    const closeButton = menuItems[1];
     assert.ok(closeButton instanceof view.harness.window.HTMLButtonElement);
     await act(async () => {
       closeButton.click();
     });
     assert.deepEqual(closed, [instance.instanceId]);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("WorkspaceSidebar can rename a runtime instance from the context menu", { concurrency: false }, async () => {
+  const workspace = makeWorkspace("Alpha Quant", "/repo/quantization");
+  const instance: TerminalInstance = createTerminalInstance(workspace, [], { ordinal: 1 });
+  const workbench: WorkbenchDocument = {
+    ...createEmptyWorkbenchDocument(),
+    activePaneId: instance.paneId,
+    instances: [instance],
+    layoutModel: createWorkbenchLayoutModel([instance])
+  };
+  const renames: Array<{ instanceId: string; title: string }> = [];
+  const view = createSidebarHarness({
+    workspaces: [workspace],
+    workbench,
+    onRenameInstance: (instanceId, title) => renames.push({ instanceId, title })
+  });
+
+  try {
+    await view.render();
+    const expandButton = view.container.querySelector("[aria-label='Show runtime panes']");
+    assert.ok(expandButton instanceof view.harness.window.HTMLButtonElement);
+    await act(async () => {
+      expandButton.click();
+    });
+
+    const instanceButton = view.container.querySelector(".workspace-instance-item");
+    assert.ok(instanceButton instanceof view.harness.window.HTMLButtonElement);
+    await act(async () => {
+      instanceButton.dispatchEvent(
+        new view.harness.window.MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 100,
+          clientY: 120
+        })
+      );
+    });
+
+    const renameButton = view.harness.document.querySelectorAll(".workspace-context-menu-item")[0];
+    assert.ok(renameButton instanceof view.harness.window.HTMLButtonElement);
+    await act(async () => {
+      renameButton.dispatchEvent(
+        new view.harness.window.MouseEvent("pointerdown", {
+          bubbles: true,
+          cancelable: true
+        })
+      );
+      renameButton.click();
+    });
+
+    const renamedItem = view.container.querySelector(".workspace-instance-item.is-renaming");
+    assert.ok(renamedItem instanceof view.harness.window.HTMLDivElement);
+    assert.equal(renamedItem.querySelector("strong"), null);
+
+    const renameInput = renamedItem.querySelector(".workspace-instance-rename-input");
+    assert.ok(renameInput instanceof view.harness.window.HTMLInputElement);
+    assert.equal(renameInput.value, instance.title);
+
+    await act(async () => {
+      renameInput.value = "  Research Run  ";
+      renameInput.dispatchEvent(new view.harness.window.Event("input", { bubbles: true }));
+    });
+
+    const updatedInput = renamedItem.querySelector(".workspace-instance-rename-input");
+    assert.ok(updatedInput instanceof view.harness.window.HTMLInputElement);
+    assert.equal(updatedInput.value, "  Research Run  ");
+    const renameForm = renamedItem.querySelector(".workspace-instance-rename-form");
+    assert.ok(renameForm instanceof view.harness.window.HTMLFormElement);
+
+    await act(async () => {
+      renameForm.dispatchEvent(new view.harness.window.Event("submit", { bubbles: true, cancelable: true }));
+    });
+
+    assert.deepEqual(renames, [{ instanceId: instance.instanceId, title: "Research Run" }]);
   } finally {
     await view.cleanup();
   }

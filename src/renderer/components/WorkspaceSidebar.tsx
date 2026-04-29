@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
@@ -17,6 +17,7 @@ import {
   WslIcon
 } from "@renderer/components/IconButton";
 import { LocationBadge } from "@renderer/components/LocationBadge";
+import { SidebarHeaderLayout } from "@renderer/components/SidebarHeaderLayout";
 import { StatusOrbit } from "@renderer/components/StatusOrbit";
 import { createTerminalPreviewSnippet } from "@renderer/components/terminalFallback";
 import { resolveSessionVisualState, resolveWorkspaceVisualState, visualStateClassName, type SessionVisualState } from "@renderer/components/sessionVisualState";
@@ -65,6 +66,7 @@ type Props = {
   onSelectWorkspace: (workspaceId: string) => void;
   onViewWorkspace: (workspaceId: string) => void;
   onDeleteWorkspaceQuick: (workspaceId: string) => void;
+  onRenameInstance: (instanceId: string, title: string) => void;
   onFocusPane: (paneId: string) => void;
   onClosePane: (instanceId: string) => void;
   onCollapsePane: (instanceId: string) => void;
@@ -125,6 +127,7 @@ export function WorkspaceSidebar({
   onSelectWorkspace,
   onViewWorkspace,
   onDeleteWorkspaceQuick,
+  onRenameInstance,
   onFocusPane,
   onClosePane,
   onCollapsePane,
@@ -134,12 +137,17 @@ export function WorkspaceSidebar({
 }: Props): ReactElement {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [renamingInstanceId, setRenamingInstanceId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [hoverPreview, setHoverPreview] = useState<{
     instanceId: string;
     style: CSSProperties;
     content: string;
   } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
   const instancesByWorkspace = useMemo(() => groupInstances(workbench.instances), [workbench.instances]);
+  const instanceMap = useMemo(() => new Map(workbench.instances.map((instance) => [instance.instanceId, instance] as const)), [workbench.instances]);
   const visiblePathGroups = useMemo(
     () =>
       deriveVisibleWorkspaceGroups(
@@ -158,7 +166,10 @@ export function WorkspaceSidebar({
     if (!contextMenu) {
       return;
     }
-    const handlePointerDown = (): void => {
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (event.target instanceof Node && contextMenuRef.current?.contains(event.target)) {
+        return;
+      }
       setContextMenu(null);
     };
     const handleEscape = (event: KeyboardEvent): void => {
@@ -174,86 +185,139 @@ export function WorkspaceSidebar({
     };
   }, [contextMenu]);
 
+  useEffect(() => {
+    if (renamingInstanceId && !instanceMap.has(renamingInstanceId)) {
+      setRenamingInstanceId(null);
+      setRenameDraft("");
+    }
+  }, [instanceMap, renamingInstanceId]);
+
+  useEffect(() => {
+    if (!renamingInstanceId) {
+      return;
+    }
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renamingInstanceId]);
+
+  function startInstanceRename(instanceId: string): void {
+    const instance = instanceMap.get(instanceId);
+    if (!instance) {
+      return;
+    }
+    setRenamingInstanceId(instanceId);
+    setRenameDraft(instance.title);
+    setHoverPreview((current) => (current?.instanceId === instanceId ? null : current));
+  }
+
+  function cancelInstanceRename(): void {
+    setRenamingInstanceId(null);
+    setRenameDraft("");
+    renameInputRef.current = null;
+  }
+
+  function commitInstanceRename(): void {
+    if (!renamingInstanceId) {
+      return;
+    }
+    const instance = instanceMap.get(renamingInstanceId);
+    const draftTitle = renameInputRef.current?.value ?? renameDraft;
+    const normalizedTitle = draftTitle.trim() || (instance?.title ?? "");
+    if (!instance || !normalizedTitle || normalizedTitle === instance.title) {
+      cancelInstanceRename();
+      return;
+    }
+    onRenameInstance(renamingInstanceId, normalizedTitle);
+    cancelInstanceRename();
+  }
+
+  const headerActions = isDeleteMode ? (
+    <>
+      <button type="button" className="secondary-button" onClick={onCancelDeleteMode}>
+        Cancel
+      </button>
+      <button
+        type="button"
+        className="secondary-button danger-button"
+        disabled={selectedDeleteIds.length === 0}
+        onClick={onDeleteSelected}
+      >
+        Delete {selectedDeleteIds.length > 0 ? `(${selectedDeleteIds.length})` : ""}
+      </button>
+    </>
+  ) : (
+    <>
+      <IconButton className="sidebar-create-button" label="New Workspace" icon={<PlusIcon />} onClick={onCreateWorkspace} />
+      <IconButton label="Delete Workspaces" icon={<TrashIcon />} onClick={onToggleDeleteMode} />
+    </>
+  );
+
   return (
     <aside className="workspace-sidebar">
-      <header className="workspace-sidebar-header">
-        <div className="workspace-sidebar-header-copy">
-          <p className="panel-eyebrow">Workspaces</p>
-          {!isDeleteMode ? (
-            <div className="workspace-sidebar-controls">
-              <CompactToggleButton
-                className="workspace-compact-control"
-                label="Sort"
-                hideLabel
-                ariaLabel={`Sort workspaces: ${sortMode === "last-launch" ? "last launch" : "alphabetical"}`}
-                icon={<ListIcon />}
-                value={sortMode === "last-launch" ? "Last Launch" : "A-Z"}
-                onClick={() => onSortModeChange(sortMode === "last-launch" ? "alphabetical" : "last-launch")}
-              />
-              <CompactDropdown
-                className="workspace-compact-control"
-                icon={filterMode === "codex" ? <CodexIcon /> : filterMode === "claude" ? <ClaudeIcon /> : undefined}
-                label="Agent"
-                hideLabel
-                ariaLabel="Filter workspaces by agent"
-                value={filterMode}
-                options={WORKSPACE_FILTER_OPTIONS}
-                onChange={onFilterModeChange}
-              />
-              <CompactDropdown
-                className="workspace-compact-control"
-                icon={environmentFilterMode === "host" ? <HostIcon /> : environmentFilterMode === "wsl" ? <WslIcon /> : undefined}
-                label="Env"
-                hideLabel
-                ariaLabel="Filter workspaces by environment"
-                value={environmentFilterMode}
-                options={WORKSPACE_ENVIRONMENT_FILTER_OPTIONS}
-                onChange={onEnvironmentFilterModeChange}
-              />
-              <CompactToggleButton
-                className={instanceVisibilityFilterEnabled ? "workspace-compact-control is-active" : "workspace-compact-control"}
-                label="Instance"
-                hideLabel
-                ariaLabel={instanceVisibilityFilterEnabled ? "Hide templates without instances" : "Show all templates"}
-                icon={instanceVisibilityFilterEnabled ? <EyeIcon /> : <EyeOffIcon />}
-                onClick={() => onInstanceVisibilityFilterChange(!instanceVisibilityFilterEnabled)}
-              />
-              <label className="workspace-search-control">
-                <input
-                  type="search"
-                  className="workspace-search-input"
-                  aria-label="Search workspaces"
-                  placeholder="Search name or path"
-                  value={searchQuery}
-                  onChange={(event) => onSearchQueryChange(event.target.value)}
-                />
-              </label>
+      <SidebarHeaderLayout
+        className="workspace-sidebar-header"
+        mainClassName="workspace-sidebar-header-copy"
+        diagnosticsName="workspace-sidebar-header"
+        main={
+          <>
+            <div className="workspace-sidebar-toolbar">
+              <p className="panel-eyebrow">Workspaces</p>
+              <div className="workspace-sidebar-toolbar-actions">{headerActions}</div>
             </div>
-          ) : null}
-        </div>
-        <div className="workspace-sidebar-header-actions">
-          {isDeleteMode ? (
-            <>
-              <button type="button" className="secondary-button" onClick={onCancelDeleteMode}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="secondary-button danger-button"
-                disabled={selectedDeleteIds.length === 0}
-                onClick={onDeleteSelected}
-              >
-                Delete {selectedDeleteIds.length > 0 ? `(${selectedDeleteIds.length})` : ""}
-              </button>
-            </>
-          ) : (
-            <>
-              <IconButton className="sidebar-create-button" label="New Workspace" icon={<PlusIcon />} onClick={onCreateWorkspace} />
-              <IconButton label="Delete Workspaces" icon={<TrashIcon />} onClick={onToggleDeleteMode} />
-            </>
-          )}
-        </div>
-      </header>
+            {!isDeleteMode ? (
+              <div className="workspace-sidebar-controls">
+                <CompactToggleButton
+                  className="workspace-compact-control"
+                  label="Sort"
+                  hideLabel
+                  ariaLabel={`Sort workspaces: ${sortMode === "last-launch" ? "last launch" : "alphabetical"}`}
+                  icon={<ListIcon />}
+                  value={sortMode === "last-launch" ? "Last Launch" : "A-Z"}
+                  onClick={() => onSortModeChange(sortMode === "last-launch" ? "alphabetical" : "last-launch")}
+                />
+                <CompactDropdown
+                  className="workspace-compact-control"
+                  icon={filterMode === "codex" ? <CodexIcon /> : filterMode === "claude" ? <ClaudeIcon /> : undefined}
+                  label="Agent"
+                  hideLabel
+                  ariaLabel="Filter workspaces by agent"
+                  value={filterMode}
+                  options={WORKSPACE_FILTER_OPTIONS}
+                  onChange={onFilterModeChange}
+                />
+                <CompactDropdown
+                  className="workspace-compact-control"
+                  icon={environmentFilterMode === "host" ? <HostIcon /> : environmentFilterMode === "wsl" ? <WslIcon /> : undefined}
+                  label="Env"
+                  hideLabel
+                  ariaLabel="Filter workspaces by environment"
+                  value={environmentFilterMode}
+                  options={WORKSPACE_ENVIRONMENT_FILTER_OPTIONS}
+                  onChange={onEnvironmentFilterModeChange}
+                />
+                <CompactToggleButton
+                  className={instanceVisibilityFilterEnabled ? "workspace-compact-control is-active" : "workspace-compact-control"}
+                  label="Instance"
+                  hideLabel
+                  ariaLabel={instanceVisibilityFilterEnabled ? "Hide templates without instances" : "Show all templates"}
+                  icon={instanceVisibilityFilterEnabled ? <EyeIcon /> : <EyeOffIcon />}
+                  onClick={() => onInstanceVisibilityFilterChange(!instanceVisibilityFilterEnabled)}
+                />
+                <label className="workspace-search-control">
+                  <input
+                    type="search"
+                    className="workspace-search-input"
+                    aria-label="Search workspaces"
+                    placeholder="Search name or path"
+                    value={searchQuery}
+                    onChange={(event) => onSearchQueryChange(event.target.value)}
+                  />
+                </label>
+              </div>
+            ) : null}
+          </>
+        }
+      />
 
       <div className="workspace-list" role="list">
         {visiblePathGroups.map((group) => (
@@ -299,7 +363,7 @@ export function WorkspaceSidebar({
                   }
                   role="listitem"
                 >
-                  <StatusOrbit active={workspaceStatus === "working"} />
+                  <StatusOrbit active={workspaceStatus === "working"} variant="workspace" />
                   <div className="workspace-list-row">
                     <button
                       type="button"
@@ -409,11 +473,72 @@ export function WorkspaceSidebar({
                       {instances.map((instance) => {
                         const status = resolveSessionVisualState(sessions[instance.sessionId]?.status);
                         const isPaneActive = !instance.collapsed && instance.paneId === activePaneId;
+                        const isRenaming = renamingInstanceId === instance.instanceId;
                         const itemClass = instance.collapsed
                           ? `workspace-instance-item is-collapsed ${visualStateClassName(status)}`
                           : isPaneActive
                             ? `workspace-instance-item is-active ${visualStateClassName(status)}`
                             : `workspace-instance-item ${visualStateClassName(status)}`;
+                        const instanceContent = (
+                          <>
+                            <StatusOrbit active={status === "working"} variant="workspace" />
+                            <span className={`workspace-instance-rail ${visualStateClassName(status)}`} />
+                            <span className="workspace-instance-copy">
+                              {isRenaming ? (
+                                <form
+                                  className="workspace-instance-rename-form"
+                                  onSubmit={(event) => {
+                                    event.preventDefault();
+                                    commitInstanceRename();
+                                  }}
+                                >
+                                  <input
+                                    type="text"
+                                    className="workspace-instance-rename-input"
+                                    value={renameDraft}
+                                    ref={(node) => {
+                                      renameInputRef.current = node;
+                                    }}
+                                    onChange={(event) => {
+                                      setRenameDraft(event.target.value);
+                                    }}
+                                    onBlur={commitInstanceRename}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Escape") {
+                                        event.preventDefault();
+                                        cancelInstanceRename();
+                                      }
+                                    }}
+                                    autoFocus
+                                  />
+                                </form>
+                              ) : (
+                                <strong>{instance.title}</strong>
+                              )}
+                              <span>{instance.terminalProfileSnapshot.cwd}</span>
+                              {cronCountdownByInstanceId.get(instance.instanceId) ? (
+                                <span className="workspace-instance-countdown">{cronCountdownByInstanceId.get(instance.instanceId)}</span>
+                              ) : null}
+                            </span>
+                          </>
+                        );
+
+                        if (isRenaming) {
+                          return (
+                            <div
+                              key={instance.instanceId}
+                              className={`${itemClass} is-renaming`}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                              }}
+                            >
+                              {instanceContent}
+                            </div>
+                          );
+                        }
+
                         return (
                           <button
                             key={instance.instanceId}
@@ -433,7 +558,7 @@ export function WorkspaceSidebar({
                               setContextMenu({
                                 kind: "instance",
                                 instanceId: instance.instanceId,
-                                style: getContextMenuStyle(event.clientX, event.clientY, 44)
+                                style: getContextMenuStyle(event.clientX, event.clientY, 2)
                               });
                             }}
                             onMouseEnter={(event) => {
@@ -452,15 +577,7 @@ export function WorkspaceSidebar({
                             }}
                             title={instance.collapsed ? "Click to restore" : undefined}
                           >
-                            <StatusOrbit active={status === "working"} />
-                            <span className={`workspace-instance-rail ${visualStateClassName(status)}`} />
-                            <span className="workspace-instance-copy">
-                              <strong>{instance.title}</strong>
-                              <span>{instance.terminalProfileSnapshot.cwd}</span>
-                              {cronCountdownByInstanceId.get(instance.instanceId) ? (
-                                <span className="workspace-instance-countdown">{cronCountdownByInstanceId.get(instance.instanceId)}</span>
-                              ) : null}
-                            </span>
+                            {instanceContent}
                           </button>
                         );
                       })}
@@ -480,7 +597,14 @@ export function WorkspaceSidebar({
       </div>
       {contextMenu
         ? createPortal(
-            <div className="workspace-context-menu" style={contextMenu.style}>
+            <div
+              ref={contextMenuRef}
+              className="workspace-context-menu"
+              style={contextMenu.style}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+            >
               {contextMenu.kind === "workspace" ? (
                 <>
                   <button
@@ -505,16 +629,29 @@ export function WorkspaceSidebar({
                   </button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  className="workspace-context-menu-item"
-                  onClick={() => {
-                    setContextMenu(null);
-                    onClosePane(contextMenu.instanceId);
-                  }}
-                >
-                  Close
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="workspace-context-menu-item"
+                    onClick={() => {
+                      const instanceId = contextMenu.instanceId;
+                      setContextMenu(null);
+                      startInstanceRename(instanceId);
+                    }}
+                  >
+                    Rename
+                  </button>
+                  <button
+                    type="button"
+                    className="workspace-context-menu-item"
+                    onClick={() => {
+                      setContextMenu(null);
+                      onClosePane(contextMenu.instanceId);
+                    }}
+                  >
+                    Close
+                  </button>
+                </>
               )}
             </div>,
             document.body

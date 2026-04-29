@@ -24,7 +24,9 @@ import {
 } from "recharts";
 
 import { CompactToggleButton } from "@renderer/components/CompactControls";
+import { AnalysisSessionBrowser } from "@renderer/components/AnalysisSessionBrowser";
 import { getLocationLabel, LocationBadge } from "@renderer/components/LocationBadge";
+import { formatCompactMetric, formatDuration, formatMetric } from "@renderer/components/analysisShared";
 import { areAnalysisPaneStatesEqual } from "@renderer/components/settingsDraft";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import type {
@@ -62,23 +64,6 @@ const CHART_COLORS = [
 ];
 
 const AGENT_TRAJECTORY_PROFILER_REPO_URL = "https://github.com/Devil-SX/agent-trajectory-profiler";
-const STACKED_BAR_TONES = {
-  user: "#8dcff4",
-  assistant: "#54c5a7",
-  tool: "#f0b867"
-} as const;
-
-type SessionBrowserMetricMode = "messages" | "hours";
-type SessionBrowserSortKey = "alphabetic" | "messages" | "hours";
-type SessionBrowserSortDirection = "asc" | "desc";
-type SessionBrowserSortMetric = "user" | "assistant" | "tool" | "model";
-
-type SessionBrowserBreakdownSegment = {
-  label: "User" | "Assistant" | "Tool";
-  value: number;
-  tone: keyof typeof STACKED_BAR_TONES;
-};
-
 type AnalysisLocationCache = {
   databaseInfo: AnalysisDatabaseInfo | null;
   sessions: AnalysisSessionSummary[] | null;
@@ -1390,265 +1375,38 @@ function SessionDetailPage({
   onSelectSession: (sessionId: string) => void;
   onSelectSection: (sectionId: string) => void;
 }): ReactElement {
-  const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
-  const [collapsedSessions, setCollapsedSessions] = useState<Record<string, boolean>>({});
-  const [browserMetricMode, setBrowserMetricMode] = useState<SessionBrowserMetricMode>("messages");
-  const [browserSortKey, setBrowserSortKey] = useState<SessionBrowserSortKey>("alphabetic");
-  const [browserSortDirection, setBrowserSortDirection] = useState<SessionBrowserSortDirection>("asc");
-  const [browserSortMetric, setBrowserSortMetric] = useState<SessionBrowserSortMetric>("assistant");
   const activeEntries = selectedSectionId ? sectionDetail?.entries ?? [] : sessionDetail?.entries ?? [];
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(activeEntries[0]?.entryId ?? null);
-
-  useEffect(() => {
-    if (selectedProjectKey) {
-      setCollapsedProjects((current) => ({ ...current, [selectedProjectKey]: false }));
-    }
-  }, [selectedProjectKey]);
-
-  useEffect(() => {
-    if (selectedSessionId) {
-      setCollapsedSessions((current) => ({ ...current, [selectedSessionId]: false }));
-    }
-  }, [selectedSessionId]);
 
   useEffect(() => {
     setSelectedEntryId(activeEntries[0]?.entryId ?? null);
   }, [selectedSectionId, selectedSessionId, activeEntries]);
 
-  useEffect(() => {
-    setBrowserSortMetric((current) => normalizeSessionBrowserSortMetric(browserSortKey, current));
-  }, [browserSortKey]);
-
   const selectedEntry = activeEntries.find((entry) => entry.entryId === selectedEntryId) ?? activeEntries[0] ?? null;
-  const metricOptions = getSessionBrowserSortMetricOptions(browserSortKey);
 
   return (
     <section className="analysis-layout">
-      <article className="analysis-card analysis-sidebar">
-        <div className="analysis-card-header">
-          <h3>Session Browser</h3>
-          <div className="analysis-browser-header-actions">
-            <div className="analysis-browser-toggle" role="group" aria-label="Session browser metrics">
-              <button
-                type="button"
-                className={browserMetricMode === "messages" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
-                onClick={() => setBrowserMetricMode("messages")}
-              >
-                Messages
-              </button>
-              <button
-                type="button"
-                className={browserMetricMode === "hours" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
-                onClick={() => setBrowserMetricMode("hours")}
-              >
-                Hours
-              </button>
-            </div>
-            <div className="analysis-browser-toggle" role="group" aria-label="Session browser sort key">
-              <button
-                type="button"
-                className={browserSortKey === "alphabetic" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
-                onClick={() => setBrowserSortKey("alphabetic")}
-              >
-                A-Z
-              </button>
-              <button
-                type="button"
-                className={browserSortKey === "messages" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
-                onClick={() => setBrowserSortKey("messages")}
-              >
-                Message
-              </button>
-              <button
-                type="button"
-                className={browserSortKey === "hours" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
-                onClick={() => setBrowserSortKey("hours")}
-              >
-                Time
-              </button>
-            </div>
-            <div className="analysis-browser-toggle" role="group" aria-label="Session browser sort direction">
-              <button
-                type="button"
-                className={browserSortDirection === "asc" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
-                onClick={() => setBrowserSortDirection("asc")}
-              >
-                Asc
-              </button>
-              <button
-                type="button"
-                className={browserSortDirection === "desc" ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
-                onClick={() => setBrowserSortDirection("desc")}
-              >
-                Desc
-              </button>
-            </div>
-            {metricOptions.length > 0 ? (
-              <div className="analysis-browser-toggle" role="group" aria-label="Session browser sort metric">
-                {metricOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={browserSortMetric === option.value ? "analysis-browser-toggle-button is-active" : "analysis-browser-toggle-button"}
-                    onClick={() => setBrowserSortMetric(option.value)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            <span className="entry-badge">{projects.length}</span>
-          </div>
-        </div>
-        {projectError ? <div className="toolbar-error">{projectError}</div> : null}
-        {sessionError ? <div className="toolbar-error">{sessionError}</div> : null}
-        <div className="analysis-tree">
-          {projectsLoading ? <div className="panel-empty"><p>Loading projects...</p></div> : null}
-          {projects.map((project) => {
-            const projectCollapsed = collapsedProjects[project.projectKey] ?? project.projectKey !== selectedProjectKey;
-            const cachedProjectSessions = projectSessionsByKey.get(project.projectKey) ?? [];
-            const renderedProjectSessions = sortSessionBrowserItems(
-              project.projectKey === selectedProjectKey ? projectSessions : cachedProjectSessions,
-              browserSortKey,
-              browserSortDirection,
-              browserSortMetric,
-              (session) => session.sessionId,
-              (session) =>
-                buildSessionBrowserBreakdown(
-                  sessionDetail?.summary.sessionId === session.sessionId ? sessionDetail : null,
-                  session.sessionId === selectedSessionId ? sessionSections : sessionSectionsById.get(session.sessionId) ?? [],
-                  session.sessionId === selectedSessionId ? sessionStatistics : sessionStatisticsById.get(session.sessionId) ?? null,
-                  browserSortKey === "hours" ? "hours" : "messages"
-                )
-            );
-            const showProjectSessions = !projectCollapsed;
-            return (
-              <div key={project.projectKey || "__unknown_project__"} className="analysis-tree-node" data-analysis-tree-kind="project">
-                <button
-                  type="button"
-                  className={project.projectKey === selectedProjectKey ? "analysis-tree-row is-active" : "analysis-tree-row"}
-                  data-analysis-tree-kind="project"
-                  data-analysis-project-key={project.projectKey}
-                  onClick={() => {
-                    onSelectProject(project.projectKey);
-                    setCollapsedProjects((current) => ({
-                      ...current,
-                      [project.projectKey]: !(current[project.projectKey] ?? project.projectKey !== selectedProjectKey)
-                    }));
-                  }}
-                >
-                  <span className={projectCollapsed ? "board-toggle-caret is-collapsed" : "board-toggle-caret"} />
-                  <span className="analysis-tree-copy">
-                    <strong>{project.projectPath ?? "Unknown project"}</strong>
-                    <span>{project.sessionCount} sessions · {formatCompactMetric(project.totalTokens)} tokens</span>
-                  </span>
-                </button>
-                {showProjectSessions ? (
-                  <div className="analysis-tree-children">
-                    {project.projectKey === selectedProjectKey && projectSessionsLoading ? <div className="analysis-tree-empty">Loading sessions...</div> : null}
-                    {project.projectKey === selectedProjectKey || renderedProjectSessions.length > 0 ? null : (
-                      <div className="analysis-tree-empty">Select this project to load sessions.</div>
-                    )}
-                    {renderedProjectSessions.map((session) => {
-                      const sessionCollapsed = collapsedSessions[session.sessionId] ?? session.sessionId !== selectedSessionId;
-                      const renderedSessionSections = sortSessionBrowserItems(
-                        session.sessionId === selectedSessionId ? sessionSections : sessionSectionsById.get(session.sessionId) ?? [],
-                        browserSortKey,
-                        browserSortDirection,
-                        browserSortMetric,
-                        (section) => section.title || `Section ${section.sectionIndex + 1}`,
-                        (section) =>
-                          buildSectionBrowserBreakdown(
-                            section,
-                            browserSortKey === "hours" ? "hours" : "messages",
-                            sessionDetail?.summary.sessionId === session.sessionId ? sessionDetail.entries : []
-                          )
-                      );
-                      const showSections = !sessionCollapsed;
-                      const rowStatistics =
-                        session.sessionId === selectedSessionId
-                          ? sessionStatistics
-                          : sessionStatisticsById.get(session.sessionId) ?? null;
-                      return (
-                        <div key={session.sessionId} className="analysis-tree-node" data-analysis-tree-kind="session">
-                          <button
-                            type="button"
-                            className={session.sessionId === selectedSessionId ? "analysis-tree-row is-active" : "analysis-tree-row"}
-                            data-analysis-tree-kind="session"
-                            data-analysis-session-id={session.sessionId}
-                            onClick={() => {
-                              onSelectSession(session.sessionId);
-                              setCollapsedSessions((current) => ({
-                                ...current,
-                                [session.sessionId]: !(current[session.sessionId] ?? session.sessionId !== selectedSessionId)
-                              }));
-                            }}
-                          >
-                            <span className={sessionCollapsed ? "board-toggle-caret is-collapsed" : "board-toggle-caret"} />
-                            <span className="analysis-tree-content">
-                              <span className="analysis-tree-copy">
-                                <strong>{session.sessionId}</strong>
-                                <span>{formatDuration(session.durationSeconds)} · {formatCompactMetric(session.totalTokens)} tokens</span>
-                              </span>
-                              <TreeStackedBar
-                                segments={buildSessionBrowserBreakdown(
-                                  sessionDetail?.summary.sessionId === session.sessionId ? sessionDetail : null,
-                                  renderedSessionSections,
-                                  rowStatistics,
-                                  browserMetricMode
-                                )}
-                                mode={browserMetricMode}
-                              />
-                            </span>
-                          </button>
-                          {showSections ? (
-                            <div className="analysis-tree-children">
-                              {session.sessionId === selectedSessionId && sessionSectionsLoading ? (
-                                <div className="analysis-tree-empty">Loading sections...</div>
-                              ) : null}
-                              {session.sessionId === selectedSessionId || renderedSessionSections.length > 0 ? null : (
-                                <div className="analysis-tree-empty">Select this session to load sections.</div>
-                              )}
-                              {session.sessionId === selectedSessionId && !sessionSectionsLoading && renderedSessionSections.length === 0 ? (
-                                <div className="analysis-tree-empty">No materialized sections.</div>
-                              ) : null}
-                              {renderedSessionSections.map((section) => (
-                                <button
-                                  key={section.sectionId}
-                                  type="button"
-                                  className={section.sectionId === selectedSectionId ? "analysis-tree-leaf is-active" : "analysis-tree-leaf"}
-                                  data-analysis-tree-kind="section"
-                                  data-analysis-section-id={section.sectionId}
-                                  onClick={() => onSelectSection(section.sectionId)}
-                                >
-                                  <span className="analysis-tree-content">
-                                    <span className="analysis-tree-copy">
-                                      <strong>{section.title}</strong>
-                                      <span>{section.totalMessages} msgs · {formatCompactMetric(section.totalTokens)} tokens</span>
-                                    </span>
-                                    <TreeStackedBar
-                                      segments={buildSectionBrowserBreakdown(
-                                        section,
-                                        browserMetricMode,
-                                        sessionDetail?.summary.sessionId === session.sessionId ? sessionDetail.entries : []
-                                      )}
-                                      mode={browserMetricMode}
-                                    />
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      </article>
+      <AnalysisSessionBrowser
+        projects={projects}
+        projectsLoading={projectsLoading}
+        projectError={projectError}
+        selectedProjectKey={selectedProjectKey}
+        projectSessions={projectSessions}
+        projectSessionsByKey={projectSessionsByKey}
+        projectSessionsLoading={projectSessionsLoading}
+        sessionSections={sessionSections}
+        sessionSectionsById={sessionSectionsById}
+        sessionSectionsLoading={sessionSectionsLoading}
+        sessionError={sessionError}
+        selectedSessionId={selectedSessionId}
+        selectedSectionId={selectedSectionId}
+        sessionDetail={sessionDetail}
+        sessionStatistics={sessionStatistics}
+        sessionStatisticsById={sessionStatisticsById}
+        onSelectProject={onSelectProject}
+        onSelectSession={onSelectSession}
+        onSelectSection={onSelectSection}
+      />
 
       <div className="analysis-main">
         {selectedSectionId ? (
@@ -2105,41 +1863,6 @@ function InfoCard({
   );
 }
 
-function TreeStackedBar({
-  segments,
-  mode
-}: {
-  segments: SessionBrowserBreakdownSegment[];
-  mode: SessionBrowserMetricMode;
-}): ReactElement | null {
-  const total = segments.reduce((sum, segment) => sum + segment.value, 0);
-  if (total <= 0) {
-    return null;
-  }
-
-  return (
-    <div className="analysis-tree-stack">
-      <div className="analysis-tree-stack-bar" aria-label={`${mode} mix`}>
-        {segments.map((segment) => (
-          <span
-            key={segment.label}
-            className={`analysis-tree-stack-segment is-${segment.tone}`}
-            style={{ width: `${(segment.value / total) * 100}%` }}
-            title={`${segment.label}: ${formatBrowserBreakdownValue(segment.value, mode)}`}
-          />
-        ))}
-      </div>
-      <div className="analysis-tree-stack-legend">
-        {segments.map((segment) => (
-          <span key={segment.label}>
-            {segment.label} {formatBrowserBreakdownValue(segment.value, mode)}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function BarMetricChart({
   data,
   valueFormatter
@@ -2297,48 +2020,8 @@ function formatTimestamp(value: string | null): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
-function formatMetric(value: number | null): string {
-  if (value === null) {
-    return "N/A";
-  }
-  return new Intl.NumberFormat().format(Math.round(value * 100) / 100);
-}
-
-function formatCompactMetric(value: number | null): string {
-  if (value === null) {
-    return "N/A";
-  }
-  const normalized = Math.abs(value);
-  if (normalized >= 1_000_000_000) {
-    return trimCompactValue(value / 1_000_000_000, "B");
-  }
-  if (normalized >= 1_000_000) {
-    return trimCompactValue(value / 1_000_000, "M");
-  }
-  if (normalized >= 1_000) {
-    return trimCompactValue(value / 1_000, "K");
-  }
-  return formatMetric(value);
-}
-
 function formatMetricAxis(value: number): string {
   return formatCompactMetric(value);
-}
-
-function formatDuration(value: number | null): string {
-  if (value === null || value <= 0) {
-    return "N/A";
-  }
-  const hours = Math.floor(value / 3600);
-  const minutes = Math.floor((value % 3600) / 60);
-  const seconds = Math.floor(value % 60);
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-  return `${seconds}s`;
 }
 
 function formatRatio(value: number | null): string {
@@ -2371,170 +2054,6 @@ function formatMetricValue(value: number, hint?: string | null): string {
     return formatBytes(value);
   }
   return formatMetric(value);
-}
-
-function trimCompactValue(value: number, suffix: "K" | "M" | "B"): string {
-  const rounded = Math.round(value * 10) / 10;
-  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}${suffix}`;
-}
-
-function getSessionBrowserSortMetricOptions(
-  sortKey: SessionBrowserSortKey
-): Array<{ value: SessionBrowserSortMetric; label: string }> {
-  if (sortKey === "messages") {
-    return [
-      { value: "user", label: "User" },
-      { value: "assistant", label: "Assistant" },
-      { value: "tool", label: "Tool" }
-    ];
-  }
-  if (sortKey === "hours") {
-    return [
-      { value: "user", label: "User" },
-      { value: "model", label: "Model" },
-      { value: "tool", label: "Tool" }
-    ];
-  }
-  return [];
-}
-
-function normalizeSessionBrowserSortMetric(
-  sortKey: SessionBrowserSortKey,
-  metric: SessionBrowserSortMetric
-): SessionBrowserSortMetric {
-  const options = getSessionBrowserSortMetricOptions(sortKey);
-  if (options.length === 0) {
-    return metric;
-  }
-  return options.some((option) => option.value === metric) ? metric : options[0]!.value;
-}
-
-function sortSessionBrowserItems<Item>(
-  items: Item[],
-  sortKey: SessionBrowserSortKey,
-  sortDirection: SessionBrowserSortDirection,
-  sortMetric: SessionBrowserSortMetric,
-  getAlphabeticLabel: (item: Item) => string,
-  getSegments: (item: Item) => SessionBrowserBreakdownSegment[]
-): Item[] {
-  const normalizedMetric = normalizeSessionBrowserSortMetric(sortKey, sortMetric);
-
-  return [...items]
-    .map((item, index) => ({
-      item,
-      index,
-      label: getAlphabeticLabel(item),
-      metricValue:
-        sortKey === "alphabetic" ? null : getSessionBrowserSortMetricValue(getSegments(item), normalizedMetric)
-    }))
-    .sort((left, right) => {
-      if (sortKey !== "alphabetic") {
-        const leftKnown = left.metricValue != null;
-        const rightKnown = right.metricValue != null;
-        if (leftKnown && rightKnown && left.metricValue !== right.metricValue) {
-          return sortDirection === "asc"
-            ? (left.metricValue ?? 0) - (right.metricValue ?? 0)
-            : (right.metricValue ?? 0) - (left.metricValue ?? 0);
-        }
-        if (leftKnown !== rightKnown) {
-          return leftKnown ? -1 : 1;
-        }
-      }
-
-      const labelCompare = left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" });
-      if (labelCompare !== 0) {
-        return sortDirection === "asc" ? labelCompare : -labelCompare;
-      }
-      return left.index - right.index;
-    })
-    .map((entry) => entry.item);
-}
-
-function getSessionBrowserSortMetricValue(
-  segments: SessionBrowserBreakdownSegment[],
-  metric: SessionBrowserSortMetric
-): number | null {
-  const segmentLabel =
-    metric === "tool" ? "Tool" : metric === "user" ? "User" : metric === "assistant" || metric === "model" ? "Assistant" : null;
-  if (!segmentLabel) {
-    return null;
-  }
-  const value = segments.find((segment) => segment.label === segmentLabel)?.value;
-  return typeof value === "number" && value > 0 ? value : null;
-}
-
-function buildSectionBrowserBreakdown(
-  section: AnalysisSessionSectionSummary,
-  mode: SessionBrowserMetricMode,
-  entries: AnalysisContentEntry[] = []
-): SessionBrowserBreakdownSegment[] {
-  if (mode === "messages") {
-    const segments: SessionBrowserBreakdownSegment[] = [
-      { label: "User", value: section.userMessageCount, tone: "user" },
-      { label: "Assistant", value: section.assistantMessageCount, tone: "assistant" },
-      { label: "Tool", value: section.toolCallCount, tone: "tool" }
-    ];
-    return segments.filter((segment) => segment.value > 0);
-  }
-
-  return buildSectionTimeBreakdownFromEntries(section, entries);
-}
-
-function buildSessionBrowserBreakdown(
-  detail: AnalysisSessionDetail | null,
-  sections: AnalysisSessionSectionSummary[],
-  statistics: AnalysisSessionStatistics | null,
-  mode: SessionBrowserMetricMode
-): SessionBrowserBreakdownSegment[] {
-  if (mode === "hours") {
-    const statisticsSegments = buildSessionTimeBreakdownFromStatistics(statistics);
-    if (statisticsSegments.length > 0) {
-      return statisticsSegments;
-    }
-  }
-
-  const sectionSource = detail?.sections.length ? detail.sections : sections;
-  if (sectionSource.length > 0) {
-    const totals = {
-      User: 0,
-      Assistant: 0,
-      Tool: 0
-    };
-    for (const section of sectionSource) {
-      for (const segment of buildSectionBrowserBreakdown(section, mode, detail?.entries ?? [])) {
-        totals[segment.label] += segment.value;
-      }
-    }
-    const segments: SessionBrowserBreakdownSegment[] = [
-      { label: "User", value: totals.User, tone: "user" },
-      { label: "Assistant", value: totals.Assistant, tone: "assistant" },
-      { label: "Tool", value: totals.Tool, tone: "tool" }
-    ];
-    return segments.filter((segment) => segment.value > 0);
-  }
-
-  if (!statistics) {
-    return [];
-  }
-  const normalizedBreakdown = normalizeAnalysisMessageBreakdown(statistics.messageBreakdown, statistics.summary.totalToolCalls);
-  const userMessages = normalizedBreakdown.find((entry) => entry.label === "User")?.value ?? 0;
-  const assistantMessages = normalizedBreakdown.find((entry) => entry.label === "Assistant")?.value ?? 0;
-  const toolMessages = normalizedBreakdown.find((entry) => entry.label === "Tool")?.value ?? 0;
-
-  if (mode === "messages") {
-    const segments: SessionBrowserBreakdownSegment[] = [
-      { label: "User", value: userMessages, tone: "user" },
-      { label: "Assistant", value: assistantMessages, tone: "assistant" },
-      { label: "Tool", value: toolMessages, tone: "tool" }
-    ];
-    return segments.filter((segment) => segment.value > 0);
-  }
-
-  return [];
-}
-
-function formatBrowserBreakdownValue(value: number, mode: SessionBrowserMetricMode): string {
-  return mode === "hours" ? formatDuration(value) : formatMetric(value);
 }
 
 function normalizeAnalysisMessageBreakdown(
@@ -2575,125 +2094,6 @@ function normalizeAnalysisMessageLabel(label: string): "User" | "Assistant" | "T
   }
   if (normalized === "system" || normalized.includes("tool")) {
     return "Tool";
-  }
-  return null;
-}
-
-function buildSessionTimeBreakdownFromStatistics(
-  statistics: AnalysisSessionStatistics | null
-): SessionBrowserBreakdownSegment[] {
-  if (!statistics) {
-    return [];
-  }
-
-  const totals = {
-    User: 0,
-    Assistant: 0,
-    Tool: 0
-  };
-
-  for (const entry of statistics.timeBreakdown) {
-    const normalizedLabel = normalizeAnalysisTimeLabel(entry.label);
-    if (normalizedLabel) {
-      totals[normalizedLabel] += entry.value;
-    }
-  }
-
-  const segments: SessionBrowserBreakdownSegment[] = [
-    { label: "User", value: totals.User, tone: "user" },
-    { label: "Assistant", value: totals.Assistant, tone: "assistant" },
-    { label: "Tool", value: totals.Tool, tone: "tool" }
-  ];
-  return segments.filter((segment) => segment.value > 0);
-}
-
-function buildSectionTimeBreakdownFromEntries(
-  section: AnalysisSessionSectionSummary,
-  entries: AnalysisContentEntry[]
-): SessionBrowserBreakdownSegment[] {
-  const startTime = Date.parse(section.startTimestamp ?? "");
-  const endTime = Date.parse(section.endTimestamp ?? "");
-  if (Number.isNaN(startTime) || Number.isNaN(endTime) || endTime <= startTime) {
-    return [];
-  }
-
-  const timedEntries = entries
-    .filter((entry) => entry.sectionId === section.sectionId)
-    .map((entry) => ({
-      ...entry,
-      unixMs: Date.parse(entry.timestamp ?? "")
-    }))
-    .filter((entry) => !Number.isNaN(entry.unixMs))
-    .sort((left, right) => (left.unixMs === right.unixMs ? left.sequence - right.sequence : left.unixMs - right.unixMs));
-
-  if (timedEntries.length === 0) {
-    return [];
-  }
-
-  const totals = {
-    User: 0,
-    Assistant: 0,
-    Tool: 0
-  };
-  let previousTime = startTime;
-
-  // Attribute each elapsed interval to the event that becomes active at its end.
-  // This keeps section hours tied to real trajectory timestamps instead of silently
-  // mirroring message counts when the profiler does not persist per-role section times.
-  for (const entry of timedEntries) {
-    const currentTime = Math.max(previousTime, Math.min(entry.unixMs, endTime));
-    const normalizedKind = normalizeAnalysisEntryTimingKind(entry);
-    if (normalizedKind) {
-      totals[normalizedKind] += Math.max(0, currentTime - previousTime) / 1000;
-    }
-    previousTime = currentTime;
-  }
-
-  const trailingKind = normalizeAnalysisEntryTimingKind(timedEntries[timedEntries.length - 1] ?? null);
-  if (trailingKind && previousTime < endTime) {
-    totals[trailingKind] += (endTime - previousTime) / 1000;
-  }
-
-  const segments: SessionBrowserBreakdownSegment[] = [
-    { label: "User", value: totals.User, tone: "user" },
-    { label: "Assistant", value: totals.Assistant, tone: "assistant" },
-    { label: "Tool", value: totals.Tool, tone: "tool" }
-  ];
-  return segments.filter((segment) => segment.value > 0);
-}
-
-function normalizeAnalysisTimeLabel(label: string): "User" | "Assistant" | "Tool" | null {
-  const normalized = label.trim().toLowerCase();
-  if (normalized === "user") {
-    return "User";
-  }
-  if (normalized === "assistant" || normalized === "model") {
-    return "Assistant";
-  }
-  if (normalized === "tool" || normalized === "system") {
-    return "Tool";
-  }
-  return null;
-}
-
-function normalizeAnalysisEntryTimingKind(entry: AnalysisContentEntry | null): "User" | "Assistant" | "Tool" | null {
-  if (!entry) {
-    return null;
-  }
-  if (entry.kind === "user") {
-    return "User";
-  }
-  if (entry.kind === "assistant" || entry.kind === "thinking") {
-    return "Assistant";
-  }
-  if (entry.kind === "tool-use" || entry.kind === "tool-result") {
-    return "Tool";
-  }
-  if (entry.role === "user") {
-    return "User";
-  }
-  if (entry.role === "assistant") {
-    return "Assistant";
   }
   return null;
 }

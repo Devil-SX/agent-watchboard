@@ -65,62 +65,64 @@ export function TitleBar({ activeTabLabel, workspaceName = null, appVersion = nu
 
   return (
     <header className={titleBarClassName}>
-      <div className="titlebar-drag-region">
-        {isMac ? <div className="titlebar-macos-spacer" aria-hidden="true" /> : null}
-        <div className="titlebar-copy">
-          <span className="titlebar-app-name">Agent Watchboard</span>
-          <span className="titlebar-context">{contextLabel}</span>
-          {appVersion ? <span className="titlebar-version">v{appVersion}</span> : null}
+      <div className="titlebar-surface">
+        <div className="titlebar-drag-region">
+          {isMac ? <div className="titlebar-macos-spacer" aria-hidden="true" /> : null}
+          <div className="titlebar-copy">
+            <span className="titlebar-app-name">Agent Watchboard</span>
+            <span className="titlebar-context">{contextLabel}</span>
+            {appVersion ? <span className="titlebar-version">v{appVersion}</span> : null}
+          </div>
         </div>
+        {!isMac ? (
+          <div className="titlebar-window-controls">
+            <button
+              type="button"
+              className="titlebar-control"
+              aria-label="Minimize window"
+              title="Minimize"
+              onClick={() => {
+                void window.watchboard.minimizeWindow().catch(() => undefined);
+              }}
+            >
+              <span className="titlebar-control-icon" aria-hidden="true">
+                <MinimizeWindowIcon />
+              </span>
+            </button>
+            <button
+              type="button"
+              className="titlebar-control"
+              aria-label={windowState.isMaximized ? "Restore window" : "Maximize window"}
+              title={windowState.isMaximized ? "Restore" : "Maximize"}
+              onClick={() => {
+                void window.watchboard
+                  .toggleMaximizeWindow()
+                  .then((nextState) => {
+                    setWindowState(nextState);
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              <span className="titlebar-control-icon" aria-hidden="true">
+                {windowState.isMaximized ? <RestoreWindowIcon /> : <MaximizeWindowIcon />}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="titlebar-control is-danger"
+              aria-label="Close window"
+              title="Close"
+              onClick={() => {
+                void window.watchboard.closeWindow().catch(() => undefined);
+              }}
+            >
+              <span className="titlebar-control-icon" aria-hidden="true">
+                <CloseWindowIcon />
+              </span>
+            </button>
+          </div>
+        ) : null}
       </div>
-      {!isMac ? (
-        <div className="titlebar-window-controls">
-          <button
-            type="button"
-            className="titlebar-control"
-            aria-label="Minimize window"
-            title="Minimize"
-            onClick={() => {
-              void window.watchboard.minimizeWindow().catch(() => undefined);
-            }}
-          >
-            <span className="titlebar-control-icon" aria-hidden="true">
-              <MinimizeWindowIcon />
-            </span>
-          </button>
-          <button
-            type="button"
-            className="titlebar-control"
-            aria-label={windowState.isMaximized ? "Restore window" : "Maximize window"}
-            title={windowState.isMaximized ? "Restore" : "Maximize"}
-            onClick={() => {
-              void window.watchboard
-                .toggleMaximizeWindow()
-                .then((nextState) => {
-                  setWindowState(nextState);
-                })
-                .catch(() => undefined);
-            }}
-          >
-            <span className="titlebar-control-icon" aria-hidden="true">
-              {windowState.isMaximized ? <RestoreWindowIcon /> : <MaximizeWindowIcon />}
-            </span>
-          </button>
-          <button
-            type="button"
-            className="titlebar-control is-danger"
-            aria-label="Close window"
-            title="Close"
-            onClick={() => {
-              void window.watchboard.closeWindow().catch(() => undefined);
-            }}
-          >
-            <span className="titlebar-control-icon" aria-hidden="true">
-              <CloseWindowIcon />
-            </span>
-          </button>
-        </div>
-      ) : null}
     </header>
   );
 }

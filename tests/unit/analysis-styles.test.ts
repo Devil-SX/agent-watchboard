@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { loadCssBundleText } from "./helpers/loadCssBundleText";
 
-const styles = readFileSync(new URL("../../src/renderer/styles.css", import.meta.url), "utf8");
+const styles = loadCssBundleText(new URL("../../src/renderer/styles.css", import.meta.url));
 
 test("single-view analysis host preserves a constrained height chain", () => {
   assert.match(
@@ -55,6 +55,10 @@ test("workspace header controls wrap instead of introducing horizontal scrolling
   assert.match(
     styles,
     /\.workspace-sidebar-controls\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*overflow:\s*visible;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-sidebar-toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s
   );
   assert.match(
     styles,

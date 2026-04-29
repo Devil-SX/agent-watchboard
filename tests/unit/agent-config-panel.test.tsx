@@ -9,7 +9,8 @@ import {
   createDefaultAppSettings,
   type AgentConfigDocument,
   type AgentConfigEntry,
-  type ConfigLayerStack
+  type ConfigLayerStack,
+  type MergedConfigResult
 } from "../../src/shared/schema";
 import { createDomTestHarness } from "./helpers/domTestHarness";
 
@@ -74,6 +75,7 @@ async function flushMicrotasks(): Promise<void> {
 async function renderAgentConfigPanel(options?: {
   activeConfigId?: AgentConfigEntry["id"];
   documents?: Partial<Record<AgentConfigEntry["id"], string>>;
+  mergedResult?: Partial<MergedConfigResult>;
 }) {
   const harness = createDomTestHarness();
   const entries = createEntries();
@@ -90,6 +92,20 @@ async function renderAgentConfigPanel(options?: {
     "claude-settings": "{\n  \"theme\": \"dark\"\n}\n",
     ...options?.documents
   } as Record<AgentConfigEntry["id"], string>;
+  const mergedResult: MergedConfigResult = {
+    configId: options?.activeConfigId ?? "claude-settings",
+    content: "{\n  \"merged\": true\n}\n",
+    annotations: [
+      {
+        path: "merged",
+        layerId: "base-layer",
+        layerName: "Base Layer"
+      }
+    ],
+    layerCount: 1,
+    enabledLayerCount: 1,
+    ...options?.mergedResult
+  };
   const emptyLayerStackByConfigId: Record<AgentConfigEntry["id"], ConfigLayerStack> = {
     "codex-config": {
       version: 2,
@@ -166,11 +182,8 @@ async function renderAgentConfigPanel(options?: {
       location
     }),
     computeMergedConfig: async (configId) => ({
-      configId,
-      content: "",
-      annotations: [],
-      layerCount: 0,
-      enabledLayerCount: 0
+      ...mergedResult,
+      configId
     }),
     applyMergedConfig: async () => undefined,
     importBaseLayer: async (configId, location) => ({
@@ -336,6 +349,35 @@ test("AgentConfigPanel accepts JSON layer drafts with comments and preserves the
     assert.equal(view.layerWrites[0]?.configId, "claude-settings");
     assert.equal(view.layerWrites[0]?.layerId, "base-layer");
     assert.equal(view.layerWrites[0]?.content, commentFriendlyDraft);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("AgentConfigPanel renders selectable readonly previews for current and merged config views", async () => {
+  const view = await renderAgentConfigPanel({
+    activeConfigId: "claude-settings",
+    documents: {
+      "claude-settings": "{\n  \"theme\": \"dark\"\n}\n"
+    },
+    mergedResult: {
+      content: "{\n  \"theme\": \"merged\"\n}\n"
+    }
+  });
+
+  try {
+    const currentPreview = view.container.querySelector(".agent-config-readonly");
+    assert.ok(currentPreview instanceof view.harness.window.HTMLElement);
+    assert.equal(currentPreview.getAttribute("aria-label"), "Current config file preview");
+    assert.match(currentPreview.textContent ?? "", /"theme": "dark"/);
+
+    await view.clickTab("Merged Preview");
+
+    const mergedPreview = view.container.querySelector(".agent-config-readonly");
+    assert.ok(mergedPreview instanceof view.harness.window.HTMLElement);
+    assert.equal(mergedPreview.getAttribute("aria-label"), "Merged config preview");
+    assert.match(mergedPreview.textContent ?? "", /"theme": "merged"/);
+    assert.equal(mergedPreview.getAttribute("tabindex"), "0");
   } finally {
     await view.cleanup();
   }

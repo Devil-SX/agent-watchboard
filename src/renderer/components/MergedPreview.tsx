@@ -1,6 +1,7 @@
 import { useMemo, type ReactElement } from "react";
 
-import { formatAgentConfigLabel, highlightAgentConfigContent } from "@renderer/components/agentConfigEditor";
+import { AgentConfigReadonlyView } from "@renderer/components/AgentConfigReadonlyView";
+import { formatAgentConfigLabel } from "@renderer/components/agentConfigEditor";
 import type { AgentConfigFormat, MergedConfigResult } from "@shared/schema";
 
 const LAYER_COLORS = [
@@ -56,11 +57,6 @@ export function MergedPreview({
   applyConfirm,
   onApplyConfirmToggle
 }: Props): ReactElement {
-  const highlightedContent = useMemo(
-    () => (mergedResult ? highlightAgentConfigContent(mergedResult.content, format) : ""),
-    [format, mergedResult]
-  );
-
   const colorMap = useMemo(() => (mergedResult ? buildLayerColorMap(mergedResult) : new Map()), [mergedResult]);
   const topAnnotations = useMemo(() => (mergedResult ? buildTopLevelAnnotations(mergedResult) : new Map()), [mergedResult]);
 
@@ -103,9 +99,10 @@ export function MergedPreview({
       </div>
 
       <div className="agent-config-editor-surface merged-preview-surface">
-        <pre
-          className="agent-config-highlight"
-          dangerouslySetInnerHTML={{ __html: highlightedContent || " " }}
+        <AgentConfigReadonlyView
+          ariaLabel="Merged config preview"
+          content={mergedResult.content}
+          format={format}
         />
       </div>
 

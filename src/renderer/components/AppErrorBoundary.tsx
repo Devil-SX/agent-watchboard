@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
+import { ContentTabsShell, WindowShell } from "@renderer/components/ChromeShell";
 import { TitleBar } from "@renderer/components/TitleBar";
 
 type Props = {
@@ -37,20 +38,14 @@ export class AppErrorBoundary extends Component<Props, State> {
       return this.props.children;
     }
     return (
-      <div className="window-shell">
-        <TitleBar activeTabLabel="Renderer Error" workspaceName={null} appVersion={null} />
-        <main className="app-shell">
-          <div className="content-tabs-shell">
-            <div className="content-tab-rail" />
-            <div className="content-tab-panel">
-              <div className="panel-empty app-error-boundary">
-                <p>Renderer crashed.</p>
-                <span>{this.state.message || "Check the renderer log for details."}</span>
-              </div>
-            </div>
+      <WindowShell titleBar={<TitleBar activeTabLabel="Renderer Error" workspaceName={null} appVersion={null} />}>
+        <ContentTabsShell rail={<div className="content-tab-rail-placeholder" />} panelClassName="is-error-shell">
+          <div className="panel-empty app-error-boundary">
+            <p>Renderer crashed.</p>
+            <span>{this.state.message || "Check the renderer log for details."}</span>
           </div>
-        </main>
-      </div>
+        </ContentTabsShell>
+      </WindowShell>
     );
   }
 }

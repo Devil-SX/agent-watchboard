@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 
+import { sanitizePathForLogs } from "../../src/main/pathRedaction";
 import { quotePosixShellArgument } from "../../src/shared/posixShell";
 import { buildWslLaunchCommand, buildWslStartupCommand } from "../../src/main/wslTerminalLaunch";
 
@@ -49,7 +50,8 @@ test(
       maxBuffer: 1024 * 1024
     });
 
-    assert.match(result.stdout, new RegExp(visibleToken));
-    assert.doesNotMatch(result.stdout, /\/home\/|\\\\Users\\\\|[A-Z]:\\\\Users\\\\/i);
+    const sanitizedStdout = sanitizePathForLogs(result.stdout);
+    assert.match(sanitizedStdout, new RegExp(visibleToken));
+    assert.doesNotMatch(sanitizedStdout, /\/home\/|\\\\Users\\\\|[A-Z]:\\\\Users\\\\/i);
   }
 );

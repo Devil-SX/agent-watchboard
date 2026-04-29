@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
+import { AgentConfigReadonlyView } from "@renderer/components/AgentConfigReadonlyView";
 import { AgentBadge } from "@renderer/components/AgentBadge";
 import {
   formatAgentConfigLabel,
-  highlightAgentConfigContent
 } from "@renderer/components/agentConfigEditor";
 import { ChatPromptEditor } from "@renderer/components/ChatPromptEditor";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
@@ -595,8 +595,6 @@ export function AgentConfigPanel({
 }
 
 function CurrentFilePreview({ content, format }: { content: string; format: AgentConfigFormat }): ReactElement {
-  const highlighted = useMemo(() => highlightAgentConfigContent(content, format), [content, format]);
-
   if (!content) {
     return (
       <div className="layer-editor-empty">
@@ -614,9 +612,10 @@ function CurrentFilePreview({ content, format }: { content: string; format: Agen
         </div>
       </div>
       <div className="agent-config-editor-surface merged-preview-surface">
-        <pre
-          className="agent-config-highlight"
-          dangerouslySetInnerHTML={{ __html: highlighted || " " }}
+        <AgentConfigReadonlyView
+          ariaLabel="Current config file preview"
+          content={content}
+          format={format}
         />
       </div>
     </div>

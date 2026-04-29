@@ -1,13 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { WorkspaceSidebar } from "../../src/renderer/components/WorkspaceSidebar";
 import { createEmptyWorkbenchDocument, createWorkspaceTemplate } from "../../src/shared/schema";
+import { loadCssBundleText } from "./helpers/loadCssBundleText";
 
-const styles = readFileSync(new URL("../../src/renderer/styles.css", import.meta.url), "utf8");
+const styles = loadCssBundleText(new URL("../../src/renderer/styles.css", import.meta.url));
 
 test("WorkspaceSidebar uses icon-led compact filter controls without visible field labels", () => {
   const codexWorkspace = createWorkspaceTemplate("Codex Workspace", { platform: "linux" });
@@ -51,6 +51,7 @@ test("WorkspaceSidebar uses icon-led compact filter controls without visible fie
       onSelectWorkspace={() => undefined}
       onViewWorkspace={() => undefined}
       onDeleteWorkspaceQuick={() => undefined}
+      onRenameInstance={() => undefined}
       onFocusPane={() => undefined}
       onClosePane={() => undefined}
       onCollapsePane={() => undefined}
@@ -146,6 +147,7 @@ test("WorkspaceSidebar template rows keep the title first and group environment 
       onSelectWorkspace={() => undefined}
       onViewWorkspace={() => undefined}
       onDeleteWorkspaceQuick={() => undefined}
+      onRenameInstance={() => undefined}
       onFocusPane={() => undefined}
       onClosePane={() => undefined}
       onCollapsePane={() => undefined}
@@ -173,6 +175,10 @@ test("WorkspaceSidebar keeps the icon centered and the metadata row compact in C
   assert.match(
     styles,
     /\.workspace-sidebar-controls\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-sidebar-toolbar\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;[^}]*width:\s*100%;/s
   );
   assert.match(
     styles,
@@ -204,11 +210,27 @@ test("WorkspaceSidebar keeps the icon centered and the metadata row compact in C
   );
   assert.match(
     styles,
+    /\.workspace-instance-item\.is-renaming\s*\{[^}]*cursor:\s*default;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-instance-rename-input\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*border-radius:\s*8px;/s
+  );
+  assert.match(
+    styles,
     /\.workspace-search-control\s*\{[^}]*grid-column:\s*1 \/ -1;/s
   );
   assert.match(
     styles,
     /\.workspace-search-input\s*\{[^}]*width:\s*100%;[^}]*height:\s*30px;/s
+  );
+  assert.match(
+    styles,
+    /\.compact-control-button\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);[^}]*width:\s*100%;[^}]*overflow:\s*hidden;/s
+  );
+  assert.match(
+    styles,
+    /\.compact-control-button-dropdown\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto;/s
   );
   assert.doesNotMatch(styles, /\.workspace-env-rail\s*\{/);
 });
@@ -224,6 +246,10 @@ test("WorkspaceSidebar lets the workspace status orbit extend past the card with
   );
   assert.match(
     styles,
-    /\.workspace-list-item\s*>\s*\.status-orbit\s+\.status-orbit-dot\.is-primary\s*\{[^}]*drop-shadow\(0 0 4px rgba\(126,\s*194,\s*255,\s*0\.62\)\);/s
+    /\.workspace-list-item\s*>\s*\.status-orbit\s+\.status-orbit-path\.is-track\s*\{[^}]*stroke:\s*rgba\(126,\s*194,\s*255,\s*0\.22\);/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-list-item\s*>\s*\.status-orbit\s+\.status-orbit-comet-glow\s*\{[^}]*stroke-width:\s*6\.4;[^}]*drop-shadow\(0 0 9px rgba\(126,\s*194,\s*255,\s*0\.34\)\)/s
   );
 });

@@ -1,28 +1,16 @@
-const WINDOWS_USER_PATH_PREFIX = /^([A-Za-z]:\\Users\\)[^\\]+/i;
-const WSL_UNC_HOME_PREFIX = /^(\\\\wsl(?:\.localhost|\$)\\[^\\]+)\\home\\[^\\]+/i;
-const POSIX_HOME_PREFIX = /^\/home\/[^/]+/i;
+const WINDOWS_USER_PATH_FRAGMENT = /[A-Za-z]:\\Users\\[^\\\r\n\t ]+/gi;
+const WSL_UNC_HOME_FRAGMENT = /(\\\\wsl(?:\.localhost|\$)\\[^\\]+)\\home\\[^\\\r\n\t ]+/gi;
+const POSIX_HOME_FRAGMENT = /(?<![A-Za-z0-9_])\/home\/[^/\r\n\t ]+/g;
 
 export function sanitizePathForLogs(filePath: string): string {
   if (!filePath) {
     return filePath;
   }
 
-  const normalizedWslUnc = filePath.replace(WSL_UNC_HOME_PREFIX, "$1\\~");
-  if (normalizedWslUnc !== filePath) {
-    return normalizedWslUnc;
-  }
-
-  const normalizedWindowsUser = filePath.replace(WINDOWS_USER_PATH_PREFIX, "~");
-  if (normalizedWindowsUser !== filePath) {
-    return normalizedWindowsUser;
-  }
-
-  const normalizedPosixHome = filePath.replace(POSIX_HOME_PREFIX, "~");
-  if (normalizedPosixHome !== filePath) {
-    return normalizedPosixHome;
-  }
-
-  return filePath;
+  return filePath
+    .replace(WSL_UNC_HOME_FRAGMENT, "$1\\~")
+    .replace(WINDOWS_USER_PATH_FRAGMENT, "~")
+    .replace(POSIX_HOME_FRAGMENT, "~");
 }
 
 export function sanitizePayloadPaths<T>(value: T): T {

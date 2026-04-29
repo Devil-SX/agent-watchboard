@@ -1,11 +1,14 @@
-import { Profiler, startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import { Profiler, startTransition, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { AgentConfigPanel } from "@renderer/components/AgentConfigPanel";
 import { AnalysisPanel } from "@renderer/components/AnalysisPanel";
 import { resolveAutoStartCandidates } from "@renderer/components/autoStart";
 import { BoardSidebarPanel } from "@renderer/components/BoardSidebarPanel";
+import { ContentTabsShell, WindowShell } from "@renderer/components/ChromeShell";
 import { ConfigDrawer } from "@renderer/components/ConfigDrawer";
 import { DoctorModal } from "@renderer/components/DoctorModal";
+import { FloatingErrorToast, type FloatingErrorNotice } from "@renderer/components/FloatingErrorToast";
+import { MAIN_TABS, getMainTabLabel, MainNavigationRail, type MainTabId } from "@renderer/components/MainNavigationRail";
 import { summarizeInstance, summarizeWorkbenchInstances } from "@renderer/components/sessionDebug";
 import { SettingsPanel } from "@renderer/components/SettingsPanel";
 import { SkillsPanel } from "@renderer/components/SkillsPanel";
@@ -19,15 +22,6 @@ import { applyOptimisticSettingsPreference, hasSettingsPreferenceChange } from "
 import { TitleBar } from "@renderer/components/TitleBar";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
-import {
-  AnalysisNavIcon,
-  ConfigNavIcon,
-  DoctorIcon,
-  IconButton,
-  SettingsNavIcon,
-  SkillsNavIcon,
-  TerminalNavIcon
-} from "@renderer/components/IconButton";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import {
   buildWorkspaceDirectoryRequest,
@@ -84,16 +78,6 @@ import {
   updateWorkbenchActivePane
 } from "@shared/workbenchModel";
 
-const MAIN_TABS = [
-  { id: "terminal", label: "Terminal", icon: TerminalNavIcon },
-  { id: "skills", label: "Skills", icon: SkillsNavIcon },
-  { id: "config", label: "Agent Config", icon: ConfigNavIcon },
-  { id: "analysis", label: "Analysis", icon: AnalysisNavIcon },
-  { id: "settings", label: "Settings", icon: SettingsNavIcon }
-] as const;
-
-type MainTabId = (typeof MAIN_TABS)[number]["id"];
-
 export function App(): ReactElement {
   const bootStartedAtRef = useRef(performance.now());
   const bootReadyReportedRef = useRef(false);
@@ -119,7 +103,8 @@ export function App(): ReactElement {
   const [sessions, setSessions] = useState<Record<string, SessionState>>({});
   const [terminalViewStates, setTerminalViewStates] = useState<Record<string, TerminalViewState>>({});
   const [diagnostics, setDiagnostics] = useState<DiagnosticsInfo | null>(null);
-  const [error, setError] = useState<string>("");
+  const errorNoticeIdRef = useRef(0);
+  const [error, setErrorState] = useState<FloatingErrorNotice | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSettingsDirty, setIsSettingsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -155,7 +140,7 @@ export function App(): ReactElement {
   const savedWorkspace = workspaceList?.workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedWorkspace =
     draftWorkspace && draftWorkspace.id === selectedWorkspaceId ? draftWorkspace : savedWorkspace ?? draftWorkspace;
-  const activeTabLabel = MAIN_TABS.find((tab) => tab.id === activeTab)?.label ?? "Terminal";
+  const activeTabLabel = getMainTabLabel(activeTab);
   const activePaneInstance = workbench?.instances.find((instance) => instance.paneId === workbench.activePaneId) ?? null;
   const cronCountdownByInstanceId = useMemo(
     () => {
@@ -173,6 +158,23 @@ export function App(): ReactElement {
 
   function emitRendererDebugLog(message: string, details?: unknown): void {
     void window.watchboard.debugLog(message, details).catch(() => undefined);
+  }
+
+  function clearError(): void {
+    setErrorState(null);
+  }
+
+  function setError(message: string): void {
+    const normalizedMessage = message.trim();
+    if (!normalizedMessage) {
+      clearError();
+      return;
+    }
+    errorNoticeIdRef.current += 1;
+    setErrorState({
+      id: errorNoticeIdRef.current,
+      message: normalizedMessage
+    });
   }
 
   function truncateForDebug(value: string, maxLength = 512): string {
@@ -819,6 +821,22 @@ export function App(): ReactElement {
     if (nextWorkbench !== currentWorkbench) {
       stageWorkbench(nextWorkbench);
     }
+  }
+
+  function handleRenameInstance(instanceId: string, title: string): void {
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) {
+      return;
+    }
+    patchWorkbenchInstance(instanceId, (currentInstance) =>
+      currentInstance.title === normalizedTitle
+        ? currentInstance
+        : {
+            ...currentInstance,
+            title: normalizedTitle,
+            updatedAt: new Date().toISOString()
+          }
+    );
   }
 
   async function waitForSessionToStop(sessionId: string, timeoutMs = 5_000): Promise<void> {
@@ -1764,6 +1782,7 @@ export function App(): ReactElement {
               onSelectWorkspace={(workspaceId) => void selectWorkspace(workspaceId, { openConfig: true })}
               onViewWorkspace={(workspaceId) => void handleViewWorkspace(workspaceId)}
               onDeleteWorkspaceQuick={(workspaceId) => void handleDeleteWorkspaceQuick(workspaceId)}
+              onRenameInstance={handleRenameInstance}
               onFocusPane={handleFocusPane}
               onClosePane={(instanceId) => void handleClosePane(instanceId)}
               onCollapsePane={handleCollapsePane}
@@ -1792,6 +1811,7 @@ export function App(): ReactElement {
               onSplitPane={handleSplitPane}
               onClosePane={(instanceId) => void handleClosePane(instanceId)}
               onCollapsePane={handleCollapsePane}
+              onRenameInstance={handleRenameInstance}
               onRegisterDraggedWorkspace={registerDraggedWorkspace}
               onRegisterDraggedInstance={registerDraggedInstance}
             />
@@ -1885,66 +1905,36 @@ export function App(): ReactElement {
     );
 
   return (
-    <div className="window-shell">
-      <TitleBar
-        activeTabLabel={activeTabLabel}
-        workspaceName={selectedWorkspace?.name ?? null}
-        appVersion={diagnostics?.appVersion ?? null}
-        platform={diagnostics?.platform}
-      />
-      <main className="app-shell">
-        <div
-          className="content-tabs-shell"
-          style={
-            {
-              "--active-index": activeTabIndex
-            } as CSSProperties
-          }
-        >
-          <nav className="content-tab-rail" aria-label="Main sections">
-            <div className="content-tab-peninsula" aria-hidden="true" />
-            {MAIN_TABS.map((tab) => {
-              const TabIcon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  className={tab.id === activeTab ? "content-tab-button is-active" : "content-tab-button"}
-                  aria-label={tab.label}
-                  title={tab.label}
-                  data-tooltip={tab.label}
-                  onClick={() => {
-                    if (tab.id === activeTab) {
-                      return;
-                    }
-                    tabSwitchStartedAtRef.current = performance.now();
-                    startTransition(() => {
-                      setActiveTab(tab.id);
-                    });
-                    void persistSettingsPreference({ activeMainTab: tab.id });
-                  }}
-                >
-                  <span className="content-tab-icon" aria-hidden="true">
-                    <TabIcon />
-                  </span>
-                  <span className="sr-only">{tab.label}</span>
-                </button>
-              );
-            })}
-            <div className="content-tab-spacer" />
-            <IconButton
-              className="content-tab-utility-button"
-              label="Doctor"
-              icon={<DoctorIcon />}
-              onClick={() => setIsDoctorOpen(true)}
-            />
-          </nav>
-
-          <div className="content-tab-panel">
-            {error ? <div className="toolbar-error">{error}</div> : null}
-            {activeContent}
-          </div>
-        </div>
+    <WindowShell
+      titleBar={
+        <TitleBar
+          activeTabLabel={activeTabLabel}
+          workspaceName={selectedWorkspace?.name ?? null}
+          appVersion={diagnostics?.appVersion ?? null}
+          platform={diagnostics?.platform}
+        />
+      }
+    >
+      <ContentTabsShell
+        activeIndex={activeTabIndex}
+        railAriaLabel="Main sections"
+        rail={
+          <MainNavigationRail
+            activeTab={activeTab}
+            onSelectTab={(tabId) => {
+              tabSwitchStartedAtRef.current = performance.now();
+              startTransition(() => {
+                setActiveTab(tabId);
+              });
+              void persistSettingsPreference({ activeMainTab: tabId });
+            }}
+            onOpenDoctor={() => setIsDoctorOpen(true)}
+          />
+        }
+      >
+        {activeContent}
+      </ContentTabsShell>
+      <FloatingErrorToast notice={error} onDismiss={clearError} />
         <ConfigDrawer
           isOpen={isConfigOpen}
           workspace={selectedWorkspace}
@@ -1969,8 +1959,7 @@ export function App(): ReactElement {
           onTerminalChange={handleTerminalChange}
         />
         <DoctorModal diagnostics={diagnostics} isOpen={isDoctorOpen} onClose={() => setIsDoctorOpen(false)} />
-      </main>
-    </div>
+    </WindowShell>
   );
 }
 

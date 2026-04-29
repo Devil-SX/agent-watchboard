@@ -1,14 +1,16 @@
-import type { ReactElement } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactElement } from "react";
 
 import { StatusOrbit } from "@renderer/components/StatusOrbit";
 
 type PaneTabLabelProps = {
+  instanceId: string;
   title: string;
   meta: string;
   countdown: string | null;
   statusClassName: string;
   isWorking: boolean;
   tooltip: string;
+  onRenameInstance: (instanceId: string, title: string) => void;
 };
 
 type PaneTabActionsProps = {
@@ -19,14 +21,114 @@ type PaneTabActionsProps = {
   onClosePane: (instanceId: string) => Promise<void> | void;
 };
 
-export function PaneTabLabel({ title, meta, countdown, statusClassName, isWorking, tooltip }: PaneTabLabelProps): ReactElement {
+export function PaneTabLabel({
+  instanceId,
+  title,
+  meta,
+  countdown,
+  statusClassName,
+  isWorking,
+  tooltip,
+  onRenameInstance
+}: PaneTabLabelProps): ReactElement {
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(title);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!isRenaming) {
+      setDraftTitle(title);
+    }
+  }, [isRenaming, title]);
+
+  useEffect(() => {
+    if (!isRenaming) {
+      return undefined;
+    }
+    const frameId = requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    });
+    return () => {
+      cancelAnimationFrame(frameId);
+    };
+  }, [isRenaming]);
+
+  function stopTabChromeEvent(event: MouseEvent<HTMLElement>): void {
+    event.stopPropagation();
+  }
+
+  function enterRenameMode(event: MouseEvent<HTMLElement>): void {
+    event.stopPropagation();
+    setDraftTitle(title);
+    setIsRenaming(true);
+  }
+
+  function cancelRename(): void {
+    setDraftTitle(title);
+    setIsRenaming(false);
+  }
+
+  function commitRename(): void {
+    const normalizedTitle = (inputRef.current?.value ?? draftTitle).trim();
+    setIsRenaming(false);
+    if (!normalizedTitle || normalizedTitle === title) {
+      setDraftTitle(title);
+      return;
+    }
+    setDraftTitle(normalizedTitle);
+    onRenameInstance(instanceId, normalizedTitle);
+  }
+
+  function handleRenameSubmit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    event.stopPropagation();
+    commitRename();
+  }
+
+  function handleRenameKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelRename();
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitRename();
+    }
+  }
+
   return (
-    <span className={`pane-tab-label ${statusClassName}`} title={tooltip}>
-      <StatusOrbit active={isWorking} />
-      <span className="pane-tab-copy">
-        <strong>{title}</strong>
-        <span className="pane-tab-meta">{meta}</span>
-      </span>
+    <span className={`pane-tab-label ${statusClassName}${isRenaming ? " is-renaming" : ""}`} title={tooltip}>
+      <StatusOrbit active={isWorking} variant="pane" />
+      {isRenaming ? (
+        <form
+          className="pane-tab-rename-form"
+          aria-label={`Rename ${title}`}
+          onSubmit={handleRenameSubmit}
+          onMouseDown={stopTabChromeEvent}
+          onClick={stopTabChromeEvent}
+          onDoubleClick={stopTabChromeEvent}
+        >
+          <input
+            ref={inputRef}
+            className="pane-tab-rename-input"
+            value={draftTitle}
+            aria-label="Runtime pane title"
+            onChange={(event) => {
+              setDraftTitle(event.target.value);
+            }}
+            onBlur={commitRename}
+            onKeyDown={handleRenameKeyDown}
+          />
+        </form>
+      ) : (
+        <span className="pane-tab-copy" onDoubleClick={enterRenameMode}>
+          <strong className="pane-tab-title">{title}</strong>
+          <span className="pane-tab-meta">{meta}</span>
+        </span>
+      )}
       {countdown ? <span className="pane-tab-countdown">{countdown}</span> : null}
     </span>
   );

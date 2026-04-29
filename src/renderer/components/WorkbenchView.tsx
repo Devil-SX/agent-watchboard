@@ -29,6 +29,7 @@ type Props = {
   onSplitPane: (direction: "right" | "down") => Promise<void>;
   onClosePane: (instanceId: string) => Promise<void> | void;
   onCollapsePane: (instanceId: string) => void;
+  onRenameInstance: (instanceId: string, title: string) => void;
   onRegisterDraggedWorkspace: (
     workspaceId: string,
     options?: {
@@ -64,6 +65,7 @@ export function WorkbenchView({
   onSplitPane,
   onClosePane,
   onCollapsePane,
+  onRenameInstance,
   onRegisterDraggedWorkspace,
   onRegisterDraggedInstance
 }: Props): ReactElement {
@@ -263,12 +265,14 @@ export function WorkbenchView({
     const status = resolveSessionVisualState(session?.status);
     renderValues.content = (
       <PaneTabLabel
+        instanceId={instance.instanceId}
         title={instance.title}
         meta={`${instance.terminalProfileSnapshot.target} · ${instance.terminalProfileSnapshot.cwd}`}
         countdown={cronCountdownByInstanceId.get(instance.instanceId) ?? null}
         statusClassName={visualStateClassName(status)}
         isWorking={status === "working"}
         tooltip={`${instance.title} · ${instance.terminalProfileSnapshot.target} · ${instance.terminalProfileSnapshot.cwd}`}
+        onRenameInstance={onRenameInstance}
       />
     );
     renderValues.buttons = [

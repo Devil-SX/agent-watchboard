@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { loadCssBundleText } from "./helpers/loadCssBundleText";
 
-const styles = readFileSync(new URL("../../src/renderer/styles.css", import.meta.url), "utf8");
+const styles = loadCssBundleText(new URL("../../src/renderer/styles.css", import.meta.url));
 
 test("agent config panel preserves a full-height chain for layer editors", () => {
   assert.match(
@@ -35,5 +35,20 @@ test("agent config styles expose a clearly active sort preset state", () => {
   assert.match(
     styles,
     /\.layer-list-item\.is-disabled\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.02\);/s
+  );
+});
+
+test("agent config readonly previews expose scrollable selectable surfaces", () => {
+  assert.match(
+    styles,
+    /\.agent-config-readonly\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable both-edges;[^}]*user-select:\s*text;[^}]*cursor:\s*text;/s
+  );
+  assert.match(
+    styles,
+    /\.merged-preview-surface\s*\{[^}]*overflow:\s*hidden;/s
+  );
+  assert.match(
+    styles,
+    /\.agent-config-readonly::-webkit-scrollbar,\s*\.skills-list::-webkit-scrollbar/s
   );
 });

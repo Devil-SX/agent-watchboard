@@ -5,11 +5,12 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { TitleBar } from "../../src/renderer/components/TitleBar";
+import { loadCssBundleText } from "./helpers/loadCssBundleText";
 
 const mainIndexSource = readFileSync(new URL("../../src/main/index.ts", import.meta.url), "utf8");
 const preloadSource = readFileSync(new URL("../../src/preload/index.ts", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../../src/renderer/App.tsx", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../../src/renderer/styles.css", import.meta.url), "utf8");
+const styles = loadCssBundleText(new URL("../../src/renderer/styles.css", import.meta.url));
 
 test("main process hides the native title bar and relays window state", () => {
   assert.match(mainIndexSource, /titleBarStyle:\s*process\.platform === "darwin" \? "hiddenInset" : "hidden"/);
@@ -29,9 +30,12 @@ test("preload exposes custom title bar window controls", () => {
 });
 
 test("App mounts the custom title bar above the main workbench shell", () => {
-  assert.match(appSource, /<div className="window-shell">/);
+  assert.match(appSource, /import \{ ContentTabsShell, WindowShell \} from "@renderer\/components\/ChromeShell";/);
+  assert.match(appSource, /import \{ FloatingErrorToast, type FloatingErrorNotice \} from "@renderer\/components\/FloatingErrorToast";/);
+  assert.match(appSource, /<WindowShell/);
   assert.match(appSource, /<TitleBar/);
-  assert.match(appSource, /<main className="app-shell">/);
+  assert.match(appSource, /<ContentTabsShell/);
+  assert.match(appSource, /<FloatingErrorToast notice=\{error\} onDismiss=\{clearError\} \/>/);
 });
 
 test("TitleBar renders custom window controls on non-mac platforms", () => {
@@ -65,7 +69,11 @@ test("title bar styles preserve a dedicated drag region and no-drag controls", (
   );
   assert.match(
     styles,
-    /\.titlebar-drag-region\s*\{[^}]*border-bottom:\s*0;[^}]*border-radius:\s*18px 18px 0 0;[^}]*-webkit-app-region:\s*drag;/s
+    /\.titlebar-surface\s*\{[^}]*border-bottom:\s*0;[^}]*border-radius:\s*var\(--window-shell-top-radius\) var\(--window-shell-top-radius\) 0 0;/s
+  );
+  assert.match(
+    styles,
+    /\.titlebar-drag-region\s*\{[^}]*min-height:\s*var\(--window-titlebar-height\);[^}]*-webkit-app-region:\s*drag;/s
   );
   assert.match(
     styles,
@@ -77,6 +85,14 @@ test("title bar styles preserve a dedicated drag region and no-drag controls", (
   );
   assert.match(
     styles,
-    /\.app-shell\s*\{[^}]*padding:\s*0 6px 6px;/s
+    /\.app-shell\s*\{[^}]*padding:\s*0 var\(--window-shell-pad\) var\(--window-shell-pad\);/s
+  );
+  assert.match(
+    styles,
+    /\.app-notification-stack\s*\{[^}]*position:\s*absolute;[^}]*top:\s*calc\(var\(--window-titlebar-height\) \+ var\(--window-shell-pad\) \+ 12px\);[^}]*pointer-events:\s*none;/s
+  );
+  assert.match(
+    styles,
+    /\.app-notification-toast\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;[^}]*pointer-events:\s*auto;/s
   );
 });
