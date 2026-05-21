@@ -2,7 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createTerminalInstance, createWorkspaceTemplate } from "../../src/shared/schema";
-import { addInstanceToWorkbench, attachExistingInstance, collapseInstance, reconcileWorkbenchLayoutChange, updateWorkbenchInstance } from "../../src/shared/workbenchModel";
+import {
+  addInstanceToWorkbench,
+  attachExistingInstance,
+  collapseAllInstances,
+  collapseInstance,
+  reconcileWorkbenchLayoutChange,
+  removeAllInstancesFromWorkbench,
+  updateWorkbenchInstance
+} from "../../src/shared/workbenchModel";
 
 test("attachExistingInstance restores a collapsed instance into the requested position", () => {
   const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
@@ -99,6 +107,33 @@ test("collapse and restore keep the same terminal session identity across pane l
   assert.equal(restoredInstance?.sessionId, first.sessionId);
   assert.equal(restoredInstance?.paneId, first.paneId);
   assert.equal(restoredInstance?.collapsed, false);
+});
+
+test("collapseAllInstances keeps runtimes but removes every visible layout tab", () => {
+  const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
+  const first = createTerminalInstance(workspace, []);
+  const second = createTerminalInstance(workspace, [first]);
+  const workbench = addInstanceToWorkbench(addInstanceToWorkbench(createEmptyWorkbench(), first), second);
+
+  const collapsed = collapseAllInstances(workbench);
+
+  assert.equal(collapsed.activePaneId, null);
+  assert.deepEqual(collapsed.instances.map((instance) => instance.instanceId), [first.instanceId, second.instanceId]);
+  assert.equal(collapsed.instances.every((instance) => instance.collapsed), true);
+  assert.equal(collapsed.layoutModel.layout.children[0]?.children.length, 0);
+});
+
+test("removeAllInstancesFromWorkbench clears runtime instances and visible layout", () => {
+  const workspace = createWorkspaceTemplate("Alpha", { platform: "linux" });
+  const first = createTerminalInstance(workspace, []);
+  const second = createTerminalInstance(workspace, [first]);
+  const workbench = addInstanceToWorkbench(addInstanceToWorkbench(createEmptyWorkbench(), first), second);
+
+  const cleared = removeAllInstancesFromWorkbench(workbench);
+
+  assert.equal(cleared.activePaneId, null);
+  assert.deepEqual(cleared.instances, []);
+  assert.equal(cleared.layoutModel.layout.children[0]?.children.length, 0);
 });
 
 test("updateWorkbenchInstance keeps layout tab names aligned with renamed runtime titles", () => {

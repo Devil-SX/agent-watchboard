@@ -315,6 +315,89 @@ test("deepMergeLayerContents merges TOML content", () => {
   assert.equal(model.temperature, 0.7);
 });
 
+test("deepMergeLayerContents applies TOML delete directives before merging layer content", () => {
+  const layers = [
+    {
+      id: "1",
+      name: "base",
+      content: '[model]\nname = "gpt-4"\ntemperature = 0.7\n\n[profiles.fast]\nmodel = "gpt-4o-mini"'
+    },
+    {
+      id: "2",
+      name: "override",
+      content: '["$watchboard"]\ndelete = ["model.temperature", "profiles", "missing.path"]\n\n[model]\nname = "gpt-5"'
+    }
+  ];
+
+  const { merged, annotations } = deepMergeLayerContents(layers, "toml");
+  assert.deepEqual(merged, { model: { name: "gpt-5" } });
+  assert.equal(annotations.find((annotation) => annotation.path === "model.temperature"), undefined);
+  assert.equal(annotations.find((annotation) => annotation.path === "profiles.fast.model"), undefined);
+  assert.equal(annotations.find((annotation) => annotation.path === "model.name")?.layerName, "override");
+});
+
+test("computeMergedConfig strips TOML delete directive metadata from output", () => {
+  const layers = [
+    { id: "1", name: "base", content: '[model]\nname = "gpt-4"\ntemperature = 0.7' },
+    { id: "2", name: "override", content: '["$watchboard"]\ndelete = ["model.temperature"]' }
+  ];
+
+  const result = computeMergedConfig("codex-config", layers, 2);
+
+  assert.equal(result.content.includes("$watchboard"), false);
+  assert.equal(result.content.includes("temperature"), false);
+  assert.equal(result.content.includes('name = "gpt-4"'), true);
+});
+
+test("deepMergeLayerContents lets a later TOML layer re-add a deleted table", () => {
+  const layers = [
+    { id: "1", name: "base", content: "[model]\nname = \"gpt-4\"\ntemperature = 0.7" },
+    { id: "2", name: "delete", content: '["$watchboard"]\ndelete = ["model"]' },
+    { id: "3", name: "readd", content: '[model]\nname = "gpt-5"' }
+  ];
+
+  const { merged } = deepMergeLayerContents(layers, "toml");
+
+  assert.deepEqual(merged, { model: { name: "gpt-5" } });
+});
+
+test("deepMergeLayerContents applies JSON delete directives without treating null as deletion", () => {
+  const layers = [
+    { id: "1", name: "base", content: '{ "model": { "name": "gpt-4", "temperature": 0.7 }, "tools": { "search": true } }' },
+    {
+      id: "2",
+      name: "override",
+      content: '{ "$watchboard": { "delete": ["model.temperature", "tools"] }, "model": { "name": null } }'
+    }
+  ];
+
+  const { merged, annotations } = deepMergeLayerContents(layers, "json");
+
+  assert.deepEqual(merged, { model: { name: null } });
+  assert.equal(annotations.find((annotation) => annotation.path === "model.temperature"), undefined);
+  assert.equal(annotations.find((annotation) => annotation.path === "tools.search"), undefined);
+  assert.equal(annotations.find((annotation) => annotation.path === "model.name")?.layerName, "override");
+});
+
+test("deepMergeLayerContents rejects malformed delete directive metadata", () => {
+  assert.throws(
+    () =>
+      deepMergeLayerContents(
+        [{ id: "1", name: "bad", content: '{ "$watchboard": { "delete": [42] } }' }],
+        "json"
+      ),
+    /must be a string dot path/
+  );
+  assert.throws(
+    () =>
+      deepMergeLayerContents(
+        [{ id: "1", name: "bad", content: '["$watchboard"]\ndelete = "model.name"' }],
+        "toml"
+      ),
+    /must be an array/
+  );
+});
+
 test("computeMergedConfig returns serialized content and metadata", () => {
   const layers = [
     { id: "1", name: "base", content: '{ "a": 1 }' },

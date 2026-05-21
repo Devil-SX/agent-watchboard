@@ -5,6 +5,7 @@
     <img alt="Platform: WSL" src="https://img.shields.io/badge/platform-WSL-4D7CFE?style=flat-square" />
     <img alt="Agent: Codex" src="https://img.shields.io/badge/agent-Codex-10A37F?style=flat-square" />
     <img alt="Agent: Claude Code" src="https://img.shields.io/badge/agent-Claude%20Code-D97757?style=flat-square" />
+    <img alt="Agent: OpenCode" src="https://img.shields.io/badge/agent-OpenCode-211E1E?style=flat-square" />
   </p>
   <p>Desktop watchboard for orchestrating multiple code agents across persistent terminal workspaces, shared task boards, and reconnectable runtime panes.</p>
 </div>
@@ -28,7 +29,7 @@ Agent Watchboard sits at the **Agent Client** layer — it is the desktop surfac
 
 ### Why build a dedicated client?
 
-**Multi-agent, multi-ecosystem.** Each vendor ships its own desktop client, but those clients are locked to a single ecosystem. The agent landscape is evolving fast; different harnesses excel at different tasks and change rapidly. A vendor-neutral client lets the user run Codex, Claude Code, and custom profiles side by side without juggling separate UIs.
+**Multi-agent, multi-ecosystem.** Each vendor ships its own desktop client, but those clients are locked to a single ecosystem. The agent landscape is evolving fast; different harnesses excel at different tasks and change rapidly. A vendor-neutral client lets the user run Codex, Claude Code, OpenCode, and custom profiles side by side without juggling separate UIs.
 
 **Personal experimentation.** Having an independent codebase makes it easy to prototype custom workflows, test new interaction patterns, and iterate on operational tooling without waiting for upstream vendors to ship features.
 
@@ -42,6 +43,7 @@ Agent Watchboard sits at the **Agent Client** layer — it is the desktop surfac
 
 - Codex
 - Claude Code
+- OpenCode
 - plain shell / bash profiles
 - custom terminal profiles built from saved workspace templates
 
@@ -65,7 +67,7 @@ Powered by [agent-trajectory-profiler](https://github.com/Devil-SX/agent-traject
 
 ### Cross-Session Task Board <sup>experimental</sup>
 
-A shared task board backed by the [`todo_preview`](docs/todo-preview.md) CLI and local JSON persistence. Multiple sessions can read and write the same board. Frontend renders list and calendar views; agents interact through the skill or CLI.
+A shared task board backed by local JSON persistence. Multiple sessions can read the same board while the frontend renders list and calendar views.
 
 ## Quick Start
 
@@ -88,12 +90,9 @@ On WSL/Linux hosts, `pnpm dist:win` skips native dependency rebuild and Windows 
 ## CLI
 
 ```bash
-pnpm todo_preview list
-pnpm todo_preview add "new task" --topic Inbox
 pnpm watchboard --help
+pnpm session_log --help
 ```
-
-See [docs/todo-preview.md](docs/todo-preview.md) for full `todo_preview` usage.
 
 ## Headless E2E Contract
 
@@ -103,13 +102,13 @@ Stable invocation patterns:
 
 ```bash
 # Inside this repository
-pnpm todo_preview ...
+pnpm watchboard ...
 
 # Outside this repository
-pnpm --dir /home/sdu/pure_auto/agent_watchboard todo_preview ...
+pnpm --dir /home/sdu/pure_auto/agent_watchboard watchboard ...
 
 # Restricted/sandboxed runtimes where tsx may fail
-node /home/sdu/pure_auto/agent_watchboard/dist-node/cli/todo-preview.cjs ...
+node /home/sdu/pure_auto/agent_watchboard/dist-node/cli/watchboard.cjs ...
 ```
 
 `pnpm test:e2e` is blocked locally; CI runs the suite via `pnpm test:e2e:ci` (requires `CI=1`).

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 
+import { extractConfigLayerDirectives } from "@shared/configLayerDirectives";
 import { stripJsonCommentsPreservePositions } from "@shared/jsonComments";
 import { readJsonStore, writeJsonStore } from "@shared/jsonStore";
 import type {
@@ -478,6 +479,29 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function deletePath(target: Record<string, unknown>, path: string): void {
+  const parts = path.split(".");
+  let cursor: Record<string, unknown> = target;
+  for (let index = 0; index < parts.length - 1; index++) {
+    const next = cursor[parts[index]!];
+    if (!isPlainObject(next)) {
+      return;
+    }
+    cursor = next;
+  }
+  delete cursor[parts[parts.length - 1]!];
+}
+
+function removeDeletedAnnotations(annotations: MergedConfigFieldAnnotation[], path: string): void {
+  const nestedPrefix = `${path}.`;
+  for (let index = annotations.length - 1; index >= 0; index--) {
+    const annotationPath = annotations[index]?.path;
+    if (annotationPath === path || annotationPath?.startsWith(nestedPrefix)) {
+      annotations.splice(index, 1);
+    }
+  }
+}
+
 function deepMergeObjects(
   target: Record<string, unknown>,
   source: Record<string, unknown>,
@@ -518,7 +542,12 @@ export function deepMergeLayerContents(
 
   for (const layer of layers) {
     const parsed = parseContent(layer.content, format);
-    deepMergeObjects(merged, parsed, annotations, layer.id, layer.name, "");
+    const { content, directives } = extractConfigLayerDirectives(parsed);
+    for (const path of directives.deletePaths) {
+      deletePath(merged, path);
+      removeDeletedAnnotations(annotations, path);
+    }
+    deepMergeObjects(merged, content, annotations, layer.id, layer.name, "");
   }
 
   return { merged, annotations };

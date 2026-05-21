@@ -22,8 +22,15 @@ type Props = {
   sshSecretDrafts: Record<string, SshSecretInput>;
   sshTestStates: Record<string, { isRunning: boolean; result: SshTestResult | null }>;
   onChange: (
-    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro" | "agentWslDistro",
-    value: string | number
+    field:
+      | "terminalFontFamily"
+      | "terminalFontSize"
+      | "quickSearchOverridesTerminalShortcuts"
+      | "hostBoardPath"
+      | "wslBoardPath"
+      | "boardWslDistro"
+      | "agentWslDistro",
+    value: string | number | boolean
   ) => void;
   onAddSshEnvironment: () => void;
   onUpdateSshEnvironment: (environmentId: string, update: Partial<SshEnvironment>) => void;
@@ -215,6 +222,23 @@ export function SettingsPanel({
                   />
                 </label>
               </div>
+            </section>
+
+            <section className="settings-section">
+              <p className="panel-eyebrow">Terminal Shortcuts</p>
+              <div className="form-grid">
+                <label className="field checkbox-field">
+                  <span>Override Terminal Ctrl/Cmd+P</span>
+                  <input
+                    type="checkbox"
+                    checked={settings.quickSearchOverridesTerminalShortcuts}
+                    onChange={(event) => onChange("quickSearchOverridesTerminalShortcuts", event.target.checked)}
+                  />
+                </label>
+              </div>
+              <p className="settings-debug-copy">
+                When enabled, Watchboard opens workspace quick search even while the terminal owns keyboard focus.
+              </p>
             </section>
 
             <section className="settings-preview">

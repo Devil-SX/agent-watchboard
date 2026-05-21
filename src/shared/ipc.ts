@@ -2,6 +2,7 @@ import type {
   AgentConfigDocument,
   AgentConfigEntry,
   AgentConfigFileId,
+  AgentConfigFamily,
   AgentPathLocation,
   AppSettings,
   BoardDocument,
@@ -11,6 +12,7 @@ import type {
   DoctorDiagnosticsDocument,
   DoctorLocation,
   DiagnosticsInfo,
+  MergedAgentConfigResult,
   MergedConfigResult,
   SessionAttachResult,
   SessionState,
@@ -93,7 +95,7 @@ export type WatchboardApi = {
   startSession: (instance: TerminalInstance, requestId?: string) => Promise<SessionState>;
   attachSession: (sessionId: string, requestId?: string) => Promise<SessionAttachResult>;
   stopSession: (sessionId: string, requestId?: string) => Promise<void>;
-  writeToSession: (sessionId: string, data: string, sentAtUnixMs?: number) => void;
+  writeToSession: (sessionId: string, data: string, sentAtUnixMs?: number, trace?: TerminalInputTrace) => void;
   syncTerminalSelection: (text: string) => Promise<void>;
   resizeSession: (sessionId: string, cols: number, rows: number, requestId?: string) => void;
   debugLog: (message: string, details?: unknown) => Promise<void>;
@@ -126,7 +128,9 @@ export type WatchboardApi = {
   writeLayerContent: (configId: AgentConfigFileId, layerId: string, location: AgentPathLocation, content: string) => Promise<void>;
   deleteLayer: (configId: AgentConfigFileId, layerId: string, location: AgentPathLocation) => Promise<ConfigLayerStack>;
   computeMergedConfig: (configId: AgentConfigFileId, location: AgentPathLocation) => Promise<MergedConfigResult>;
+  computeMergedAgentConfig: (family: AgentConfigFamily, location: AgentPathLocation) => Promise<MergedAgentConfigResult>;
   applyMergedConfig: (configId: AgentConfigFileId, location: AgentPathLocation) => Promise<void>;
+  applyMergedAgentConfig: (family: AgentConfigFamily, location: AgentPathLocation) => Promise<void>;
   importBaseLayer: (
     configId: AgentConfigFileId,
     location: AgentPathLocation
@@ -157,6 +161,12 @@ export type WatchboardApi = {
   ) => Promise<AnalysisSectionDetail | null>;
   getAnalysisSessionStatistics: (location: AgentPathLocation, sessionId: string) => Promise<AnalysisSessionStatistics | null>;
   getAnalysisCrossSessionMetrics: (location: AgentPathLocation, limit?: number) => Promise<AnalysisCrossSessionMetrics>;
+};
+
+export type TerminalInputTrace = {
+  traceId: string;
+  inputSeq: number;
+  rendererSentAtUnixMs: number;
 };
 
 export type CronRelaunchResolution =

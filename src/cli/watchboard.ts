@@ -528,6 +528,7 @@ benchmark
         "terminal:session-data-latency",
         "terminal:first-output",
         "terminal:first-live-write",
+        "terminal:xterm-write-batch",
         "terminal:output-rate"
       ].includes(`${entry.category}:${entry.name}`)
     );
@@ -566,7 +567,14 @@ benchmark
   .action(async () => {
     const summary = await loadPerfSummary();
     const filtered = summary.filter((entry) =>
-      ["input:renderer-to-main", "input:renderer-to-supervisor"].includes(`${entry.category}:${entry.name}`)
+      [
+        "input:renderer-to-main",
+        "input:main-forward",
+        "input:main-to-supervisor",
+        "input:renderer-to-supervisor",
+        "input:supervisor-pty-write",
+        "input:keypress-to-echo-visible"
+      ].includes(`${entry.category}:${entry.name}`)
     );
     print(filtered, renderPerfSummary(filtered));
   });

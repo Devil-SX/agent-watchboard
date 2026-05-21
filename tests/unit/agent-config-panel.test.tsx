@@ -10,6 +10,7 @@ import {
   type AgentConfigDocument,
   type AgentConfigEntry,
   type ConfigLayerStack,
+  type MergedAgentConfigResult,
   type MergedConfigResult
 } from "../../src/shared/schema";
 import { createDomTestHarness } from "./helpers/domTestHarness";
@@ -53,6 +54,28 @@ function createEntries(): AgentConfigEntry[] {
       resolvedPath: "/tmp/.claude/settings.json",
       isSymlink: false,
       exists: true
+    },
+    {
+      id: "opencode-config",
+      label: "OpenCode Config",
+      family: "opencode",
+      format: "json",
+      location: "host",
+      entryPath: "/tmp/.config/opencode/opencode.json",
+      resolvedPath: "/tmp/.config/opencode/opencode.json",
+      isSymlink: false,
+      exists: true
+    },
+    {
+      id: "opencode-tui",
+      label: "OpenCode TUI",
+      family: "opencode",
+      format: "json",
+      location: "host",
+      entryPath: "/tmp/.config/opencode/tui.json",
+      resolvedPath: "/tmp/.config/opencode/tui.json",
+      isSymlink: false,
+      exists: true
     }
   ];
 }
@@ -81,6 +104,7 @@ async function renderAgentConfigPanel(options?: {
   const entries = createEntries();
   const configWrites: Array<{ configId: string; content: string }> = [];
   const layerWrites: Array<{ configId: string; layerId: string; content: string }> = [];
+  const agentApplyCalls: Array<{ family: string; location: string }> = [];
   const reads: string[] = [];
   const listCalls: string[] = [];
   const container = harness.document.createElement("div");
@@ -90,6 +114,8 @@ async function renderAgentConfigPanel(options?: {
     "codex-config": "[model]\nname = \"gpt-5\"\n",
     "codex-auth": "{\n  \"apiKey\": \"token\"\n}\n",
     "claude-settings": "{\n  \"theme\": \"dark\"\n}\n",
+    "opencode-config": "{\n  \"model\": \"anthropic/claude-sonnet-4-5\"\n}\n",
+    "opencode-tui": "{\n  \"theme\": \"opencode\"\n}\n",
     ...options?.documents
   } as Record<AgentConfigEntry["id"], string>;
   const mergedResult: MergedConfigResult = {
@@ -151,6 +177,36 @@ async function renderAgentConfigPanel(options?: {
       ],
       activeSortPresetId: "default-sort",
       updatedAt: "2026-04-19T00:00:00.000Z"
+    },
+    "opencode-config": {
+      version: 2,
+      configId: "opencode-config",
+      location: "host",
+      layers: [{ id: "base-layer", name: "Base Layer" }],
+      sortPresets: [
+        {
+          id: "default-sort",
+          name: "Default",
+          items: [{ layerId: "base-layer", enabled: true }]
+        }
+      ],
+      activeSortPresetId: "default-sort",
+      updatedAt: "2026-04-19T00:00:00.000Z"
+    },
+    "opencode-tui": {
+      version: 2,
+      configId: "opencode-tui",
+      location: "host",
+      layers: [{ id: "base-layer", name: "Base Layer" }],
+      sortPresets: [
+        {
+          id: "default-sort",
+          name: "Default",
+          items: [{ layerId: "base-layer", enabled: true }]
+        }
+      ],
+      activeSortPresetId: "default-sort",
+      updatedAt: "2026-04-19T00:00:00.000Z"
     }
   };
 
@@ -185,7 +241,32 @@ async function renderAgentConfigPanel(options?: {
       ...mergedResult,
       configId
     }),
+    computeMergedAgentConfig: async (family, location): Promise<MergedAgentConfigResult> => {
+      const files = entries
+        .filter((entry) => entry.family === family)
+        .map((entry) => ({
+          ...mergedResult,
+          configId: entry.id,
+          label: entry.label,
+          family: entry.family,
+          format: entry.format,
+          entryPath: entry.entryPath,
+          resolvedPath: entry.resolvedPath,
+          exists: entry.exists,
+          content: entry.id === (options?.activeConfigId ?? "claude-settings") ? mergedResult.content : documents[entry.id]
+        }));
+      return {
+        family,
+        location,
+        files,
+        layerCount: files.reduce((total, file) => total + file.layerCount, 0),
+        enabledLayerCount: files.reduce((total, file) => total + file.enabledLayerCount, 0)
+      };
+    },
     applyMergedConfig: async () => undefined,
+    applyMergedAgentConfig: async (family, location) => {
+      agentApplyCalls.push({ family, location });
+    },
     importBaseLayer: async (configId, location) => ({
       stack: {
         ...emptyLayerStackByConfigId[configId as AgentConfigEntry["id"]],
@@ -248,6 +329,7 @@ async function renderAgentConfigPanel(options?: {
     entries,
     configWrites,
     layerWrites,
+    agentApplyCalls,
     reads,
     listCalls,
     getTextarea,
@@ -282,6 +364,23 @@ async function renderAgentConfigPanel(options?: {
       });
       await flushMicrotasks();
     },
+    pressTextareaShortcut: async (key: string, modifiers?: { ctrlKey?: boolean; metaKey?: boolean }) => {
+      const textarea = getTextarea();
+      await act(async () => {
+        const reactPropsKey = Object.keys(textarea).find((candidate) => candidate.startsWith("__reactProps$"));
+        assert.ok(reactPropsKey);
+        const reactProps = (textarea as Record<string, unknown>)[reactPropsKey] as {
+          onKeyDown?: (event: { key: string; ctrlKey: boolean; metaKey: boolean; preventDefault: () => void }) => void;
+        };
+        reactProps.onKeyDown?.({
+          key,
+          ctrlKey: modifiers?.ctrlKey ?? false,
+          metaKey: modifiers?.metaKey ?? false,
+          preventDefault: () => undefined
+        });
+      });
+      await flushMicrotasks();
+    },
     cleanup: async () => {
       await act(async () => {
         root.unmount();
@@ -296,9 +395,11 @@ test("AgentConfigPanel renders agent icons on config tabs and shows the active s
     activeConfigId: "codex-config"
   });
   try {
-    const tabButtons = [...view.container.querySelectorAll(".agent-config-tabs .agent-config-tab")];
-    assert.equal(tabButtons.length, 3);
-    assert.ok(tabButtons.every((button) => button.querySelector("svg")));
+    const agentButtons = [...view.container.querySelectorAll(".agent-config-agent-tabs .agent-config-tab")];
+    const fileButtons = [...view.container.querySelectorAll(".agent-config-file-tabs .agent-config-tab")];
+    assert.equal(agentButtons.length, 3);
+    assert.equal(fileButtons.length, 2);
+    assert.ok([...agentButtons, ...fileButtons].every((button) => button.querySelector("svg")));
     assert.match(view.container.textContent ?? "", /Default/);
     assert.match(view.container.textContent ?? "", /Active/);
     assert.match(view.container.textContent ?? "", /Merge order from active sort/);
@@ -325,6 +426,43 @@ test("AgentConfigPanel validates JSON drafts and requires explicit second save f
     assert.equal(view.layerWrites[0]?.configId, "claude-settings");
     assert.equal(view.layerWrites[0]?.layerId, "base-layer");
     assert.equal(view.layerWrites[0]?.content, "{\n  \"theme\": \n}\n");
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("AgentConfigPanel saves the current layer from Ctrl+S", async () => {
+  const view = await renderAgentConfigPanel({
+    activeConfigId: "codex-config"
+  });
+
+  try {
+    await view.clickTab("Edit Layer");
+    await view.input("[model]\nname = \"gpt-5.1\"\n");
+    await view.pressTextareaShortcut("s", { ctrlKey: true });
+    assert.equal(view.layerWrites.length, 1);
+    assert.deepEqual(view.layerWrites[0], {
+      configId: "codex-config",
+      layerId: "base-layer",
+      content: "[model]\nname = \"gpt-5.1\"\n"
+    });
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("AgentConfigPanel shows layer delete syntax in the layer editor", async () => {
+  const view = await renderAgentConfigPanel({
+    activeConfigId: "codex-config"
+  });
+
+  try {
+    await view.clickTab("Edit Layer");
+    const hint = view.container.querySelector(".agent-config-delete-hint");
+    assert.ok(hint instanceof view.harness.window.HTMLElement);
+    assert.match(hint.textContent ?? "", /Delete keys/);
+    assert.match(hint.textContent ?? "", /\$watchboard/);
+    assert.match(hint.textContent ?? "", /path\.to\.key/);
   } finally {
     await view.cleanup();
   }
@@ -375,9 +513,28 @@ test("AgentConfigPanel renders selectable readonly previews for current and merg
 
     const mergedPreview = view.container.querySelector(".agent-config-readonly");
     assert.ok(mergedPreview instanceof view.harness.window.HTMLElement);
-    assert.equal(mergedPreview.getAttribute("aria-label"), "Merged config preview");
+    assert.equal(mergedPreview.getAttribute("aria-label"), "Claude Settings merged config preview");
     assert.match(mergedPreview.textContent ?? "", /"theme": "merged"/);
     assert.equal(mergedPreview.getAttribute("tabindex"), "0");
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("AgentConfigPanel applies merged preview to all files in the selected agent", async () => {
+  const view = await renderAgentConfigPanel({
+    activeConfigId: "codex-config",
+    mergedResult: {
+      content: "[model]\nname = \"merged\"\n"
+    }
+  });
+
+  try {
+    await view.clickTab("Merged Preview");
+    await view.clickTab("Apply to Agent Files");
+    await view.clickTab("Confirm Apply");
+
+    assert.deepEqual(view.agentApplyCalls, [{ family: "codex", location: "host" }]);
   } finally {
     await view.cleanup();
   }

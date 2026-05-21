@@ -83,6 +83,7 @@ async function renderTerminal(options?: {
   const perfEvents: Array<Record<string, unknown>> = [];
   const resizeCalls: Array<{ cols: number; rows: number }> = [];
   const selectionSyncs: string[] = [];
+  const writeCalls: Array<{ sessionId: string; data: string; sentAtUnixMs?: number; trace?: { traceId: string; inputSeq: number } }> = [];
   let attachCalls = 0;
   let currentProps = {
     instance: createInstance() as never,
@@ -97,7 +98,9 @@ async function renderTerminal(options?: {
     resizeSession: (_sessionId: string, cols: number, rows: number) => {
       resizeCalls.push({ cols, rows });
     },
-    writeToSession: () => undefined,
+    writeToSession: (sessionId: string, data: string, sentAtUnixMs?: number, trace?: { traceId: string; inputSeq: number }) => {
+      writeCalls.push({ sessionId, data, sentAtUnixMs, trace });
+    },
     syncTerminalSelection: async (text: string) => {
       selectionSyncs.push(text);
     },
@@ -184,6 +187,7 @@ async function renderTerminal(options?: {
     getPerfEvents: () => perfEvents,
     getResizeCalls: () => resizeCalls,
     getSelectionSyncs: () => selectionSyncs,
+    getWriteCalls: () => writeCalls,
     getAttachCalls: () => attachCalls,
     rerender: async (
       next: Partial<{
@@ -228,6 +232,20 @@ async function renderTerminal(options?: {
           })
         );
         harness.flushRaf();
+      });
+    },
+    emitSessionDataWithoutPaint: async (data: string) => {
+      await act(async () => {
+        globalThis.window.dispatchEvent(
+          new globalThis.CustomEvent("watchboard:terminal-data", {
+            detail: {
+              sessionId: "session-1",
+              data,
+              emittedAt: Date.now()
+            }
+          })
+        );
+        await Promise.resolve();
       });
     },
     stabilizeGeometry,
@@ -306,6 +324,125 @@ test("TerminalTabView hydrates attach backlog that arrives after mount", { concu
       view.getPerfEvents().some((event) => event.name === "session-backlog-restored"),
       true
     );
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView scroll-to-bottom button jumps the instance output to the latest line", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    sessionBacklog: "ready\r\n"
+  });
+  try {
+    await view.flushBoot();
+    const button = view.container.querySelector<HTMLButtonElement>('[aria-label="Scroll terminal to bottom"]');
+    assert.ok(button);
+    const terminal = view.getTerminal();
+    const previousFocusCount = terminal.focusCount;
+
+    await act(async () => {
+      button.click();
+    });
+
+    assert.equal(terminal.scrollToBottomCount, 1);
+    assert.equal(terminal.focusCount, previousFocusCount + 1);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView scroll-to-bottom command jumps the active instance output to the latest line", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    sessionBacklog: "ready\r\n"
+  });
+  try {
+    await view.flushBoot();
+    const terminal = view.getTerminal();
+    const previousFocusCount = terminal.focusCount;
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent("watchboard:scroll-terminal-to-bottom", {
+          detail: {
+            paneId: "pane-1",
+            sessionId: "session-1"
+          }
+        })
+      );
+    });
+
+    assert.equal(terminal.scrollToBottomCount, 1);
+    assert.equal(terminal.focusCount, previousFocusCount + 1);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView records keypress-to-echo-visible latency after echoed input is written", { concurrency: false }, async () => {
+  const view = await renderTerminal();
+  try {
+    await view.flushBoot();
+
+    await act(async () => {
+      view.getTerminal().emitData("a");
+    });
+    const writeCall = view.getWriteCalls().at(-1);
+    assert.equal(writeCall?.sessionId, "session-1");
+    assert.equal(writeCall?.data, "a");
+    assert.equal(writeCall?.trace?.inputSeq, 1);
+    assert.match(writeCall?.trace?.traceId ?? "", /^session-1:1:/);
+
+    await view.emitSessionData("a");
+
+    const echoEvent = view.getPerfEvents().find((event) => event.category === "input" && event.name === "keypress-to-echo-visible");
+    assert.ok(echoEvent);
+    assert.equal(echoEvent.sessionId, "session-1");
+    assert.equal((echoEvent.extra as { inputSeq?: number })?.inputSeq, 1);
+    assert.equal(typeof echoEvent.durationMs, "number");
+    assert.equal(view.getTerminal().writes.includes("a"), true);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView low-latency flush writes echoed input before the next RAF", { concurrency: false }, async () => {
+  const view = await renderTerminal();
+  try {
+    await view.flushBoot();
+
+    await act(async () => {
+      view.getTerminal().emitData("b");
+    });
+    const pendingRafBeforeEcho = view.harness.getPendingRafCount();
+    await view.emitSessionDataWithoutPaint("b");
+
+    assert.equal(view.getTerminal().writes.includes("b"), true);
+    assert.equal(view.harness.getPendingRafCount(), pendingRafBeforeEcho);
+    assert.equal(
+      view.getPerfEvents().some((event) => event.category === "input" && event.name === "keypress-to-echo-visible"),
+      true
+    );
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView keeps bulk output batched on RAF", { concurrency: false }, async () => {
+  const view = await renderTerminal();
+  try {
+    await view.flushBoot();
+
+    const pendingRafBeforeBulk = view.harness.getPendingRafCount();
+    await view.emitSessionDataWithoutPaint("bulk output without matching echo\r\n");
+
+    assert.equal(view.getTerminal().writes.includes("bulk output without matching echo\r\n"), false);
+    assert.equal(view.harness.getPendingRafCount(), pendingRafBeforeBulk + 1);
+
+    await act(async () => {
+      view.harness.flushRaf();
+    });
+
+    assert.equal(view.getTerminal().writes.includes("bulk output without matching echo\r\n"), true);
   } finally {
     await view.cleanup();
   }

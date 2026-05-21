@@ -8,6 +8,7 @@ import { scrollActivePathSuggestionIntoView } from "@renderer/components/pathSug
 import type { PathCompletionResult } from "@shared/ipc";
 import { buildCronRelaunchCommand } from "@shared/terminalCron";
 import {
+  AGENT_PRESETS,
   buildPresetCommand,
   buildSshStartupCommand,
   decomposePresetId,
@@ -90,6 +91,8 @@ export function ConfigDrawer({
     : "";
   const [resolvedCommandPreview, setResolvedCommandPreview] = useState(resolvedStartupCommand);
   const presetState = decomposePresetId(terminal?.startupPresetId);
+  const selectedPreset = AGENT_PRESETS[presetState.agent];
+  const presetSupportsSkipPermissions = Boolean(selectedPreset.skipFlag);
   const suggestions = cwdCompletion?.suggestions ?? [];
   const isAwaitingDirectoryConfirmation = pendingDirectoryCreation !== null;
 
@@ -415,12 +418,14 @@ export function ConfigDrawer({
                       value={presetState.agent}
                       options={[
                         { label: "Codex", value: "codex", content: <AgentBadge agent="codex" /> },
-                        { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> }
+                        { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> },
+                        { label: "OpenCode", value: "opencode", content: <AgentBadge agent="opencode" /> }
                       ]}
                       onChange={(value) => {
                         const agent = value as PresetAgent;
-                        const command = buildPresetCommand(agent, presetState.continueMode, presetState.skipMode);
-                        const presetId = findPresetId(agent, presetState.continueMode, presetState.skipMode);
+                        const skipMode = AGENT_PRESETS[agent].skipFlag ? presetState.skipMode : false;
+                        const command = buildPresetCommand(agent, presetState.continueMode, skipMode);
+                        const presetId = findPresetId(agent, presetState.continueMode, skipMode);
                         onTerminalChange({ startupPresetId: presetId, startupCommand: command });
                       }}
                     />
@@ -441,7 +446,8 @@ export function ConfigDrawer({
                     <span>Skip Permissions</span>
                     <input
                       type="checkbox"
-                      checked={presetState.skipMode}
+                      checked={presetSupportsSkipPermissions && presetState.skipMode}
+                      disabled={!presetSupportsSkipPermissions}
                       onChange={(event) => {
                         const command = buildPresetCommand(presetState.agent, presetState.continueMode, event.target.checked);
                         const presetId = findPresetId(presetState.agent, presetState.continueMode, event.target.checked);

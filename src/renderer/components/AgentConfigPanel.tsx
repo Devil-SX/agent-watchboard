@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import { AgentConfigReadonlyView } from "@renderer/components/AgentConfigReadonlyView";
-import { AgentBadge } from "@renderer/components/AgentBadge";
+import { AgentBadge, getAgentLabel } from "@renderer/components/AgentBadge";
 import {
   formatAgentConfigLabel,
 } from "@renderer/components/agentConfigEditor";
 import { ChatPromptEditor } from "@renderer/components/ChatPromptEditor";
 import { CompactDropdown, CompactToggleButton } from "@renderer/components/CompactControls";
-import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
+import { ClaudeIcon, CodexIcon, OpenCodeIcon } from "@renderer/components/IconButton";
 import { LayerEditor } from "@renderer/components/LayerEditor";
 import { LayerList } from "@renderer/components/LayerList";
 import { LocationBadge } from "@renderer/components/LocationBadge";
-import { MergedPreview } from "@renderer/components/MergedPreview";
 import { areAgentConfigPaneStatesEqual } from "@renderer/components/settingsDraft";
 import { type SkillsChatAgent } from "@renderer/components/skillsChatSession";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
@@ -26,7 +25,7 @@ import type {
   AppSettings,
   ConfigLayerStack,
   DiagnosticsInfo,
-  MergedConfigResult,
+  MergedAgentConfigResult,
   SessionState,
   TerminalInstance
 } from "@shared/schema";
@@ -59,7 +58,13 @@ function createEmptyLayerStack(configId: AgentConfigFileId, location: AgentPathL
 }
 
 function buildAgentConfigTabIcon(entry: AgentConfigEntry): ReactElement {
-  return entry.family === "claude" ? <ClaudeIcon className="agent-config-tab-agent-icon" /> : <CodexIcon className="agent-config-tab-agent-icon" />;
+  if (entry.family === "claude") {
+    return <ClaudeIcon className="agent-config-tab-agent-icon" />;
+  }
+  if (entry.family === "opencode") {
+    return <OpenCodeIcon className="agent-config-tab-agent-icon" />;
+  }
+  return <CodexIcon className="agent-config-tab-agent-icon" />;
 }
 
 export function AgentConfigPanel({
@@ -91,7 +96,7 @@ export function AgentConfigPanel({
   const [activeLayerId, setActiveLayerId] = useState<string | null>(viewState.activeLayerId ?? null);
   const [layerViewMode, setLayerViewMode] = useState<"current" | "edit" | "merged">(viewState.layerViewMode ?? "current");
   const [currentFileContent, setCurrentFileContent] = useState("");
-  const [mergedResult, setMergedResult] = useState<MergedConfigResult | null>(null);
+  const [mergedResult, setMergedResult] = useState<MergedAgentConfigResult | null>(null);
   const [mergedLoading, setMergedLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [applyConfirm, setApplyConfirm] = useState(false);
@@ -100,17 +105,39 @@ export function AgentConfigPanel({
   const isApplyingViewStateRef = useRef(false);
 
   const isWindows = diagnostics?.platform === "win32";
-  const visibleEntries = useMemo(
-    () => entries.filter((entry) => familyFilter === "all" || entry.family === familyFilter),
-    [entries, familyFilter]
-  );
   const activeEntry = entries.find((entry) => entry.id === activeConfigId) ?? null;
+  const selectedAgent: AgentConfigFamily = useMemo(() => {
+    if (familyFilter !== "all") {
+      return familyFilter;
+    }
+    return activeEntry?.family ?? entries[0]?.family ?? "codex";
+  }, [activeEntry?.family, entries, familyFilter]);
+  const agentFamilies = useMemo(() => {
+    const seen = new Set<AgentConfigFamily>();
+    return entries
+      .map((entry) => entry.family)
+      .filter((family): family is AgentConfigFamily => {
+        if (seen.has(family)) {
+          return false;
+        }
+        seen.add(family);
+        return true;
+      });
+  }, [entries]);
+  const visibleEntries = useMemo(
+    () => entries.filter((entry) => entry.family === selectedAgent),
+    [entries, selectedAgent]
+  );
   const activeFormat: AgentConfigFormat = activeEntry?.format ?? "json";
   const resolvedLayers = useMemo(() => (layerStack ? getResolvedConfigSortLayers(layerStack) : []), [layerStack]);
   const activeLayer = resolvedLayers.find(({ layer }) => layer.id === activeLayerId)?.layer ?? null;
 
   const normalizedActiveConfigId =
-    activeConfigId === "codex-config" || activeConfigId === "codex-auth" || activeConfigId === "claude-settings"
+    activeConfigId === "codex-config" ||
+    activeConfigId === "codex-auth" ||
+    activeConfigId === "claude-settings" ||
+    activeConfigId === "opencode-config" ||
+    activeConfigId === "opencode-tui"
       ? activeConfigId
       : "codex-config";
   const currentPaneState: AgentConfigPaneState = {
@@ -181,11 +208,11 @@ export function AgentConfigPanel({
   const refreshMerged = useCallback(() => {
     setMergedLoading(true);
     void window.watchboard
-      .computeMergedConfig(activeConfigId, location)
+      .computeMergedAgentConfig(selectedAgent, location)
       .then(setMergedResult)
       .catch(() => setMergedResult(null))
       .finally(() => setMergedLoading(false));
-  }, [activeConfigId, location]);
+  }, [location, selectedAgent]);
 
   useEffect(() => {
     if (layerViewMode === "merged") {
@@ -379,7 +406,10 @@ export function AgentConfigPanel({
   async function handleApplyMerged(): Promise<void> {
     setApplying(true);
     try {
-      await window.watchboard.applyMergedConfig(activeConfigId, location);
+      await window.watchboard.applyMergedAgentConfig(selectedAgent, location);
+      const doc = await window.watchboard.readAgentConfig(activeConfigId, location);
+      setCurrentFileContent(doc.content);
+      refreshMerged();
       setApplyConfirm(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -402,16 +432,6 @@ export function AgentConfigPanel({
               onClick={() => setLocation((current) => (current === "host" ? "wsl" : "host"))}
             />
           ) : null}
-          <CompactDropdown
-            label="Filter"
-            value={familyFilter}
-            options={[
-              { label: "All", value: "all" },
-              { label: "Codex", value: "codex", content: <AgentBadge agent="codex" /> },
-              { label: "Claude", value: "claude", content: <AgentBadge agent="claude" /> }
-            ]}
-            onChange={setFamilyFilter}
-          />
           <CompactToggleButton
             label="Chat"
             value={isChatOpen ? "Open" : "Off"}
@@ -440,20 +460,41 @@ export function AgentConfigPanel({
 
       <div className={isChatOpen ? "agent-config-body has-chat" : "agent-config-body"}>
         <div className="agent-config-main">
-          <nav className="agent-config-tabs">
-            {visibleEntries.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                className={entry.id === activeConfigId ? "agent-config-tab is-active" : "agent-config-tab"}
-                onClick={() => setActiveConfigId(entry.id)}
-              >
-                {buildAgentConfigTabIcon(entry)}
-                {entry.label}
-                {entry.isSymlink ? <span className="entry-badge">Softlink</span> : null}
-              </button>
-            ))}
-          </nav>
+          <div className="agent-config-navigation">
+            <div className="agent-config-nav-row">
+              <span className="agent-config-nav-label">Agent</span>
+              <nav className="agent-config-tabs agent-config-agent-tabs" aria-label="Agent backend">
+                {agentFamilies.map((family) => (
+                  <button
+                    key={family}
+                    type="button"
+                    className={family === selectedAgent ? "agent-config-tab is-active" : "agent-config-tab"}
+                    onClick={() => setFamilyFilter(family)}
+                  >
+                    <AgentBadge agent={family} showLabel={false} />
+                    {getAgentLabel(family)}
+                  </button>
+                ))}
+              </nav>
+            </div>
+            <div className="agent-config-nav-row">
+              <span className="agent-config-nav-label">File</span>
+              <nav className="agent-config-tabs agent-config-file-tabs" aria-label="Config file">
+                {visibleEntries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className={entry.id === activeConfigId ? "agent-config-tab is-active" : "agent-config-tab"}
+                    onClick={() => setActiveConfigId(entry.id)}
+                  >
+                    {buildAgentConfigTabIcon(entry)}
+                    {entry.label}
+                    {entry.isSymlink ? <span className="entry-badge">Softlink</span> : null}
+                  </button>
+                ))}
+              </nav>
+            </div>
+          </div>
 
           {error ? <div className="toolbar-error">{error}</div> : null}
           {loading ? <div className="panel-empty"><p>Loading configs...</p></div> : null}
@@ -533,10 +574,9 @@ export function AgentConfigPanel({
                   location={location}
                 />
               ) : (
-                <MergedPreview
+                <AgentMergedPreview
                   mergedResult={mergedResult}
                   loading={mergedLoading}
-                  format={activeFormat}
                   onApply={() => void handleApplyMerged()}
                   applying={applying}
                   applyConfirm={applyConfirm}
@@ -589,6 +629,104 @@ export function AgentConfigPanel({
             </div>
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AgentMergedPreview({
+  mergedResult,
+  loading,
+  onApply,
+  applying,
+  applyConfirm,
+  onApplyConfirmToggle
+}: {
+  mergedResult: MergedAgentConfigResult | null;
+  loading: boolean;
+  onApply: () => void;
+  applying: boolean;
+  applyConfirm: boolean;
+  onApplyConfirmToggle: () => void;
+}): ReactElement {
+  if (loading) {
+    return (
+      <div className="merged-preview-empty">
+        <p>Computing merged agent config...</p>
+      </div>
+    );
+  }
+
+  if (!mergedResult || mergedResult.enabledLayerCount === 0) {
+    return (
+      <div className="merged-preview-empty">
+        <p>No enabled layers. Enable at least one layer in this agent to see the merged result.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="merged-preview agent-merged-preview">
+      <div className="agent-config-editor-status">
+        <div className="agent-config-editor-status-copy">
+          <AgentBadge agent={mergedResult.family} tone="strong" />
+          <span className="entry-badge">
+            Merged Agent ({mergedResult.enabledLayerCount}/{mergedResult.layerCount} layers)
+          </span>
+          <span className="entry-badge">{mergedResult.files.length} files</span>
+        </div>
+      </div>
+
+      <div className="agent-merged-preview-files">
+        {mergedResult.files.map((file) => (
+          <section key={file.configId} className="agent-merged-preview-file">
+            <div className="agent-merged-preview-file-header">
+              <div className="agent-config-editor-status-copy">
+                <span className="entry-badge">{file.label}</span>
+                <span className="entry-badge">{formatAgentConfigLabel(file.format)}</span>
+                <span className="entry-badge">
+                  {file.enabledLayerCount}/{file.layerCount} layers
+                </span>
+              </div>
+              <span className="agent-config-source-path" title={file.entryPath}>
+                {file.entryPath}
+              </span>
+            </div>
+            {file.enabledLayerCount > 0 ? (
+              <div className="agent-config-editor-surface merged-preview-surface agent-merged-preview-surface">
+                <AgentConfigReadonlyView
+                  ariaLabel={`${file.label} merged config preview`}
+                  content={file.content}
+                  format={file.format}
+                />
+              </div>
+            ) : (
+              <div className="layer-editor-empty agent-merged-preview-empty-file">
+                <p>No enabled layers for this file.</p>
+              </div>
+            )}
+          </section>
+        ))}
+      </div>
+
+      <div className="merged-preview-actions">
+        {applyConfirm ? (
+          <div className="merged-apply-confirm">
+            <span className="merged-apply-confirm-text">
+              This will overwrite every target file in this agent that has enabled merged layers.
+            </span>
+            <button type="button" className="primary-button" disabled={applying} onClick={onApply}>
+              {applying ? "Applying..." : "Confirm Apply"}
+            </button>
+            <button type="button" className="secondary-button" onClick={onApplyConfirmToggle}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="primary-button" onClick={onApplyConfirmToggle}>
+            Apply to Agent Files
+          </button>
+        )}
       </div>
     </div>
   );

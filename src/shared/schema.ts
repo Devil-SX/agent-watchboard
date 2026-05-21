@@ -75,7 +75,7 @@ export const WorkbenchOpenModeSchema = z.enum(["tab", "left", "right", "up", "do
 export type WorkbenchOpenMode = z.infer<typeof WorkbenchOpenModeSchema>;
 export const WorkspaceSortModeSchema = z.enum(["last-launch", "alphabetical"]);
 export type WorkspaceSortMode = z.infer<typeof WorkspaceSortModeSchema>;
-export const WorkspaceFilterModeSchema = z.enum(["all", "codex", "claude", "other"]);
+export const WorkspaceFilterModeSchema = z.enum(["all", "codex", "claude", "opencode", "other"]);
 export type WorkspaceFilterMode = z.infer<typeof WorkspaceFilterModeSchema>;
 export const WorkspaceEnvironmentFilterModeSchema = z.enum(["all", "host", "wsl"]);
 export type WorkspaceEnvironmentFilterMode = z.infer<typeof WorkspaceEnvironmentFilterModeSchema>;
@@ -125,8 +125,10 @@ export const SkillsPaneStateSchema = z.object({
 export type SkillsPaneState = z.infer<typeof SkillsPaneStateSchema>;
 export const AgentConfigPaneStateSchema = z.object({
   location: z.enum(["host", "wsl"]).default("host"),
-  familyFilter: z.enum(["all", "codex", "claude"]).default("all"),
-  activeConfigId: z.enum(["codex-config", "codex-auth", "claude-settings"]).default("codex-config"),
+  familyFilter: z.enum(["all", "codex", "claude", "opencode"]).default("all"),
+  activeConfigId: z
+    .enum(["codex-config", "codex-auth", "claude-settings", "opencode-config", "opencode-tui"])
+    .default("codex-config"),
   isChatOpen: z.boolean().default(false),
   chatAgent: z.enum(["codex", "claude"]).default("codex"),
   skipDangerous: z.boolean().default(false),
@@ -195,6 +197,7 @@ export const AppSettingsSchema = z.object({
   agentWslDistro: z.string().optional(),
   terminalFontFamily: z.string().default(DEFAULT_TERMINAL_FONT_FAMILY),
   terminalFontSize: z.number().int().min(10).max(32).default(DEFAULT_TERMINAL_FONT_SIZE),
+  quickSearchOverridesTerminalShortcuts: z.boolean().default(true),
   workspaceSortMode: WorkspaceSortModeSchema.default("last-launch"),
   workspaceFilterMode: WorkspaceFilterModeSchema.default("all"),
   workspaceEnvironmentFilterMode: WorkspaceEnvironmentFilterModeSchema.default("all"),
@@ -266,6 +269,11 @@ export const AGENT_PRESETS = {
     base: "codex",
     continueFlag: "resume --last",
     skipFlag: "--dangerously-bypass-approvals-and-sandbox"
+  },
+  opencode: {
+    base: "opencode",
+    continueFlag: "--continue",
+    skipFlag: null
   }
 } as const;
 
@@ -275,11 +283,11 @@ export function buildPresetCommand(agent: PresetAgent, continueMode: boolean, sk
   const preset = AGENT_PRESETS[agent];
   const parts: string[] = [preset.base];
   if (continueMode) parts.push(preset.continueFlag);
-  if (skipMode) parts.push(preset.skipFlag);
+  if (skipMode && preset.skipFlag) parts.push(preset.skipFlag);
   return parts.join(" ");
 }
 
-// Flat list of all 8 agent × flag combinations (4 per agent)
+// Flat list of all agent × flag combinations (4 per agent)
 export const STARTUP_PRESETS = [
   { id: "codex", label: "Codex", command: "codex" },
   { id: "codex-resume-last", label: "Codex + Continue", command: "codex resume --last" },
@@ -288,13 +296,15 @@ export const STARTUP_PRESETS = [
   { id: "claude", label: "Claude", command: "claude" },
   { id: "claude-continue", label: "Claude + Continue", command: "claude -c" },
   { id: "claude-skip-permissions", label: "Claude + Skip", command: "claude --dangerously-skip-permissions" },
-  { id: "claude-continue-skip", label: "Claude + Continue + Skip", command: "claude -c --dangerously-skip-permissions" }
+  { id: "claude-continue-skip", label: "Claude + Continue + Skip", command: "claude -c --dangerously-skip-permissions" },
+  { id: "opencode", label: "OpenCode", command: "opencode" },
+  { id: "opencode-continue", label: "OpenCode + Continue", command: "opencode --continue" }
 ] as const;
 
-export type AgentKind = "claude" | "codex" | "unknown";
+export type AgentKind = "claude" | "codex" | "opencode" | "unknown";
 export type AgentPathLocation = "host" | "wsl";
 export type SkillSource = "codex" | "claude-command" | "claude-skill";
-export type AgentConfigFamily = "codex" | "claude";
+export type AgentConfigFamily = "codex" | "claude" | "opencode";
 
 export function detectAgentKind(
   profile: Pick<TerminalProfile, "startupMode" | "startupPresetId" | "startupCommand" | "startupCustomCommand">
@@ -302,6 +312,7 @@ export function detectAgentKind(
   const command = resolveTerminalStartupCommand(profile);
   if (/\bclaude\b/.test(command)) return "claude";
   if (/\bcodex\b/.test(command)) return "codex";
+  if (/\bopencode\b/.test(command)) return "opencode";
   return "unknown";
 }
 
@@ -328,7 +339,21 @@ export type AgentConfigFormat = "json" | "toml";
 export const AGENT_CONFIG_FILES = [
   { id: "codex-config", label: "Codex Config", family: "codex", format: "toml", path: "~/.codex/config.toml" },
   { id: "codex-auth", label: "Codex Auth", family: "codex", format: "json", path: "~/.codex/auth.json" },
-  { id: "claude-settings", label: "Claude Settings", family: "claude", format: "json", path: "~/.claude/settings.json" }
+  { id: "claude-settings", label: "Claude Settings", family: "claude", format: "json", path: "~/.claude/settings.json" },
+  {
+    id: "opencode-config",
+    label: "OpenCode Config",
+    family: "opencode",
+    format: "json",
+    path: "~/.config/opencode/opencode.json"
+  },
+  {
+    id: "opencode-tui",
+    label: "OpenCode TUI",
+    family: "opencode",
+    format: "json",
+    path: "~/.config/opencode/tui.json"
+  }
 ] as const;
 export type AgentConfigFileId = (typeof AGENT_CONFIG_FILES)[number]["id"];
 export type AgentConfigEntry = {
@@ -370,7 +395,7 @@ export type ConfigSortPreset = z.infer<typeof ConfigSortPresetSchema>;
 
 export const ConfigLayerStackSchema = z.object({
   version: z.literal(2).default(2),
-  configId: z.enum(["codex-config", "codex-auth", "claude-settings"]),
+  configId: z.enum(["codex-config", "codex-auth", "claude-settings", "opencode-config", "opencode-tui"]),
   location: z.enum(["host", "wsl"]),
   layers: z.array(ConfigLayerSchema).default([]),
   sortPresets: z.array(ConfigSortPresetSchema).default([]),
@@ -456,6 +481,23 @@ export type MergedConfigResult = {
   enabledLayerCount: number;
 };
 
+export type MergedAgentConfigFileResult = MergedConfigResult & {
+  label: string;
+  family: AgentConfigFamily;
+  format: AgentConfigFormat;
+  entryPath: string;
+  resolvedPath: string;
+  exists: boolean;
+};
+
+export type MergedAgentConfigResult = {
+  family: AgentConfigFamily;
+  location: AgentPathLocation;
+  files: MergedAgentConfigFileResult[];
+  layerCount: number;
+  enabledLayerCount: number;
+};
+
 export type StartupPresetId = (typeof STARTUP_PRESETS)[number]["id"];
 export type StartupPreset = (typeof STARTUP_PRESETS)[number];
 
@@ -464,10 +506,10 @@ export function decomposePresetId(presetId: string | undefined): { agent: Preset
   const preset = STARTUP_PRESETS.find((p) => p.id === presetId);
   if (!preset) return { agent: "codex", continueMode: false, skipMode: false };
   const cmd = preset.command;
-  const agent: PresetAgent = /\bclaude\b/.test(cmd) ? "claude" : "codex";
+  const agent: PresetAgent = /\bopencode\b/.test(cmd) ? "opencode" : /\bclaude\b/.test(cmd) ? "claude" : "codex";
   const agentPreset = AGENT_PRESETS[agent];
   const continueMode = cmd.includes(agentPreset.continueFlag);
-  const skipMode = cmd.includes(agentPreset.skipFlag);
+  const skipMode = agentPreset.skipFlag ? cmd.includes(agentPreset.skipFlag) : false;
   return { agent, continueMode, skipMode };
 }
 
@@ -740,7 +782,17 @@ export type SupervisorCommand =
   | { type: "list-sessions" }
   | { type: "start-session"; sessionId: string; instanceId: string; workspaceId: string; profile: TerminalProfile; requestId?: string }
   | { type: "attach-session"; sessionId: string; requestId?: string }
-  | { type: "write-session"; sessionId: string; data: string; sentAtUnixMs?: number; requestId?: string }
+  | {
+      type: "write-session";
+      sessionId: string;
+      data: string;
+      sentAtUnixMs?: number;
+      requestId?: string;
+      traceId?: string;
+      inputSeq?: number;
+      mainReceivedAtUnixMs?: number;
+      mainForwardedAtUnixMs?: number;
+    }
   | { type: "resize-session"; sessionId: string; cols: number; rows: number; requestId?: string }
   | { type: "stop-session"; sessionId: string; requestId?: string };
 

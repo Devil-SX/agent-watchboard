@@ -6,6 +6,7 @@ export class FakeTerminal {
   rows = 0;
   writes: string[] = [];
   refreshCalls: Array<[number, number]> = [];
+  scrollToBottomCount = 0;
   resetCount = 0;
   focusCount = 0;
   disposed = false;
@@ -70,6 +71,10 @@ export class FakeTerminal {
 
   refresh(start: number, end: number): void {
     this.refreshCalls.push([start, end]);
+  }
+
+  scrollToBottom(): void {
+    this.scrollToBottomCount += 1;
   }
 
   reset(): void {

@@ -236,6 +236,16 @@ export function CodexIcon({ className }: IconProps): ReactElement {
   );
 }
 
+export function OpenCodeIcon({ className }: IconProps): ReactElement {
+  // Source: homarr-labs/dashboard-icons svg/opencode.svg (Apache-2.0).
+  return (
+    <svg className={className} viewBox="0 0 240 300" fill="none">
+      <path d="M180 240H60V120H180V240Z" fill="#CFCECD" />
+      <path d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z" fill="#211E1E" />
+    </svg>
+  );
+}
+
 export function DoctorIcon({ className }: IconProps): ReactElement {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

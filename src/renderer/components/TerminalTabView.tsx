@@ -22,6 +22,12 @@ import {
   resolveSilentTerminalRecoveryDecision,
   resolveTerminalBacklogReplayDecision
 } from "@renderer/components/terminalRecoveryPolicy";
+import {
+  recordTerminalWriteCostSample,
+  shouldUseLowLatencyTerminalFlush,
+  summarizeTerminalWriteCost
+} from "@renderer/components/terminalOutputFlushPolicy";
+import { ChevronDownIcon } from "@renderer/components/IconButton";
 import { createTerminalRuntime } from "@renderer/components/terminalRuntime";
 import { resolveTerminalSessionLifecycle } from "@renderer/components/terminalSessionLifecycle";
 import { createTerminalViewState, type TerminalViewState } from "@renderer/components/terminalViewState";
@@ -29,6 +35,36 @@ import { detectAgentKind, type AppSettings, type SessionState, type TerminalInst
 
 type TerminalMouseTrackingMode = "none" | "x10" | "vt200" | "drag" | "any";
 type ForcedSelectionMouseEvent = MouseEvent & { __watchboardForcedSelection?: true };
+type PendingTerminalEcho = {
+  traceId: string;
+  inputSeq: number;
+  expectedEcho: string;
+  sentAtPerfMs: number;
+  sentAtUnixMs: number;
+  bytes: number;
+};
+type BufferedTerminalEcho = PendingTerminalEcho & {
+  matchedAtPerfMs: number;
+  matchedChunkChars: number;
+};
+type TerminalWritePerfSample = {
+  count: number;
+  totalMs: number;
+  maxMs: number;
+  chars: number;
+};
+
+const TERMINAL_ECHO_TRACKING_TTL_MS = 5000;
+const TERMINAL_WRITE_PERF_SAMPLE_SIZE = 32;
+const terminalInputTextEncoder = new TextEncoder();
+
+function scheduleTerminalMicrotask(callback: () => void): void {
+  if (typeof queueMicrotask === "function") {
+    queueMicrotask(callback);
+    return;
+  }
+  void Promise.resolve().then(callback);
+}
 
 function isMacPointerSelectionPlatform(): boolean {
   const navigatorValue = globalThis.navigator as (Navigator & { userAgentData?: { platform?: string } }) | undefined;
@@ -73,6 +109,55 @@ function buildForcedSelectionMouseEvent(sourceEvent: MouseEvent, useAltModifier:
   return syntheticEvent;
 }
 
+function createTerminalInputTraceId(sessionId: string, inputSeq: number): string {
+  const randomValue =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+  return `${sessionId}:${inputSeq}:${randomValue}`;
+}
+
+function resolveExpectedEcho(data: string): string | null {
+  if (data === "\r" || data === "\n") {
+    return "\n";
+  }
+  if (data.length === 0 || data.length > 32) {
+    return null;
+  }
+  if (/[\u0000-\u001f\u007f]/u.test(data)) {
+    return null;
+  }
+  return data;
+}
+
+function matchBufferedTerminalEchoes(
+  output: string,
+  pendingInputs: PendingTerminalEcho[],
+  nowPerfMs: number
+): BufferedTerminalEcho[] {
+  if (!output || pendingInputs.length === 0) {
+    return [];
+  }
+  const matched: BufferedTerminalEcho[] = [];
+  const remaining: PendingTerminalEcho[] = [];
+  for (const input of pendingInputs) {
+    if (nowPerfMs - input.sentAtPerfMs > TERMINAL_ECHO_TRACKING_TTL_MS) {
+      continue;
+    }
+    if (output.includes(input.expectedEcho)) {
+      matched.push({
+        ...input,
+        matchedAtPerfMs: nowPerfMs,
+        matchedChunkChars: output.length
+      });
+      continue;
+    }
+    remaining.push(input);
+  }
+  pendingInputs.splice(0, pendingInputs.length, ...remaining);
+  return matched;
+}
+
 type Props = {
   instance: TerminalInstance;
   session: SessionState | null;
@@ -107,13 +192,27 @@ export function TerminalTabView({
   const fitReasonsRef = useRef<string[]>([]);
   const resizeSettleTimerRef = useRef<number | null>(null);
   const dataFrameRef = useRef<number | null>(null);
+  const lowLatencyFlushScheduledRef = useRef(false);
   const silentReadyTimerRef = useRef<number | null>(null);
   const redrawRestoreTimerRef = useRef<number | null>(null);
   const dataBufferRef = useRef("");
+  const dataBufferEchoesRef = useRef<BufferedTerminalEcho[]>([]);
+  const isVisibleRef = useRef(isVisible);
   const lastCommittedGeometryRef = useRef<TerminalGeometry | null>(null);
   const lastObservedHostSizeRef = useRef<TerminalHostSize | null>(null);
   const hasVisibleContentRef = useRef(false);
   const sessionStartMeasureRef = useRef<number | null>(null);
+  const terminalInputSeqRef = useRef(0);
+  const pendingEchoInputsRef = useRef<PendingTerminalEcho[]>([]);
+  const firstLiveWriteReportedRef = useRef(false);
+  const xtermWriteInFlightRef = useRef(false);
+  const xtermWriteCostSamplesRef = useRef<number[]>([]);
+  const xtermWritePerfSampleRef = useRef<TerminalWritePerfSample>({
+    count: 0,
+    totalMs: 0,
+    maxMs: 0,
+    chars: 0
+  });
   const latencySampleRef = useRef<{ count: number; total: number; max: number }>({
     count: 0,
     total: 0,
@@ -128,12 +227,34 @@ export function TerminalTabView({
   const [fallbackPhase, setFallbackPhase] = useState<TerminalFallbackPhase>(terminalViewState?.fallbackPhase ?? "waiting");
   const [hasVisibleContent, setHasVisibleContent] = useState(terminalViewState?.hasVisibleContent ?? false);
   sessionBacklogRef.current = sessionBacklog;
+  isVisibleRef.current = isVisible;
   hasVisibleContentRef.current = terminalViewState?.hasVisibleContent ?? hasVisibleContentRef.current;
   fallbackPhaseRef.current = fallbackPhase;
 
   const focusTerminal = (): void => {
     terminalRef.current?.focus();
   };
+
+  const scrollTerminalToBottom = (): void => {
+    terminalRef.current?.scrollToBottom();
+    focusTerminal();
+  };
+
+  useEffect(() => {
+    const handleScrollRequest = (event: Event): void => {
+      const detail = (event as CustomEvent<{ paneId?: string; sessionId?: string }>).detail;
+      if (detail?.paneId && detail.paneId !== instance.paneId) {
+        return;
+      }
+      if (detail?.sessionId && detail.sessionId !== sessionId) {
+        return;
+      }
+      terminalRef.current?.scrollToBottom();
+      terminalRef.current?.focus();
+    };
+    window.addEventListener("watchboard:scroll-terminal-to-bottom", handleScrollRequest);
+    return () => window.removeEventListener("watchboard:scroll-terminal-to-bottom", handleScrollRequest);
+  }, [instance.paneId, sessionId]);
 
   useEffect(() => {
     if (!terminalViewState) {
@@ -152,7 +273,7 @@ export function TerminalTabView({
     const host = hostRef.current;
 
     const agentKind = detectAgentKind(instance.terminalProfileSnapshot);
-    const isAgentTerminal = agentKind === "claude" || agentKind === "codex";
+    const isAgentTerminal = agentKind === "claude" || agentKind === "codex" || agentKind === "opencode";
 
     const { terminal: xterm, fitAddon } = createTerminalRuntime({
       cursorBlink: !isAgentTerminal,
@@ -315,34 +436,143 @@ export function TerminalTabView({
       });
     };
 
-    const flushTerminalOutput = (): void => {
-      dataFrameRef.current = null;
-      const chunk = dataBufferRef.current;
-      if (!chunk) {
+    const flushXtermWritePerfSample = (): void => {
+      const sample = xtermWritePerfSampleRef.current;
+      if (sample.count === 0) {
         return;
       }
-      dataBufferRef.current = "";
-      xterm.write(chunk, () => {
-        updateVisibleContent(true);
+      reportRendererPerf({
+        category: "terminal",
+        name: "xterm-write-batch",
+        durationMs: sample.totalMs / sample.count,
+        sessionId,
+        extra: {
+          count: sample.count,
+          maxMs: sample.maxMs,
+          chars: sample.chars
+        }
+      });
+      xtermWritePerfSampleRef.current = {
+        count: 0,
+        totalMs: 0,
+        maxMs: 0,
+        chars: 0
+      };
+    };
+
+    const recordXtermWritePerf = (durationMs: number, chars: number): void => {
+      xtermWriteCostSamplesRef.current = recordTerminalWriteCostSample(xtermWriteCostSamplesRef.current, durationMs);
+      const sample = xtermWritePerfSampleRef.current;
+      sample.count += 1;
+      sample.totalMs += durationMs;
+      sample.maxMs = Math.max(sample.maxMs, durationMs);
+      sample.chars += chars;
+      if (sample.count >= TERMINAL_WRITE_PERF_SAMPLE_SIZE || sample.maxMs >= 25) {
+        flushXtermWritePerfSample();
+      }
+    };
+
+    const finishTerminalWrite = (chunk: string, echoReports: BufferedTerminalEcho[], writeStartedAt: number): void => {
+      const writeFinishedAt = performance.now();
+      xtermWriteInFlightRef.current = false;
+      recordXtermWritePerf(writeFinishedAt - writeStartedAt, chunk.length);
+      updateVisibleContent(true);
+      if (!firstLiveWriteReportedRef.current) {
+        firstLiveWriteReportedRef.current = true;
         reportRendererPerf({
           category: "terminal",
           name: "first-live-write",
-          durationMs: 0,
+          durationMs: writeFinishedAt - writeStartedAt,
           sessionId,
           extra: {
             chars: chunk.length
           }
         });
+      }
+      for (const echo of echoReports) {
+        reportRendererPerf({
+          category: "input",
+          name: "keypress-to-echo-visible",
+          durationMs: writeFinishedAt - echo.sentAtPerfMs,
+          sessionId,
+          extra: {
+            traceId: echo.traceId,
+            inputSeq: echo.inputSeq,
+            bytes: echo.bytes,
+            matchDelayMs: echo.matchedAtPerfMs - echo.sentAtPerfMs,
+            renderDelayMs: writeFinishedAt - echo.matchedAtPerfMs,
+            matchedChunkChars: echo.matchedChunkChars,
+            sentAtUnixMs: echo.sentAtUnixMs
+          }
+        });
+      }
+      if (dataBufferRef.current) {
+        scheduleOutputFlush();
+      }
+    };
+
+    const flushTerminalOutput = (): void => {
+      dataFrameRef.current = null;
+      lowLatencyFlushScheduledRef.current = false;
+      if (xtermWriteInFlightRef.current) {
+        if (dataBufferRef.current) {
+          scheduleOutputFlush();
+        }
+        return;
+      }
+      const chunk = dataBufferRef.current;
+      if (!chunk) {
+        return;
+      }
+      const echoReports = dataBufferEchoesRef.current;
+      dataBufferRef.current = "";
+      dataBufferEchoesRef.current = [];
+      const writeStartedAt = performance.now();
+      xtermWriteInFlightRef.current = true;
+      xterm.write(chunk, () => {
+        finishTerminalWrite(chunk, echoReports, writeStartedAt);
       });
     };
 
-    const scheduleOutputFlush = (): void => {
+    function scheduleOutputFlush(): void {
       if (dataFrameRef.current !== null) {
         return;
       }
       dataFrameRef.current = requestAnimationFrame(() => {
         flushTerminalOutput();
       });
+    }
+
+    const canUseLowLatencyOutputFlush = (): boolean =>
+      shouldUseLowLatencyTerminalFlush({
+        bufferedChars: dataBufferRef.current.length,
+        matchedEchoCount: dataBufferEchoesRef.current.length,
+        isVisible: isVisibleRef.current,
+        writeInFlight: xtermWriteInFlightRef.current,
+        recentWriteCost: summarizeTerminalWriteCost(xtermWriteCostSamplesRef.current)
+      });
+
+    const scheduleLowLatencyOutputFlush = (): void => {
+      if (lowLatencyFlushScheduledRef.current || dataFrameRef.current !== null) {
+        return;
+      }
+      lowLatencyFlushScheduledRef.current = true;
+      scheduleTerminalMicrotask(() => {
+        lowLatencyFlushScheduledRef.current = false;
+        if (!canUseLowLatencyOutputFlush()) {
+          scheduleOutputFlush();
+          return;
+        }
+        flushTerminalOutput();
+      });
+    };
+
+    const scheduleAdaptiveOutputFlush = (): void => {
+      if (canUseLowLatencyOutputFlush()) {
+        scheduleLowLatencyOutputFlush();
+        return;
+      }
+      scheduleOutputFlush();
     };
 
     const flushLatencySample = (): void => {
@@ -461,12 +691,34 @@ export function TerminalTabView({
       if (!hasVisibleContentRef.current && containsPrintableTerminalContent(normalized)) {
         updateVisibleContentRef.current?.(true);
       }
+      dataBufferEchoesRef.current.push(
+        ...matchBufferedTerminalEchoes(normalized, pendingEchoInputsRef.current, performance.now())
+      );
       dataBufferRef.current += normalized;
-      scheduleOutputFlush();
+      scheduleAdaptiveOutputFlush();
     };
 
     xterm.onData((data) => {
-      window.watchboard.writeToSession(sessionId, data, Date.now());
+      const inputSeq = terminalInputSeqRef.current + 1;
+      terminalInputSeqRef.current = inputSeq;
+      const sentAtUnixMs = Date.now();
+      const trace = {
+        traceId: createTerminalInputTraceId(sessionId, inputSeq),
+        inputSeq,
+        rendererSentAtUnixMs: sentAtUnixMs
+      };
+      const expectedEcho = resolveExpectedEcho(data);
+      if (expectedEcho !== null) {
+        pendingEchoInputsRef.current.push({
+          traceId: trace.traceId,
+          inputSeq,
+          expectedEcho,
+          sentAtPerfMs: performance.now(),
+          sentAtUnixMs,
+          bytes: terminalInputTextEncoder.encode(data).length
+        });
+      }
+      window.watchboard.writeToSession(sessionId, data, sentAtUnixMs, trace);
     });
     const selectionDisposable = xterm.onSelectionChange?.(() => {
       const selection = xterm.getSelection?.() ?? "";
@@ -508,6 +760,7 @@ export function TerminalTabView({
 
     return () => {
       flushLatencySample();
+      flushXtermWritePerfSample();
       if (silentReadyTimerRef.current !== null) {
         window.clearTimeout(silentReadyTimerRef.current);
         silentReadyTimerRef.current = null;
@@ -528,7 +781,12 @@ export function TerminalTabView({
         cancelAnimationFrame(dataFrameRef.current);
         dataFrameRef.current = null;
       }
+      lowLatencyFlushScheduledRef.current = false;
       dataBufferRef.current = "";
+      dataBufferEchoesRef.current = [];
+      pendingEchoInputsRef.current = [];
+      xtermWriteInFlightRef.current = false;
+      xtermWriteCostSamplesRef.current = [];
       lastCommittedGeometryRef.current = null;
       lastObservedHostSizeRef.current = null;
       updateVisibleContentRef.current = null;
@@ -730,6 +988,22 @@ export function TerminalTabView({
             focusTerminal();
           }}
         />
+        <button
+          type="button"
+          className="terminal-scroll-bottom-button icon-button"
+          aria-label="Scroll terminal to bottom"
+          title="Scroll terminal to bottom"
+          data-tooltip="Scroll terminal to bottom"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={scrollTerminalToBottom}
+        >
+          <span className="icon-button-glyph" aria-hidden="true">
+            <ChevronDownIcon />
+          </span>
+        </button>
         {showFallback ? <pre className="terminal-fallback">{fallbackText}</pre> : null}
       </div>
     </div>

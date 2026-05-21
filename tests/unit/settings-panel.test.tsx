@@ -133,6 +133,38 @@ test("SettingsPanel debug section renders app version", () => {
   assert.match(html, /0\.9\.0/);
 });
 
+test("SettingsPanel renders terminal shortcut override toggle enabled by default", () => {
+  const html = renderToStaticMarkup(
+    <SettingsPanel
+      settings={createDefaultAppSettings({
+        settingsPane: {
+          activeCategory: "terminal"
+        }
+      })}
+      diagnostics={null}
+      viewState={{ activeCategory: "terminal" }}
+      isDirty={false}
+      isSaving={false}
+      sshSecretDrafts={{}}
+      sshTestStates={{}}
+      onChange={() => undefined}
+      onAddSshEnvironment={() => undefined}
+      onUpdateSshEnvironment={() => undefined}
+      onDeleteSshEnvironment={() => undefined}
+      onSshSecretChange={() => undefined}
+      onTestSshEnvironment={() => undefined}
+      onUpdateSkillsChatPrompt={() => undefined}
+      onViewStateChange={() => undefined}
+      onOpenDebugPath={async () => undefined}
+      onSave={() => undefined}
+      onReset={() => undefined}
+    />
+  );
+
+  assert.match(html, /Override Terminal Ctrl\/Cmd\+P/);
+  assert.match(html, /checked=""/);
+});
+
 test("SettingsPanel renders SSH environment management controls", () => {
   const html = renderToStaticMarkup(
     <SettingsPanel

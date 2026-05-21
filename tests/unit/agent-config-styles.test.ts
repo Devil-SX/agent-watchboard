@@ -38,6 +38,25 @@ test("agent config styles expose a clearly active sort preset state", () => {
   );
 });
 
+test("agent config chrome stays compact above the editor surface", () => {
+  assert.match(
+    styles,
+    /\.agent-config-toolbar\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*auto hidden;/s
+  );
+  assert.match(
+    styles,
+    /\.agent-config-toolbar \.compact-control-button\s*\{[^}]*min-height:\s*30px;[^}]*padding:\s*0\.16rem 0\.42rem;/s
+  );
+  assert.match(
+    styles,
+    /\.agent-config-tabs\s*\{[^}]*padding-bottom:\s*6px;/s
+  );
+  assert.match(
+    styles,
+    /\.agent-config-layer-view-tabs\s*\{[^}]*padding-bottom:\s*4px;/s
+  );
+});
+
 test("agent config readonly previews expose scrollable selectable surfaces", () => {
   assert.match(
     styles,

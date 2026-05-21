@@ -24,7 +24,7 @@ log() {
 
 log "INFO" "Uninstalling Agent Watchboard CLIs..."
 
-for cli in todo_preview watchboard session_log; do
+for cli in watchboard session_log; do
     if [[ -f "$INSTALL_DIR/$cli" ]]; then
         rm -f "$INSTALL_DIR/$cli"
         log "INFO" "Removed $INSTALL_DIR/$cli"

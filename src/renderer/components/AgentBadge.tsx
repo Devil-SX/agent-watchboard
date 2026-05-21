@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 
-import { ClaudeIcon, CodexIcon } from "@renderer/components/IconButton";
+import { ClaudeIcon, CodexIcon, OpenCodeIcon } from "@renderer/components/IconButton";
 import type { AgentConfigFamily, PresetAgent } from "@shared/schema";
 
 type AgentBadgeProps = {
@@ -15,7 +15,7 @@ export function AgentBadge({ agent, tone = "default", showLabel = true }: AgentB
   return (
     <span className={className}>
       <span className="agent-badge-icon" aria-hidden="true">
-        {agent === "codex" ? <CodexIcon /> : <ClaudeIcon />}
+        {agent === "codex" ? <CodexIcon /> : agent === "opencode" ? <OpenCodeIcon /> : <ClaudeIcon />}
       </span>
       {showLabel ? <span>{getAgentLabel(agent)}</span> : null}
     </span>
@@ -23,5 +23,5 @@ export function AgentBadge({ agent, tone = "default", showLabel = true }: AgentB
 }
 
 export function getAgentLabel(agent: AgentConfigFamily | PresetAgent): string {
-  return agent === "codex" ? "Codex" : "Claude";
+  return agent === "codex" ? "Codex" : agent === "opencode" ? "OpenCode" : "Claude";
 }

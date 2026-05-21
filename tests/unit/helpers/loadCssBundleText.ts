@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const IMPORT_PATTERN = /@import\s+["']([^"']+)["'];/g;
+const IMPORT_PATTERN = /@import\s+(?:url\()?["']([^"')]+)["']\)?;/g;
 
 export function loadCssBundleText(entryUrl: URL): string {
   return loadCssFile(path.resolve(entryUrl.pathname), new Set<string>());

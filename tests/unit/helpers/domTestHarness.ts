@@ -17,6 +17,7 @@ export type DomTestHarness = {
   setElementSize: (element: Element, width: number, height: number) => void;
   advanceTimers: (ms: number) => void;
   flushRaf: () => void;
+  getPendingRafCount: () => number;
   flushNextPaint: () => void;
   triggerResize: (element?: Element) => void;
   cleanup: () => void;
@@ -159,6 +160,7 @@ export function createDomTestHarness(): DomTestHarness {
     setElementSize,
     advanceTimers,
     flushRaf,
+    getPendingRafCount: () => rafQueue.length,
     flushNextPaint,
     triggerResize,
     cleanup: () => {

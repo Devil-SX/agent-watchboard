@@ -38,7 +38,6 @@ test("WorkspaceSidebar uses icon-led compact filter controls without visible fie
       isDeleteMode={false}
       selectedDeleteIds={[]}
       onCreateWorkspace={() => undefined}
-      onSearchQueryChange={() => undefined}
       onSortModeChange={() => undefined}
       onFilterModeChange={() => undefined}
       onEnvironmentFilterModeChange={() => undefined}
@@ -64,7 +63,6 @@ test("WorkspaceSidebar uses icon-led compact filter controls without visible fie
   assert.match(html, /aria-label="Filter workspaces by agent"/);
   assert.match(html, /aria-label="Filter workspaces by environment"/);
   assert.match(html, /aria-label="Show all templates"/);
-  assert.match(html, /aria-label="Search workspaces"/);
   assert.match(html, /compact-control-icon/);
   assert.match(html, /agent-badge-icon/);
   assert.match(html, /location-badge-icon/);
@@ -134,7 +132,6 @@ test("WorkspaceSidebar template rows keep the title first and group environment 
       isDeleteMode={false}
       selectedDeleteIds={[]}
       onCreateWorkspace={() => undefined}
-      onSearchQueryChange={() => undefined}
       onSortModeChange={() => undefined}
       onFilterModeChange={() => undefined}
       onEnvironmentFilterModeChange={() => undefined}
@@ -174,7 +171,15 @@ test("WorkspaceSidebar template rows keep the title first and group environment 
 test("WorkspaceSidebar keeps the icon centered and the metadata row compact in CSS", () => {
   assert.match(
     styles,
-    /\.workspace-sidebar-controls\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/s
+    /\.workspace-sidebar-controls\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;[^}]*justify-content:\s*flex-start;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-sidebar-controls\s*\{[^}]*height:\s*32px;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-sidebar-controls\.is-overflowing\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*visible;/s
   );
   assert.match(
     styles,
@@ -218,15 +223,27 @@ test("WorkspaceSidebar keeps the icon centered and the metadata row compact in C
   );
   assert.match(
     styles,
-    /\.workspace-search-control\s*\{[^}]*grid-column:\s*1 \/ -1;/s
-  );
-  assert.match(
-    styles,
-    /\.workspace-search-input\s*\{[^}]*width:\s*100%;[^}]*height:\s*30px;/s
+    /\.quick-search-palette\s*\{[^}]*width:\s*min\(680px,\s*calc\(100vw - 48px\)\);/s
   );
   assert.match(
     styles,
     /\.compact-control-button\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);[^}]*width:\s*100%;[^}]*overflow:\s*hidden;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-sidebar-controls\s*>\s*\.workspace-compact-control,\s*\.workspace-sidebar-controls\s*>\s*\.workspace-compact-control \.compact-control-button,\s*\.workspace-sidebar-controls\s*>\s*\.workspace-compact-control\.compact-dropdown \.compact-control-button\s*\{[^}]*width:\s*auto;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-sidebar-controls\s*>\s*\.workspace-sort-control \.compact-control-button\s*\{[^}]*width:\s*42px;[^}]*min-width:\s*42px;[^}]*max-width:\s*42px;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-sidebar-controls\s*>\s*\.workspace-instance-filter-control \.compact-control-button\s*\{[^}]*width:\s*32px;[^}]*min-width:\s*32px;[^}]*max-width:\s*32px;/s
+  );
+  assert.match(
+    styles,
+    /\.workspace-sidebar-controls\s*>\s*\.workspace-compact-control \.compact-control-button,\s*\.workspace-sidebar-controls\s*>\s*\.workspace-compact-control\.compact-dropdown \.compact-control-button\s*\{[^}]*height:\s*32px;[^}]*min-height:\s*32px;[^}]*max-height:\s*32px;/s
   );
   assert.match(
     styles,

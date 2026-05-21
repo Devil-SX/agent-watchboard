@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { AgentBadge } from "@renderer/components/AgentBadge";
@@ -9,17 +9,17 @@ import {
   CodexIcon,
   EyeIcon,
   EyeOffIcon,
-  HostIcon,
   IconButton,
-  ListIcon,
+  OpenCodeIcon,
   PlusIcon,
-  TrashIcon,
-  WslIcon
+  TrashIcon
 } from "@renderer/components/IconButton";
 import { LocationBadge } from "@renderer/components/LocationBadge";
 import { SidebarHeaderLayout } from "@renderer/components/SidebarHeaderLayout";
 import { StatusOrbit } from "@renderer/components/StatusOrbit";
+import { detectControlLayoutCollision, type ControlRect } from "@renderer/components/controlLayoutCollision";
 import { createTerminalPreviewSnippet } from "@renderer/components/terminalFallback";
+import { tokenizeWorkspaceSearchQuery, workspaceOrInstanceMatchesSearch } from "@renderer/components/workspaceSearch";
 import { resolveSessionVisualState, resolveWorkspaceVisualState, visualStateClassName, type SessionVisualState } from "@renderer/components/sessionVisualState";
 import {
   AGENT_PRESETS,
@@ -53,7 +53,6 @@ type Props = {
   isDeleteMode: boolean;
   selectedDeleteIds: string[];
   onCreateWorkspace: () => void;
-  onSearchQueryChange: (query: string) => void;
   onSortModeChange: (mode: WorkspaceSortMode) => void;
   onFilterModeChange: (mode: WorkspaceFilterMode) => void;
   onEnvironmentFilterModeChange: (mode: WorkspaceEnvironmentFilterMode) => void;
@@ -114,7 +113,6 @@ export function WorkspaceSidebar({
   isDeleteMode,
   selectedDeleteIds,
   onCreateWorkspace,
-  onSearchQueryChange,
   onSortModeChange,
   onFilterModeChange,
   onEnvironmentFilterModeChange,
@@ -139,6 +137,7 @@ export function WorkspaceSidebar({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingInstanceId, setRenamingInstanceId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [controlsHaveLayoutCollision, setControlsHaveLayoutCollision] = useState(false);
   const [hoverPreview, setHoverPreview] = useState<{
     instanceId: string;
     style: CSSProperties;
@@ -146,6 +145,7 @@ export function WorkspaceSidebar({
   } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
   const instancesByWorkspace = useMemo(() => groupInstances(workbench.instances), [workbench.instances]);
   const instanceMap = useMemo(() => new Map(workbench.instances.map((instance) => [instance.instanceId, instance] as const)), [workbench.instances]);
   const visiblePathGroups = useMemo(
@@ -199,6 +199,45 @@ export function WorkspaceSidebar({
     renameInputRef.current?.focus();
     renameInputRef.current?.select();
   }, [renamingInstanceId]);
+
+  useLayoutEffect(() => {
+    if (isDeleteMode) {
+      setControlsHaveLayoutCollision(false);
+      return;
+    }
+    const controls = controlsRef.current;
+    if (!controls) {
+      return;
+    }
+
+    const measureControls = (): void => {
+      const containerRect = toControlRect(controls.getBoundingClientRect());
+      const controlElements = Array.from(controls.children).filter((child): child is HTMLElement => child instanceof HTMLElement);
+      const itemRects = controlElements.map((element) => toControlRect(element.getBoundingClientRect()));
+      const hasClippedContent = controlElements.some((element) => elementHasClippedContent(element));
+      const collision = detectControlLayoutCollision({
+        container: containerRect,
+        items: itemRects,
+        hasScrollOverflow: controls.scrollWidth > controls.clientWidth + 1 || controls.scrollHeight > controls.clientHeight + 1,
+        hasClippedContent
+      });
+      setControlsHaveLayoutCollision((current) => (current === collision.hasCollision ? current : collision.hasCollision));
+    };
+
+    measureControls();
+    const observer = new ResizeObserver(measureControls);
+    observer.observe(controls);
+    for (const child of controls.children) {
+      if (child instanceof HTMLElement) {
+        observer.observe(child);
+      }
+    }
+    window.addEventListener("resize", measureControls);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measureControls);
+    };
+  }, [environmentFilterMode, filterMode, instanceVisibilityFilterEnabled, isDeleteMode, sortMode]);
 
   function startInstanceRename(instanceId: string): void {
     const instance = instanceMap.get(instanceId);
@@ -265,19 +304,21 @@ export function WorkspaceSidebar({
               <div className="workspace-sidebar-toolbar-actions">{headerActions}</div>
             </div>
             {!isDeleteMode ? (
-              <div className="workspace-sidebar-controls">
+              <div
+                ref={controlsRef}
+                className={controlsHaveLayoutCollision ? "workspace-sidebar-controls is-overflowing" : "workspace-sidebar-controls"}
+                data-layout-collision={controlsHaveLayoutCollision ? "true" : undefined}
+              >
                 <CompactToggleButton
-                  className="workspace-compact-control"
+                  className="workspace-compact-control workspace-sort-control"
                   label="Sort"
                   hideLabel
                   ariaLabel={`Sort workspaces: ${sortMode === "last-launch" ? "last launch" : "alphabetical"}`}
-                  icon={<ListIcon />}
-                  value={sortMode === "last-launch" ? "Last Launch" : "A-Z"}
+                  value={sortMode === "last-launch" ? "New" : "A-Z"}
                   onClick={() => onSortModeChange(sortMode === "last-launch" ? "alphabetical" : "last-launch")}
                 />
                 <CompactDropdown
-                  className="workspace-compact-control"
-                  icon={filterMode === "codex" ? <CodexIcon /> : filterMode === "claude" ? <ClaudeIcon /> : undefined}
+                  className="workspace-compact-control workspace-agent-control"
                   label="Agent"
                   hideLabel
                   ariaLabel="Filter workspaces by agent"
@@ -286,8 +327,7 @@ export function WorkspaceSidebar({
                   onChange={onFilterModeChange}
                 />
                 <CompactDropdown
-                  className="workspace-compact-control"
-                  icon={environmentFilterMode === "host" ? <HostIcon /> : environmentFilterMode === "wsl" ? <WslIcon /> : undefined}
+                  className="workspace-compact-control workspace-env-control"
                   label="Env"
                   hideLabel
                   ariaLabel="Filter workspaces by environment"
@@ -296,23 +336,13 @@ export function WorkspaceSidebar({
                   onChange={onEnvironmentFilterModeChange}
                 />
                 <CompactToggleButton
-                  className={instanceVisibilityFilterEnabled ? "workspace-compact-control is-active" : "workspace-compact-control"}
+                  className={instanceVisibilityFilterEnabled ? "workspace-compact-control workspace-instance-filter-control is-active" : "workspace-compact-control workspace-instance-filter-control"}
                   label="Instance"
                   hideLabel
                   ariaLabel={instanceVisibilityFilterEnabled ? "Hide templates without instances" : "Show all templates"}
                   icon={instanceVisibilityFilterEnabled ? <EyeIcon /> : <EyeOffIcon />}
                   onClick={() => onInstanceVisibilityFilterChange(!instanceVisibilityFilterEnabled)}
                 />
-                <label className="workspace-search-control">
-                  <input
-                    type="search"
-                    className="workspace-search-input"
-                    aria-label="Search workspaces"
-                    placeholder="Search name or path"
-                    value={searchQuery}
-                    onChange={(event) => onSearchQueryChange(event.target.value)}
-                  />
-                </label>
               </div>
             ) : null}
           </>
@@ -407,6 +437,9 @@ export function WorkspaceSidebar({
                           }
                           if (agentKind === "codex") {
                             return <span className="workspace-agent-icon"><CodexIcon /></span>;
+                          }
+                          if (agentKind === "opencode") {
+                            return <span className="workspace-agent-icon"><OpenCodeIcon /></span>;
                           }
                           return <span className="workspace-agent-icon is-placeholder" aria-hidden="true" />;
                         })()}
@@ -674,6 +707,7 @@ const WORKSPACE_FILTER_OPTIONS: Array<{ label: string; value: WorkspaceFilterMod
   { label: "All", value: "all" },
   { label: "Codex", value: "codex", content: <AgentBadge agent="codex" showLabel={false} /> },
   { label: "Claude", value: "claude", content: <AgentBadge agent="claude" showLabel={false} /> },
+  { label: "OpenCode", value: "opencode", content: <AgentBadge agent="opencode" showLabel={false} /> },
   { label: "Other", value: "other" }
 ];
 
@@ -732,14 +766,14 @@ function resolveWorkspaceLaunchFlags(terminal: Pick<
 
   const command = resolveTerminalStartupCommand(terminal);
   const agentKind = detectAgentKind(terminal);
-  if (agentKind !== "codex" && agentKind !== "claude") {
+  if (agentKind !== "codex" && agentKind !== "claude" && agentKind !== "opencode") {
     return { continueMode: false, skipMode: false };
   }
 
   const preset = AGENT_PRESETS[agentKind];
   return {
     continueMode: command.includes(preset.continueFlag),
-    skipMode: command.includes(preset.skipFlag)
+    skipMode: preset.skipFlag ? command.includes(preset.skipFlag) : false
   };
 }
 
@@ -759,22 +793,11 @@ export function matchesWorkspaceFilter(
   return matchesAgentFilter && matchesEnvironmentFilter;
 }
 
-export function tokenizeWorkspaceSearchQuery(searchQuery: string): string[] {
-  return searchQuery
-    .trim()
-    .toLocaleLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-}
+export { tokenizeWorkspaceSearchQuery } from "@renderer/components/workspaceSearch";
 
 export function matchesWorkspaceSearch(workspace: Workspace, searchQuery: string): boolean {
   const tokens = tokenizeWorkspaceSearchQuery(searchQuery);
-  if (tokens.length === 0) {
-    return true;
-  }
-
-  const haystacks = [workspace.name, workspace.terminals[0]?.cwd ?? ""].map((value) => value.toLocaleLowerCase());
-  return tokens.every((token) => haystacks.some((candidate) => candidate.includes(token)));
+  return tokens.length === 0 || tokens.every((token) => workspace.name.toLocaleLowerCase().includes(token));
 }
 
 export function sortAndFilterWorkspaces(
@@ -818,7 +841,7 @@ export function deriveVisibleWorkspaceGroups(
     const instances = instancesByWorkspace.get(workspace.id) ?? [];
     const hasInstances = instances.length > 0;
     const matchesFilters = matchesWorkspaceFilter(workspace, filterMode, environmentFilterMode);
-    const matchesSearch = matchesWorkspaceSearch(workspace, searchQuery);
+    const matchesSearch = workspaceOrInstanceMatchesSearch(workspace, instances, searchQuery);
     const matchesStructuredVisibility = instanceVisibilityFilterEnabled ? matchesFilters && hasInstances : matchesFilters || hasInstances;
     const shouldInclude = matchesStructuredVisibility && matchesSearch;
 
@@ -970,6 +993,24 @@ function normalizeWorkspaceLaunchTimestamp(value: string | null | undefined): st
 function handleAction(event: MouseEvent<HTMLButtonElement>, action: () => void): void {
   event.stopPropagation();
   action();
+}
+
+function toControlRect(rect: DOMRect): ControlRect {
+  return {
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    bottom: rect.bottom
+  };
+}
+
+function elementHasClippedContent(element: HTMLElement): boolean {
+  if (element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1) {
+    return true;
+  }
+  return Array.from(element.querySelectorAll<HTMLElement>("button, .compact-control-copy, .compact-dropdown-value, .compact-control-value")).some(
+    (child) => child.scrollWidth > child.clientWidth + 1 || child.scrollHeight > child.clientHeight + 1
+  );
 }
 
 export function getContextMenuStyle(clientX: number, clientY: number, itemCount = 1): CSSProperties {

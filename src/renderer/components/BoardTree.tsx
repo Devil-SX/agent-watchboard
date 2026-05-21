@@ -111,7 +111,7 @@ export function BoardTree({ document, boardLocationKind, canSwitchLocation, onBo
         ) : document.sections.length === 0 ? (
           <div className="panel-empty">
             <p>This {boardLocationKind === "wsl" ? "WSL" : "host"} board is loaded but empty.</p>
-            <span>Use the repo-local `todo_preview` command to add sections or tasks to this env.</span>
+            <span>Add sections or tasks from the board UI once editing controls are available for this env.</span>
           </div>
         ) : viewMode === "list" ? (
           filteredSections.length > 0 ? (

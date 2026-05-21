@@ -21,7 +21,13 @@ import { canStartSkillsChatSession } from "@renderer/components/skillsChatStartu
 import { applyOptimisticSettingsPreference, hasSettingsPreferenceChange } from "@renderer/components/settingsDraft";
 import { TitleBar } from "@renderer/components/TitleBar";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
+import {
+  useWorkspaceQuickSearchItems,
+  WorkspaceQuickSearchPalette,
+  type WorkspaceQuickSearchItem
+} from "@renderer/components/WorkspaceQuickSearchPalette";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
+import { buildWorkspaceQuickSearchWorkspaceItems } from "@renderer/components/workspaceSearch";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import {
   buildWorkspaceDirectoryRequest,
@@ -69,8 +75,10 @@ import { createRequestId } from "@shared/requestId";
 import {
   addInstanceToWorkbench,
   attachExistingInstance,
+  collapseAllInstances,
   collapseInstance,
   reconcileWorkbenchLayoutChange,
+  removeAllInstancesFromWorkbench,
   removeInstanceFromWorkbench,
   restoreInstance,
   updateWorkbenchInstance,
@@ -116,6 +124,9 @@ export function App(): ReactElement {
   const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [deleteSelection, setDeleteSelection] = useState<string[]>([]);
   const [workspaceSearchQuery, setWorkspaceSearchQuery] = useState("");
+  const [isWorkspaceQuickSearchOpen, setIsWorkspaceQuickSearchOpen] = useState(false);
+  const [workspaceQuickSearchSelectedIndex, setWorkspaceQuickSearchSelectedIndex] = useState(0);
+  const [workspaceQuickSearchWorkspaceId, setWorkspaceQuickSearchWorkspaceId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<MainTabId>("terminal");
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
   const [skillsChatInstance, setSkillsChatInstance] = useState<TerminalInstance | null>(null);
@@ -155,6 +166,48 @@ export function App(): ReactElement {
     },
     [nowMs, workbench?.instances]
   );
+  const workspaceQuickSearchWorkspace =
+    workspaceList?.workspaces.find((workspace) => workspace.id === workspaceQuickSearchWorkspaceId) ?? null;
+  const rootWorkspaceQuickSearchItems = useWorkspaceQuickSearchItems(
+    workspaceList?.workspaces ?? [],
+    workbench,
+    workspaceSearchQuery,
+    activePaneInstance
+  );
+  const workspaceQuickSearchItems = useMemo(
+    () =>
+      workspaceQuickSearchWorkspace
+        ? buildWorkspaceQuickSearchWorkspaceItems(workspaceQuickSearchWorkspace, workbench?.instances ?? [], workspaceSearchQuery)
+        : rootWorkspaceQuickSearchItems,
+    [rootWorkspaceQuickSearchItems, workbench?.instances, workspaceQuickSearchWorkspace, workspaceSearchQuery]
+  );
+
+  useEffect(() => {
+    if (workspaceQuickSearchSelectedIndex < workspaceQuickSearchItems.length) {
+      return;
+    }
+    setWorkspaceQuickSearchSelectedIndex(Math.max(0, workspaceQuickSearchItems.length - 1));
+  }, [workspaceQuickSearchItems.length, workspaceQuickSearchSelectedIndex]);
+
+  useEffect(() => {
+    const handleGlobalShortcut = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLocaleLowerCase() !== "p") {
+        return;
+      }
+      if (isTerminalKeyboardEventTarget(event) && settingsDraft?.quickSearchOverridesTerminalShortcuts === false) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      setActiveTab("terminal");
+      setIsWorkspaceQuickSearchOpen(true);
+      setWorkspaceQuickSearchWorkspaceId(null);
+      setWorkspaceQuickSearchSelectedIndex(0);
+    };
+    window.addEventListener("keydown", handleGlobalShortcut, true);
+    return () => window.removeEventListener("keydown", handleGlobalShortcut, true);
+  }, [settingsDraft?.quickSearchOverridesTerminalShortcuts]);
 
   function emitRendererDebugLog(message: string, details?: unknown): void {
     void window.watchboard.debugLog(message, details).catch(() => undefined);
@@ -1349,8 +1402,15 @@ export function App(): ReactElement {
   }
 
   function handleSettingsFieldChange(
-    field: "terminalFontFamily" | "terminalFontSize" | "hostBoardPath" | "wslBoardPath" | "boardWslDistro" | "agentWslDistro",
-    value: string | number
+    field:
+      | "terminalFontFamily"
+      | "terminalFontSize"
+      | "quickSearchOverridesTerminalShortcuts"
+      | "hostBoardPath"
+      | "wslBoardPath"
+      | "boardWslDistro"
+      | "agentWslDistro",
+    value: string | number | boolean
   ): void {
     if (!settingsDraft) {
       return;
@@ -1684,6 +1744,50 @@ export function App(): ReactElement {
     stageWorkbench(collapseInstance(workbench, instanceId));
   }
 
+  function handleCollapseAllPanes(): void {
+    const currentWorkbench = workbenchRef.current;
+    if (!currentWorkbench) {
+      return;
+    }
+    stageWorkbench(collapseAllInstances(currentWorkbench));
+  }
+
+  function handleScrollActiveTerminalToBottom(): void {
+    const currentWorkbench = workbenchRef.current;
+    const activeInstance = currentWorkbench?.instances.find((instance) => instance.paneId === currentWorkbench.activePaneId);
+    if (!activeInstance || activeInstance.collapsed) {
+      return;
+    }
+    setActiveTab("terminal");
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(
+        new CustomEvent("watchboard:scroll-terminal-to-bottom", {
+          detail: {
+            paneId: activeInstance.paneId,
+            sessionId: activeInstance.sessionId
+          }
+        })
+      );
+    });
+  }
+
+  async function handleCloseAllPanes(): Promise<void> {
+    const currentWorkbench = workbenchRef.current;
+    if (!currentWorkbench || currentWorkbench.instances.length === 0) {
+      return;
+    }
+    const currentSessions = sessionsRef.current;
+    await Promise.all(
+      currentWorkbench.instances.map(async (instance) => {
+        const session = currentSessions[instance.sessionId];
+        if (session && session.status !== "stopped") {
+          await window.watchboard.stopSession(instance.sessionId);
+        }
+      })
+    );
+    stageWorkbench(removeAllInstancesFromWorkbench(currentWorkbench));
+  }
+
   function handleRestorePane(instanceId: string): void {
     if (!workbench) return;
     stageWorkbench(restoreInstance(workbench, instanceId));
@@ -1724,6 +1828,62 @@ export function App(): ReactElement {
     stageWorkbench(updateWorkbenchActivePane(workbench, paneId));
   }
 
+  function closeWorkspaceQuickSearch(): void {
+    setIsWorkspaceQuickSearchOpen(false);
+    setWorkspaceQuickSearchSelectedIndex(0);
+    setWorkspaceQuickSearchWorkspaceId(null);
+    setWorkspaceSearchQuery("");
+  }
+
+  function returnToWorkspaceQuickSearchRoot(): void {
+    setWorkspaceQuickSearchWorkspaceId(null);
+    setWorkspaceQuickSearchSelectedIndex(0);
+    setWorkspaceSearchQuery("");
+  }
+
+  function handleWorkspaceQuickSearchSelect(item: WorkspaceQuickSearchItem): void {
+    setActiveTab("terminal");
+    if (item.kind === "command") {
+      if (item.action === "scroll-active-terminal-to-bottom") {
+        handleScrollActiveTerminalToBottom();
+      } else if (item.action === "collapse-all-instances") {
+        handleCollapseAllPanes();
+      } else {
+        void handleCloseAllPanes();
+      }
+      closeWorkspaceQuickSearch();
+      return;
+    }
+
+    if (item.kind === "workspace") {
+      setWorkspaceQuickSearchWorkspaceId(item.workspaceId);
+      setWorkspaceQuickSearchSelectedIndex(0);
+      setWorkspaceSearchQuery("");
+      return;
+    }
+
+    if (item.kind === "workspace-action") {
+      if (item.action === "open-config") {
+        void selectWorkspace(item.workspaceId, { openConfig: true });
+      } else {
+        void (async () => {
+          await selectWorkspace(item.workspaceId);
+          await openWorkspaceInstance(item.workspaceId, "tab", workbench?.activePaneId);
+        })();
+      }
+      closeWorkspaceQuickSearch();
+      return;
+    }
+
+    setSelectedWorkspaceId(item.workspaceId);
+    if (item.collapsed) {
+      handleRestorePane(item.instanceId);
+    } else {
+      handleFocusPane(item.paneId);
+    }
+    closeWorkspaceQuickSearch();
+  }
+
   if (!workspaceList || !workbench || !settingsDraft) {
     return <main className="app-loading">Loading Watchboard...</main>;
   }
@@ -1750,7 +1910,6 @@ export function App(): ReactElement {
               isDeleteMode={isDeleteMode}
               selectedDeleteIds={deleteSelection}
               onCreateWorkspace={() => void handleCreateWorkspace()}
-              onSearchQueryChange={setWorkspaceSearchQuery}
               onSortModeChange={(sortMode: WorkspaceSortMode) => void handleWorkspaceSidebarPreferenceChange({ workspaceSortMode: sortMode })}
               onFilterModeChange={(filterMode: WorkspaceFilterMode) =>
                 void handleWorkspaceSidebarPreferenceChange({ workspaceFilterMode: filterMode })
@@ -1809,6 +1968,8 @@ export function App(): ReactElement {
               onFocusPane={handleFocusPane}
               onNewPane={handleNewPane}
               onSplitPane={handleSplitPane}
+              onCollapseAllPanes={handleCollapseAllPanes}
+              onCloseAllPanes={handleCloseAllPanes}
               onClosePane={(instanceId) => void handleClosePane(instanceId)}
               onCollapsePane={handleCollapsePane}
               onRenameInstance={handleRenameInstance}
@@ -1934,6 +2095,18 @@ export function App(): ReactElement {
       >
         {activeContent}
       </ContentTabsShell>
+      <WorkspaceQuickSearchPalette
+        isOpen={isWorkspaceQuickSearchOpen}
+        query={workspaceSearchQuery}
+        items={workspaceQuickSearchItems}
+        selectedIndex={workspaceQuickSearchSelectedIndex}
+        onQueryChange={setWorkspaceSearchQuery}
+        onSelectedIndexChange={setWorkspaceQuickSearchSelectedIndex}
+        onSelect={handleWorkspaceQuickSearchSelect}
+        onClose={closeWorkspaceQuickSearch}
+        detailTitle={workspaceQuickSearchWorkspace?.name ?? null}
+        onBack={returnToWorkspaceQuickSearchRoot}
+      />
       <FloatingErrorToast notice={error} onDismiss={clearError} />
         <ConfigDrawer
           isOpen={isConfigOpen}
@@ -1979,6 +2152,20 @@ function handleProfilerRender(
       phase
     }
   });
+}
+
+function isTerminalKeyboardEventTarget(event: KeyboardEvent): boolean {
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  for (const target of path) {
+    if (!(target instanceof Element)) {
+      continue;
+    }
+    if (target.classList.contains("terminal-pane") || target.classList.contains("terminal-host") || target.classList.contains("xterm")) {
+      return true;
+    }
+  }
+  const target = event.target;
+  return target instanceof Element && Boolean(target.closest(".terminal-pane, .terminal-host, .xterm"));
 }
 
 function loadWorkspaceIntoEditor(

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import React, { useState, type ReactElement } from "react";
+import React, { type ReactElement } from "react";
 import ReactDOMClient from "react-dom/client";
 import { act } from "react";
 
@@ -60,7 +60,6 @@ function createSidebarHarness(options?: {
   const root = ReactDOMClient.createRoot(container);
 
   function SidebarHarness(): ReactElement {
-    const [searchQuery, setSearchQuery] = useState(options?.initialSearchQuery ?? "");
     return (
       <WorkspaceSidebar
         workspaces={options?.workspaces ?? []}
@@ -69,7 +68,7 @@ function createSidebarHarness(options?: {
         workbench={options?.workbench ?? createEmptyWorkbenchDocument()}
         sessions={{}}
         cronCountdownByInstanceId={new Map()}
-        searchQuery={searchQuery}
+        searchQuery={options?.initialSearchQuery ?? ""}
         sortMode="alphabetical"
         filterMode="all"
         environmentFilterMode="all"
@@ -78,7 +77,6 @@ function createSidebarHarness(options?: {
         isDeleteMode={false}
         selectedDeleteIds={[]}
         onCreateWorkspace={() => undefined}
-        onSearchQueryChange={setSearchQuery}
         onSortModeChange={() => undefined}
         onFilterModeChange={() => undefined}
         onEnvironmentFilterModeChange={() => undefined}
@@ -119,19 +117,28 @@ function createSidebarHarness(options?: {
   };
 }
 
-test("WorkspaceSidebar search input filters templates by name and path", { concurrency: false }, async () => {
+test("WorkspaceSidebar quick search filter keeps templates visible by workspace or instance name", { concurrency: false }, async () => {
   const alpha = makeWorkspace("Alpha Quant", "/repo/quantization");
   const beta = makeWorkspace("Beta Vision", "/repo/vision");
+  const instance: TerminalInstance = {
+    ...createTerminalInstance(beta, [], { ordinal: 1 }),
+    title: "Research Run"
+  };
+  const workbench: WorkbenchDocument = {
+    ...createEmptyWorkbenchDocument(),
+    activePaneId: instance.paneId,
+    instances: [instance],
+    layoutModel: createWorkbenchLayoutModel([instance])
+  };
   const view = createSidebarHarness({
     workspaces: [alpha, beta],
-    initialSearchQuery: "vision repo"
+    workbench,
+    initialSearchQuery: "research"
   });
 
   try {
     await view.render();
-    const input = view.container.querySelector(".workspace-search-input");
-    assert.ok(input instanceof view.harness.window.HTMLInputElement);
-    assert.equal(input.value, "vision repo");
+    assert.equal(view.container.querySelector(".workspace-search-input"), null);
 
     const text = view.container.textContent ?? "";
     assert.doesNotMatch(text, /Alpha Quant/);

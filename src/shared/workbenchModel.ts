@@ -23,11 +23,12 @@ export function createInitialWorkbenchDocument(): WorkbenchDocument {
 export function normalizeWorkbenchDocument(document: WorkbenchDocument): WorkbenchDocument {
   const instances = document.instances.map((instance) => ({ ...instance }));
   const layoutModel = normalizeWorkbenchLayoutModel(document.layoutModel, instances);
-  const paneIds = new Set(instances.map((instance) => instance.paneId));
+  const visibleInstances = instances.filter((instance) => !instance.collapsed);
+  const paneIds = new Set(visibleInstances.map((instance) => instance.paneId));
   const activePaneId =
     document.activePaneId && paneIds.has(document.activePaneId)
       ? document.activePaneId
-      : instances[instances.length - 1]?.paneId ?? null;
+      : visibleInstances[visibleInstances.length - 1]?.paneId ?? null;
 
   return WorkbenchDocumentSchema.parse({
     ...document,
@@ -58,6 +59,23 @@ export function collapseInstance(document: WorkbenchDocument, instanceId: string
     activePaneId: fallbackPaneId,
     instances: nextInstances,
     layoutModel: nextLayout
+  });
+}
+
+export function collapseAllInstances(document: WorkbenchDocument): WorkbenchDocument {
+  const base = normalizeWorkbenchDocument(document);
+  if (base.instances.length === 0 || base.instances.every((instance) => instance.collapsed)) {
+    return base;
+  }
+  const updatedAt = nowIso();
+  return normalizeWorkbenchDocument({
+    ...base,
+    updatedAt,
+    activePaneId: null,
+    instances: base.instances.map((instance) =>
+      instance.collapsed ? instance : { ...instance, collapsed: true, updatedAt }
+    ),
+    layoutModel: createEmptyWorkbenchLayoutModel()
   });
 }
 
@@ -209,6 +227,20 @@ export function removeInstanceFromWorkbench(document: WorkbenchDocument, instanc
     activePaneId: fallbackPaneId,
     instances: nextInstances,
     layoutModel: nextLayout
+  });
+}
+
+export function removeAllInstancesFromWorkbench(document: WorkbenchDocument): WorkbenchDocument {
+  const base = normalizeWorkbenchDocument(document);
+  if (base.instances.length === 0) {
+    return base;
+  }
+  return normalizeWorkbenchDocument({
+    ...base,
+    updatedAt: nowIso(),
+    activePaneId: null,
+    instances: [],
+    layoutModel: createEmptyWorkbenchLayoutModel()
   });
 }
 

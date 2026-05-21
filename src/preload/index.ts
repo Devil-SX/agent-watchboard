@@ -12,8 +12,8 @@ const api: WatchboardApi = {
   startSession: (instance, requestId) => ipcRenderer.invoke("watchboard:start-session", instance, requestId),
   attachSession: (sessionId, requestId) => ipcRenderer.invoke("watchboard:attach-session", sessionId, requestId),
   stopSession: (sessionId, requestId) => ipcRenderer.invoke("watchboard:stop-session", sessionId, requestId),
-  writeToSession: (sessionId, data, sentAtUnixMs) => {
-    ipcRenderer.send("watchboard:write-session", sessionId, data, sentAtUnixMs);
+  writeToSession: (sessionId, data, sentAtUnixMs, trace) => {
+    ipcRenderer.send("watchboard:write-session", sessionId, data, sentAtUnixMs, trace);
   },
   syncTerminalSelection: (text) => ipcRenderer.invoke("watchboard:sync-terminal-selection", text),
   resizeSession: (sessionId, cols, rows, requestId) => {
@@ -70,7 +70,9 @@ const api: WatchboardApi = {
     ipcRenderer.invoke("watchboard:write-layer-content", configId, layerId, location, content),
   deleteLayer: (configId, layerId, location) => ipcRenderer.invoke("watchboard:delete-layer", configId, layerId, location),
   computeMergedConfig: (configId, location) => ipcRenderer.invoke("watchboard:compute-merged-config", configId, location),
+  computeMergedAgentConfig: (family, location) => ipcRenderer.invoke("watchboard:compute-merged-agent-config", family, location),
   applyMergedConfig: (configId, location) => ipcRenderer.invoke("watchboard:apply-merged-config", configId, location),
+  applyMergedAgentConfig: (family, location) => ipcRenderer.invoke("watchboard:apply-merged-agent-config", family, location),
   importBaseLayer: (configId, location) => ipcRenderer.invoke("watchboard:import-base-layer", configId, location),
   getAnalysisDatabase: (location) => ipcRenderer.invoke("watchboard:get-analysis-database", location),
   getAnalysisBootstrap: (location, selectedProjectKey, selectedSessionId, limit) =>

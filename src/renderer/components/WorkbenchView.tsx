@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode
 
 import { Actions, DockLocation, Layout, Model, type Action, type Node as FlexNode, type TabNode, type TabSetNode } from "flexlayout-react";
 
-import { IconButton, PlusIcon, SplitDownIcon, SplitRightIcon } from "@renderer/components/IconButton";
+import { CloseWindowIcon, IconButton, MinimizeWindowIcon, PlusIcon, SplitDownIcon, SplitRightIcon } from "@renderer/components/IconButton";
 import { resolveSessionVisualState, visualStateClassName } from "@renderer/components/sessionVisualState";
 import { TerminalTabView } from "@renderer/components/TerminalTabView";
 import { type TerminalViewState } from "@renderer/components/terminalViewState";
@@ -27,6 +27,8 @@ type Props = {
   onFocusPane: (paneId: string) => void;
   onNewPane: () => Promise<void>;
   onSplitPane: (direction: "right" | "down") => Promise<void>;
+  onCollapseAllPanes: () => void;
+  onCloseAllPanes: () => Promise<void> | void;
   onClosePane: (instanceId: string) => Promise<void> | void;
   onCollapsePane: (instanceId: string) => void;
   onRenameInstance: (instanceId: string, title: string) => void;
@@ -63,6 +65,8 @@ export function WorkbenchView({
   onFocusPane,
   onNewPane,
   onSplitPane,
+  onCollapseAllPanes,
+  onCloseAllPanes,
   onClosePane,
   onCollapsePane,
   onRenameInstance,
@@ -81,6 +85,8 @@ export function WorkbenchView({
     [workbench.instances]
   );
   const workspaceMap = useMemo(() => new Map(workspaces.map((workspace) => [workspace.id, workspace] as const)), [workspaces]);
+  const hasInstances = workbench.instances.length > 0;
+  const hasVisibleInstances = workbench.instances.some((instance) => !instance.collapsed);
 
   useEffect(() => {
     if (serializedLayout === lastLayoutRef.current) {
@@ -307,16 +313,30 @@ export function WorkbenchView({
             onClick={() => void onSplitPane("down")}
             disabled={!canSplitPane}
           />
+          <span className="workbench-toolbar-separator" aria-hidden="true" />
+          <IconButton
+            label="Collapse All Instances"
+            icon={<MinimizeWindowIcon />}
+            onClick={onCollapseAllPanes}
+            disabled={!hasVisibleInstances}
+          />
+          <IconButton
+            className="workbench-close-all-button"
+            label="Close All Instances"
+            icon={<CloseWindowIcon />}
+            onClick={() => void onCloseAllPanes()}
+            disabled={!hasInstances}
+          />
         </div>
       </header>
 
       <div
         className={isDragActive ? "workbench-layout-shell is-drag-active" : "workbench-layout-shell"}
-        onDragOver={workbench.instances.length === 0 ? handleEmptyDragOver : undefined}
-        onDragLeave={workbench.instances.length === 0 ? handleEmptyDragLeave : undefined}
-        onDrop={workbench.instances.length === 0 ? handleEmptyDrop : undefined}
+        onDragOver={!hasInstances ? handleEmptyDragOver : undefined}
+        onDragLeave={!hasInstances ? handleEmptyDragLeave : undefined}
+        onDrop={!hasInstances ? handleEmptyDrop : undefined}
       >
-        {workbench.instances.length === 0 ? (
+        {!hasInstances ? (
           <div className={isDragActive ? "workbench-empty-state is-drag-active" : "workbench-empty-state"}>
             <strong>Drop a workspace here</strong>
             <span>Drag from the left list, or create a new pane from the toolbar.</span>

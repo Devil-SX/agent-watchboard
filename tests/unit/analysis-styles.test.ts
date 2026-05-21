@@ -54,15 +54,11 @@ test("analysis and settings side rails stay compact and avoid per-tab helper cop
 test("workspace header controls wrap instead of introducing horizontal scrolling", () => {
   assert.match(
     styles,
-    /\.workspace-sidebar-controls\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*overflow:\s*visible;/s
+    /\.workspace-sidebar-controls\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*visible;/s
   );
   assert.match(
     styles,
     /\.workspace-sidebar-toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/s
-  );
-  assert.match(
-    styles,
-    /\.workspace-search-control\s*\{[^}]*grid-column:\s*1 \/ -1;[^}]*min-width:\s*0;/s
   );
   assert.match(
     styles,

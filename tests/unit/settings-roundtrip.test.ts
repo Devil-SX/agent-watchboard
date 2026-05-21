@@ -22,6 +22,8 @@ test("default settings survive a write-then-read round-trip", async () => {
   assert.equal(readBack.wslBoardPath, written.wslBoardPath);
   assert.equal(readBack.terminalFontFamily, written.terminalFontFamily);
   assert.equal(readBack.terminalFontSize, written.terminalFontSize);
+  assert.equal(readBack.quickSearchOverridesTerminalShortcuts, true);
+  assert.equal(readBack.quickSearchOverridesTerminalShortcuts, written.quickSearchOverridesTerminalShortcuts);
   assert.deepEqual(readBack.workspaceCollapsedPathGroups, written.workspaceCollapsedPathGroups);
   assert.equal(readBack.activeMainTab, written.activeMainTab);
   assert.deepEqual(readBack.skillsPane, written.skillsPane);
@@ -81,6 +83,7 @@ test("missing analysisPane field gets filled with defaults on read", async () =>
   assert.equal(readBack.analysisPane.selectedSessionId, null);
   assert.ok(readBack.analysisPane.queryText.length > 0, "queryText should have default SQL");
   assert.deepEqual(readBack.workspaceCollapsedPathGroups, {});
+  assert.equal(readBack.quickSearchOverridesTerminalShortcuts, true);
 
   // Similarly, skillsPane should be filled
   assert.equal(readBack.skillsPane.familyFilter, "all");

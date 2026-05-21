@@ -65,11 +65,14 @@ import {
   type AgentConfigDocument,
   type AgentConfigEntry,
   type AgentConfigFileId,
+  type AgentConfigFamily,
   type ConfigLayerStack,
   type DoctorAgent,
   type DoctorCheckResult,
   type DoctorLocation,
   type AgentPathLocation,
+  type MergedAgentConfigFileResult,
+  type MergedAgentConfigResult,
   BoardDocument,
   type AppSettings,
   type DiagnosticsInfo,
@@ -87,6 +90,7 @@ import {
   resolveTerminalStartupCommand
 } from "@shared/schema";
 import { createPerfEvent, type PerfEvent } from "@shared/perf";
+import type { TerminalInputTrace } from "@shared/ipc";
 import { PerfRecorder } from "@shared/perfNode";
 import { createRequestId } from "@shared/requestId";
 import { resolveElectronRuntimePaths, type RuntimePaths } from "@shared/runtimePaths";
@@ -936,31 +940,62 @@ function setupIpc(): void {
     );
   });
 
-  ipcMain.on("watchboard:write-session", (_event, sessionId: string, data: string, sentAtUnixMs?: number) => {
-    if (typeof sentAtUnixMs === "number") {
+  ipcMain.on(
+    "watchboard:write-session",
+    (_event, sessionId: string, data: string, sentAtUnixMs?: number, trace?: TerminalInputTrace) => {
+      const mainReceivedAtUnixMs = Date.now();
+      const bytes = Buffer.byteLength(data, "utf8");
+      if (typeof sentAtUnixMs === "number") {
+        recordMainPerf({
+          category: "input",
+          name: "renderer-to-main",
+          durationMs: mainReceivedAtUnixMs - sentAtUnixMs,
+          sessionId,
+          extra: {
+            traceId: trace?.traceId ?? null,
+            inputSeq: trace?.inputSeq ?? null,
+            bytes
+          }
+        });
+      }
+      const mainForwardStartedAt = performance.now();
+      const mainForwardedAtUnixMs = Date.now();
+      sendSupervisorCommandSafely(
+        supervisorClient,
+        log,
+        {
+          type: "write-session",
+          sessionId,
+          data,
+          sentAtUnixMs,
+          traceId: trace?.traceId,
+          inputSeq: trace?.inputSeq,
+          mainReceivedAtUnixMs,
+          mainForwardedAtUnixMs
+        },
+        {
+          channel: "watchboard:write-session",
+          sessionId,
+          details: {
+            traceId: trace?.traceId,
+            inputSeq: trace?.inputSeq,
+            bytes
+          }
+        }
+      );
       recordMainPerf({
         category: "input",
-        name: "renderer-to-main",
-        durationMs: Date.now() - sentAtUnixMs,
+        name: "main-forward",
+        durationMs: performance.now() - mainForwardStartedAt,
         sessionId,
         extra: {
-          bytes: Buffer.byteLength(data, "utf8")
+          traceId: trace?.traceId ?? null,
+          inputSeq: trace?.inputSeq ?? null,
+          bytes
         }
       });
     }
-    sendSupervisorCommandSafely(
-      supervisorClient,
-      log,
-      { type: "write-session", sessionId, data, sentAtUnixMs },
-      {
-        channel: "watchboard:write-session",
-        sessionId,
-        details: {
-          bytes: Buffer.byteLength(data, "utf8")
-        }
-      }
-    );
-  });
+  );
 
   ipcMain.handle("watchboard:sync-terminal-selection", async (_event, text: string) => {
     if (typeof text !== "string") {
@@ -1176,38 +1211,48 @@ function setupIpc(): void {
   ipcMain.handle(
     "watchboard:compute-merged-config",
     async (_event, configId: AgentConfigFileId, location: AgentPathLocation) => {
-      const stack = await readLayerStack(configId, location, runtimePaths.configLayersDir);
-      const enabledLayers = getResolvedConfigSortLayers(stack).filter((entry) => entry.enabled);
-      const layerContents = await Promise.all(
-        enabledLayers.map(async ({ layer }) => ({
-          id: layer.id,
-          name: layer.name,
-          content: await readLayerContent(configId, layer.id, location, runtimePaths.configLayersDir)
-        }))
-      );
-      return computeMergedConfig(configId, layerContents, stack.layers.length);
+      return computeMergedConfigForFile(configId, location);
+    }
+  );
+
+  ipcMain.handle(
+    "watchboard:compute-merged-agent-config",
+    async (_event, family: AgentConfigFamily, location: AgentPathLocation): Promise<MergedAgentConfigResult> => {
+      return computeMergedConfigForAgent(family, location, await readConfiguredAgentWslDistro());
     }
   );
 
   ipcMain.handle(
     "watchboard:apply-merged-config",
     async (_event, configId: AgentConfigFileId, location: AgentPathLocation) => {
-      const stack = await readLayerStack(configId, location, runtimePaths.configLayersDir);
-      const enabledLayers = getResolvedConfigSortLayers(stack).filter((entry) => entry.enabled);
-      const layerContents = await Promise.all(
-        enabledLayers.map(async ({ layer }) => ({
-          id: layer.id,
-          name: layer.name,
-          content: await readLayerContent(configId, layer.id, location, runtimePaths.configLayersDir)
-        }))
-      );
-      const result = computeMergedConfig(configId, layerContents, stack.layers.length);
+      const result = await computeMergedConfigForFile(configId, location);
       const entry = await buildAgentConfigEntry(configId, location, await readConfiguredAgentWslDistro());
       if (!entry.entryPath || entry.entryPath.startsWith("~")) {
         throw new Error(`Unable to resolve ${location.toUpperCase()} path for ${configId}`);
       }
       mkdirSync(dirname(entry.entryPath), { recursive: true });
       await writeFile(entry.entryPath, result.content, "utf8");
+    }
+  );
+
+  ipcMain.handle(
+    "watchboard:apply-merged-agent-config",
+    async (_event, family: AgentConfigFamily, location: AgentPathLocation): Promise<void> => {
+      const configuredAgentWslDistro = await readConfiguredAgentWslDistro();
+      const result = await computeMergedConfigForAgent(family, location, configuredAgentWslDistro);
+      const writableFiles = result.files.filter((file) => file.enabledLayerCount > 0);
+      if (writableFiles.length === 0) {
+        throw new Error(`No enabled layers to apply for ${family}`);
+      }
+      await Promise.all(
+        writableFiles.map(async (file) => {
+          if (!file.entryPath || file.entryPath.startsWith("~")) {
+            throw new Error(`Unable to resolve ${location.toUpperCase()} path for ${file.configId}`);
+          }
+          mkdirSync(dirname(file.entryPath), { recursive: true });
+          await writeFile(file.entryPath, file.content, "utf8");
+        })
+      );
     }
   );
 
@@ -1485,6 +1530,51 @@ async function resolveAgentHome(location: AgentPathLocation, preferredWslDistro?
   } catch {
     return null;
   }
+}
+
+async function computeMergedConfigForFile(
+  configId: AgentConfigFileId,
+  location: AgentPathLocation,
+  preferredWslDistro?: string
+): Promise<MergedAgentConfigFileResult> {
+  const stack = await readLayerStack(configId, location, runtimePaths.configLayersDir);
+  const enabledLayers = getResolvedConfigSortLayers(stack).filter((entry) => entry.enabled);
+  const layerContents = await Promise.all(
+    enabledLayers.map(async ({ layer }) => ({
+      id: layer.id,
+      name: layer.name,
+      content: await readLayerContent(configId, layer.id, location, runtimePaths.configLayersDir)
+    }))
+  );
+  const result = computeMergedConfig(configId, layerContents, stack.layers.length);
+  const entry = await buildAgentConfigEntry(configId, location, preferredWslDistro);
+  return {
+    ...result,
+    label: entry.label,
+    family: entry.family,
+    format: entry.format,
+    entryPath: entry.entryPath,
+    resolvedPath: entry.resolvedPath,
+    exists: entry.exists
+  };
+}
+
+async function computeMergedConfigForAgent(
+  family: AgentConfigFamily,
+  location: AgentPathLocation,
+  preferredWslDistro?: string
+): Promise<MergedAgentConfigResult> {
+  const fileDefs = AGENT_CONFIG_FILES.filter((entry) => entry.family === family);
+  const files = await Promise.all(
+    fileDefs.map((entry) => computeMergedConfigForFile(entry.id, location, preferredWslDistro))
+  );
+  return {
+    family,
+    location,
+    files,
+    layerCount: files.reduce((total, file) => total + file.layerCount, 0),
+    enabledLayerCount: files.reduce((total, file) => total + file.enabledLayerCount, 0)
+  };
 }
 
 async function buildAgentConfigEntry(

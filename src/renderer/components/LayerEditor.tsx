@@ -31,6 +31,8 @@ export function LayerEditor({ layer, configId, format, location }: Props): React
     return validateAgentConfigContent(editContent, format);
   }, [editContent, format, layer, loading]);
   const highlightedContent = useMemo(() => highlightAgentConfigContent(editContent, format), [editContent, format]);
+  const tomlDeleteTitle = '["$watchboard"]\ndelete = ["path.to.key"]';
+  const jsonDeleteSyntax = '"$watchboard": { "delete": ["path.to.key"] }';
 
   useEffect(() => {
     if (!layer) {
@@ -98,6 +100,15 @@ export function LayerEditor({ layer, configId, format, location }: Props): React
           <span className="entry-badge">{formatAgentConfigLabel(format)}</span>
           <span className="entry-badge">{layer.name}</span>
           {format === "json" ? <span className="entry-badge">Comments OK</span> : null}
+          {format === "toml" ? (
+            <span className="agent-config-delete-hint" title={`Delete layer keys with ${tomlDeleteTitle}`}>
+              Delete keys: <code>["$watchboard"]</code> <code>delete = ["path.to.key"]</code>
+            </span>
+          ) : (
+            <span className="agent-config-delete-hint" title={`Delete layer keys with ${jsonDeleteSyntax}`}>
+              Delete keys: <code>{jsonDeleteSyntax}</code>
+            </span>
+          )}
           <span
             className={[
               "path-validation",
@@ -126,6 +137,16 @@ export function LayerEditor({ layer, configId, format, location }: Props): React
           onChange={(e) => {
             setEditContent(e.target.value);
             if (error) setError("");
+          }}
+          onKeyDown={(event) => {
+            if (!(event.ctrlKey || event.metaKey) || event.key.toLocaleLowerCase() !== "s") {
+              return;
+            }
+            event.preventDefault();
+            if (!isDirty || saving || loading || !layer) {
+              return;
+            }
+            void handleSave();
           }}
           onScroll={syncScroll}
           spellCheck={false}

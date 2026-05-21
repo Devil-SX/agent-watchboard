@@ -3,7 +3,6 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     "main/supervisor/server": "src/main/supervisor/server.ts",
-    "cli/todo-preview": "src/cli/todo-preview.ts",
     "cli/watchboard": "src/cli/watchboard.ts",
     "cli/session-log": "src/cli/session-log.ts",
   },

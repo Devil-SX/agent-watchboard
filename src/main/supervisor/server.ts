@@ -280,13 +280,31 @@ class SupervisorServer {
         break;
       }
       case "write-session":
-        if (typeof command.sentAtUnixMs === "number") {
+        if (typeof command.mainForwardedAtUnixMs === "number") {
+          this.recordPerf("input", "main-to-supervisor", Date.now() - command.mainForwardedAtUnixMs, {
+            sessionId: command.sessionId,
+            traceId: command.traceId ?? null,
+            inputSeq: command.inputSeq ?? null,
+            bytes: Buffer.byteLength(command.data, "utf8")
+          });
+        } else if (typeof command.sentAtUnixMs === "number") {
           this.recordPerf("input", "renderer-to-supervisor", Date.now() - command.sentAtUnixMs, {
             sessionId: command.sessionId,
+            traceId: command.traceId ?? null,
+            inputSeq: command.inputSeq ?? null,
             bytes: Buffer.byteLength(command.data, "utf8")
           });
         }
-        this.sessions.get(command.sessionId)?.ptyProcess?.write(command.data);
+        {
+          const ptyWriteStartedAt = performance.now();
+          this.sessions.get(command.sessionId)?.ptyProcess?.write(command.data);
+          this.recordPerf("input", "supervisor-pty-write", performance.now() - ptyWriteStartedAt, {
+            sessionId: command.sessionId,
+            traceId: command.traceId ?? null,
+            inputSeq: command.inputSeq ?? null,
+            bytes: Buffer.byteLength(command.data, "utf8")
+          });
+        }
         break;
       case "resize-session":
         this.sessions.get(command.sessionId)?.ptyProcess?.resize(command.cols, command.rows);

@@ -7,8 +7,8 @@ const chromeStyles = readFileSync(new URL("../../src/renderer/styles/chrome.css"
 const workspaceStyles = readFileSync(new URL("../../src/renderer/styles/workspace.css", import.meta.url), "utf8");
 
 test("renderer style entry imports chrome and workspace slices instead of re-declaring them inline", () => {
-  assert.match(aggregateStyles, /@import "\.\/styles\/chrome\.css";/);
-  assert.match(aggregateStyles, /@import "\.\/styles\/workspace\.css";/);
+  assert.match(aggregateStyles, /@import url\("\.\/styles\/chrome\.css"\);/);
+  assert.match(aggregateStyles, /@import url\("\.\/styles\/workspace\.css"\);/);
   assert.doesNotMatch(aggregateStyles, /\.titlebar-surface\s*\{/);
   assert.doesNotMatch(aggregateStyles, /\.workspace-list-item\s*\{/);
   assert.doesNotMatch(aggregateStyles, /\.workspace-sidebar-header\s*\{/);

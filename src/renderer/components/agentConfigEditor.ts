@@ -1,5 +1,6 @@
 import { TomlError, parse as parseToml } from "smol-toml";
 
+import { ConfigLayerDirectiveError, extractConfigLayerDirectives } from "@shared/configLayerDirectives";
 import { stripJsonCommentsPreservePositions } from "@shared/jsonComments";
 import type { AgentConfigFormat } from "@shared/schema";
 
@@ -64,9 +65,9 @@ export function formatAgentConfigLabel(format: AgentConfigFormat): string {
 export function validateAgentConfigContent(content: string, format: AgentConfigFormat): AgentConfigValidation {
   try {
     if (format === "json") {
-      JSON.parse(stripJsonCommentsPreservePositions(content));
+      extractConfigLayerDirectives(JSON.parse(stripJsonCommentsPreservePositions(content)) as Record<string, unknown>);
     } else {
-      parseToml(content);
+      extractConfigLayerDirectives(parseToml(content) as Record<string, unknown>);
     }
     return {
       status: "valid",
@@ -77,6 +78,9 @@ export function validateAgentConfigContent(content: string, format: AgentConfigF
       column: null
     };
   } catch (error) {
+    if (error instanceof ConfigLayerDirectiveError) {
+      return buildDirectiveValidationError(format, error);
+    }
     if (format === "json") {
       return buildJsonValidationError(content, error);
     }
@@ -100,6 +104,17 @@ export function highlightAgentConfigContent(content: string, format: AgentConfig
       return `<span class="agent-config-token is-${token.kind}">${escapeHtml(token.text)}</span>`;
     })
     .join("");
+}
+
+function buildDirectiveValidationError(format: AgentConfigFormat, error: ConfigLayerDirectiveError): AgentConfigValidation {
+  return {
+    status: "invalid",
+    format,
+    summary: `${formatAgentConfigLabel(format)} layer directives are invalid.`,
+    detail: error.message,
+    line: null,
+    column: null
+  };
 }
 
 function buildJsonValidationError(content: string, error: unknown): AgentConfigValidation {

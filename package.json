@@ -1,12 +1,11 @@
 {
   "name": "agent-watchboard",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "description": "Desktop watchboard for orchestrating multiple code agents with PTY-backed terminals and JSON todo boards.",
   "main": "out/main/index.js",
   "bin": {
-    "todo_preview": "dist-node/cli/todo-preview.cjs",
     "watchboard": "dist-node/cli/watchboard.cjs",
     "session_log": "dist-node/cli/session-log.cjs"
   },
@@ -17,7 +16,6 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint 'src/cli/**/*.ts' 'src/main/supervisor/**/*.ts' 'src/shared/**/*.ts'",
     "preview": "electron-vite preview",
-    "todo_preview": "tsx src/cli/todo-preview.ts",
     "watchboard": "tsx src/cli/watchboard.ts",
     "session_log": "tsx src/cli/session-log.ts",
     "dist:linux": "pnpm build && electron-builder --linux AppImage",
@@ -32,7 +30,8 @@
     "test:sample:activity": "tsx scripts/capture-agent-idle-sample.ts --agent codex",
     "test:perf:terminal": "tsx tests/perf/render-terminal-profile.ts",
     "test:perf:analysis": "tsx tests/perf/render-analysis-profile.ts",
-    "test:perf:analysis:bottleneck": "tsx tests/perf/profile-analysis-bottleneck.ts"
+    "test:perf:analysis:bottleneck": "tsx tests/perf/profile-analysis-bottleneck.ts",
+    "test:perf:terminal-flush": "tsx tests/perf/terminal-flush-benchmark.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

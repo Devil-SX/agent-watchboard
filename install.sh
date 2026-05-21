@@ -62,7 +62,7 @@ verify_build() {
     log "INFO" "Verifying build output..."
 
     local missing=0
-    for cli in todo-preview watchboard session-log; do
+    for cli in watchboard session-log; do
         if [[ ! -f "$PROJECT_DIR/dist-node/cli/${cli}.cjs" ]]; then
             log "ERROR" "Missing: dist-node/cli/${cli}.cjs"
             missing=1
@@ -81,8 +81,8 @@ create_commands() {
     log "INFO" "Creating command scripts in $INSTALL_DIR..."
     mkdir -p "$INSTALL_DIR"
 
-    for cli in todo_preview watchboard session_log; do
-        local cli_file="${cli//_/-}"  # todo_preview -> todo-preview
+    for cli in watchboard session_log; do
+        local cli_file="${cli//_/-}"  # session_log -> session-log
         rm -f "$INSTALL_DIR/$cli"
         cat > "$INSTALL_DIR/$cli" << EOF
 #!/bin/bash
@@ -125,7 +125,6 @@ This script builds the Node.js CLIs and creates wrapper scripts in
     $PROJECT_DIR/dist-node/cli/
 
 After installation, the following commands are available:
-    todo_preview    Shared task board CLI
     session_log     Query/fetch agent session logs
     watchboard      Workspace and settings management
 
@@ -151,7 +150,6 @@ main() {
     log "SUCCESS" "Installation complete!"
     echo ""
     echo "  Commands installed:"
-    echo "    todo_preview --help"
     echo "    session_log --help"
     echo "    watchboard --help"
     echo ""

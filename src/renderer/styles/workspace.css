@@ -46,42 +46,37 @@
 }
 
 .workspace-sidebar-controls {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  align-items: stretch;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
+  height: 32px;
   min-width: 0;
   overflow: visible;
   padding-bottom: 0;
 }
 
-.workspace-search-control {
-  grid-column: 1 / -1;
-  min-width: 0;
+.workspace-sidebar-controls.is-overflowing {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  overflow: visible;
 }
 
-.workspace-search-input {
-  width: 100%;
-  min-width: 0;
-  height: 30px;
-  padding: 0 0.72rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-soft);
-  font: inherit;
+.workspace-sidebar-controls.is-overflowing > .workspace-compact-control,
+.workspace-sidebar-controls.is-overflowing > .workspace-compact-control.compact-dropdown {
+  flex: 0 0 auto;
 }
 
-.workspace-search-input::placeholder {
-  color: var(--text-muted);
-}
-
-.workspace-search-input:hover,
-.workspace-search-input:focus-visible {
-  border-color: rgba(142, 199, 255, 0.24);
-  background: rgba(255, 255, 255, 0.06);
-  outline: none;
+.workspace-sidebar-controls.is-overflowing > .workspace-compact-control .compact-control-button,
+.workspace-sidebar-controls.is-overflowing > .workspace-compact-control.compact-dropdown .compact-control-button {
+  height: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  padding: 0;
 }
 
 .workspace-sidebar-control-group {
@@ -754,6 +749,8 @@
 
 .workspace-sidebar-controls > .workspace-compact-control,
 .workspace-sidebar-controls > .workspace-compact-control.compact-dropdown {
+  flex: 0 0 auto;
+  height: 32px;
   min-width: 0;
 }
 
@@ -764,7 +761,43 @@
 .workspace-sidebar-controls > .workspace-compact-control,
 .workspace-sidebar-controls > .workspace-compact-control .compact-control-button,
 .workspace-sidebar-controls > .workspace-compact-control.compact-dropdown .compact-control-button {
-  width: 100%;
+  width: auto;
+}
+
+.workspace-sidebar-controls > .workspace-compact-control .compact-control-button,
+.workspace-sidebar-controls > .workspace-compact-control.compact-dropdown .compact-control-button {
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  max-height: 32px;
+  max-width: 42px;
+  padding: 0;
+  border-radius: 8px;
+  justify-items: center;
+  gap: 0;
+}
+
+.workspace-sidebar-controls > .workspace-compact-control.compact-dropdown .compact-control-button {
+  width: 40px;
+  min-width: 40px;
+  max-width: 40px;
+}
+
+.workspace-sidebar-controls > .workspace-sort-control .compact-control-button {
+  width: 42px;
+  min-width: 42px;
+  max-width: 42px;
+}
+
+.workspace-sidebar-controls > .workspace-instance-filter-control .compact-control-button {
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+}
+
+.workspace-sidebar-controls .compact-control-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .workspace-sidebar-controls .compact-control-copy,
@@ -774,7 +807,39 @@
   min-width: 0;
 }
 
+.workspace-sidebar-controls .compact-control-copy,
+.workspace-sidebar-controls .compact-dropdown-value,
+.workspace-sidebar-controls .compact-dropdown-option-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: auto;
+}
+
 .workspace-sidebar-controls .compact-control-value {
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1;
+}
+
+.workspace-sidebar-controls .compact-dropdown-caret {
+  width: 10px;
+  height: 10px;
+  flex-basis: 10px;
+}
+
+.workspace-sidebar-controls .agent-badge,
+.workspace-sidebar-controls .location-badge {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  line-height: 1;
+}
+
+.workspace-sidebar-controls .agent-badge-icon,
+.workspace-sidebar-controls .location-badge-icon {
+  width: 14px;
+  height: 14px;
 }

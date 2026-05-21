@@ -6,23 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-05-21
+
+> **Code Stats** | Total: 61,800 lines | Delta: +9,150 (-3,197) = **+5,953 net** | Change: **+10.66%** vs v0.14.0
+
 ### Added
 - Added a custom desktop title bar with workspace-aware context, version display, and native-style minimize/maximize/close controls for non-macOS builds, plus regression coverage for the new window chrome contract.
 - Added a floating runtime-notice toast that surfaces recoverable backend errors above the workspace and auto-dismisses after a short timeout.
 - Added an extracted analysis session browser with shared metric formatting, project/session/section navigation state, and style coverage for compact stacked summaries.
 - Added inline runtime-instance rename support from both the workspace sidebar and Runtime Panes tab titles, including layout-name synchronization tests.
 - Added persistent config-layer sort presets so Agent Config stacks can save multiple layer-order views, switch between them, and recover cleanly from legacy or malformed layer metadata.
+- Added a workspace quick-search palette for jumping to workspaces, creating instances, opening workspace config, and focusing existing runtime panes by name.
+- Added terminal input latency tracing, low-latency echo flushing, and a terminal flush benchmark so keypress-to-visible-output delays can be measured and reduced.
+- Added Agent Config layer delete directives so JSON and TOML layers can intentionally remove inherited keys without conflating deletion with an omitted value.
+- Added OpenCode as a terminal agent backend with startup presets, workspace filtering, detection, and a sourced OpenCode icon.
+- Added OpenCode Agent Config file compatibility for global OpenCode and TUI settings under the backend-first Agent Config view.
+- Added one-click and Ctrl+P command actions for collapsing or closing all runtime instances.
+- Added a Ctrl+P command that scrolls the active terminal to the latest output using the same path as the terminal scroll-to-bottom button.
 
 ### Changed
 - Changed the main section rail to use icon-first navigation chrome and updated Agent Config tabs/layer management to resolve merged content through the active saved sort preset instead of the raw layer array.
+- Changed Agent Config navigation to group files under agent backends and apply merged output across every enabled file in the selected backend.
 - Changed the running-status border effect to use two explicit 180-degree comet effects instead of dash-repeated particle trails.
 - Split the large renderer stylesheet into chrome and workspace slices with style-loader coverage for imported CSS bundles.
+- Tightened the Agent Config editor controls and help text so delete syntax is visible while preserving more vertical space for layer editing.
+- Replaced the sidebar search field with the quick-search workflow while keeping workspace and instance filtering behavior covered by tests.
+- Changed Workspace header controls to a fixed-height single-line layout so sort, filter, environment, and instance controls no longer crowd the sidebar or drift vertically.
+
+### Removed
+- Removed the deprecated `todo_preview` CLI, build entry, package command, documentation, repository skill, and unit coverage.
 
 ### Fixed
 - Fixed Claude Code's newer Render terminal output not copying on selection by bridging xterm selection changes into Electron clipboard sync for the embedded terminal surface.
 - Fixed config preview panes so readonly JSON/TOML views can scroll and preserve text selection/copy behavior instead of trapping content in a clipped surface.
 - Fixed merged config preview/apply so Codex and Claude layer stacks now respect the active saved layer order and enabled state when computing the canonical output.
 - Fixed WSL and Windows home-path redaction so command output embedded in longer log messages is sanitized before it reaches diagnostics or test output.
+- Fixed Windows packaging on WSL by staging runtime dependencies and using electron-builder traversal collection instead of the pnpm/npm JSON collector that could fail with `No JSON content found in output`.
 
 ## [0.14.0] - 2026-04-19
 
