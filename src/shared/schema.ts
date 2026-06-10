@@ -611,6 +611,7 @@ export const FlexLayoutTabNodeSchema = z.object({
   name: z.string(),
   component: z.string().default("terminal-instance"),
   enableClose: z.boolean().default(false),
+  enableDrag: z.boolean().default(true),
   config: FlexTabConfigSchema.default({})
 });
 
@@ -1249,6 +1250,7 @@ export function createWorkbenchTab(instance: Pick<TerminalInstance, "paneId" | "
     name: instance.title,
     component: "terminal-instance",
     enableClose: false,
+    enableDrag: true,
     config: {
       instanceId: instance.instanceId
     }

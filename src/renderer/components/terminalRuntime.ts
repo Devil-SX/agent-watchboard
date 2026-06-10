@@ -26,15 +26,23 @@ export function createTerminalRuntime(options: unknown): {
     getSelection?: () => string;
     refresh: (start: number, end: number) => void;
     scrollToBottom: () => void;
+    scrollToLine?: (line: number) => void;
     reset: () => void;
     focus: () => void;
     dispose: () => void;
     element: HTMLElement | null;
     cols: number;
     rows: number;
+    buffer?: {
+      active?: {
+        baseY: number;
+        viewportY: number;
+      };
+    };
     modes?: {
       mouseTrackingMode?: "none" | "x10" | "vt200" | "drag" | "any";
     };
+    onScroll?: (listener: (position: number) => void) => { dispose: () => void } | void;
   };
   fitAddon: {
     fit: () => void;
@@ -42,21 +50,29 @@ export function createTerminalRuntime(options: unknown): {
 } {
   return {
     terminal: runtimeFactory.createTerminal(options) as {
-      loadAddon: (addon: unknown) => void;
-      open: (host: HTMLElement) => void;
-      write: (data: string, callback?: () => void) => void;
+        loadAddon: (addon: unknown) => void;
+        open: (host: HTMLElement) => void;
+        write: (data: string, callback?: () => void) => void;
       onData: (listener: (data: string) => void) => unknown;
       refresh: (start: number, end: number) => void;
       scrollToBottom: () => void;
+      scrollToLine?: (line: number) => void;
       reset: () => void;
       focus: () => void;
       dispose: () => void;
       element: HTMLElement | null;
       cols: number;
       rows: number;
+      buffer?: {
+        active?: {
+          baseY: number;
+          viewportY: number;
+        };
+      };
       modes?: {
         mouseTrackingMode?: "none" | "x10" | "vt200" | "drag" | "any";
       };
+      onScroll?: (listener: (position: number) => void) => { dispose: () => void } | void;
     },
     fitAddon: runtimeFactory.createFitAddon() as {
       fit: () => void;

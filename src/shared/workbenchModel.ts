@@ -15,6 +15,7 @@ import {
   createWorkbenchTab,
   nowIso
 } from "@shared/schema";
+import type { RuntimePanel } from "@shared/appControl";
 
 export function createInitialWorkbenchDocument(): WorkbenchDocument {
   return createEmptyWorkbenchDocument();
@@ -210,6 +211,51 @@ export function addInstanceToWorkbench(
     instances: nextInstances,
     layoutModel: nextLayout
   });
+}
+
+export function insertRuntimePanelIntoLayout(
+  layoutModel: WorkbenchLayoutModel,
+  panel: RuntimePanel,
+  openMode: WorkbenchOpenMode = "right",
+  anchorPaneId?: string | null
+): WorkbenchLayoutModel {
+  const base = WorkbenchLayoutModelSchema.parse(structuredClone(layoutModel));
+  const nextTab = createRuntimePanelTab(panel);
+  const targetTabset = findFirstTabset(base.layout);
+  if (!targetTabset) {
+    return WorkbenchLayoutModelSchema.parse({
+      ...base,
+      layout: {
+        type: "row",
+        id: createLayoutContainerId("row"),
+        children: [createStandaloneTabset(nextTab)]
+      }
+    });
+  }
+  return insertTabIntoLayout(base, nextTab, openMode, anchorPaneId);
+}
+
+export function removeRuntimePanelFromLayout(layoutModel: WorkbenchLayoutModel, panelId: string): WorkbenchLayoutModel {
+  const clone = cloneLayout(layoutModel);
+  const nextRoot = pruneRuntimePanelRowNode(clone.layout, panelId);
+  return WorkbenchLayoutModelSchema.parse({
+    ...clone,
+    layout: nextRoot ?? createEmptyWorkbenchLayoutModel().layout
+  });
+}
+
+export function createRuntimePanelTab(panel: RuntimePanel): FlexLayoutTabNode {
+  return {
+    type: "tab",
+    id: panel.paneId,
+    name: panel.title,
+    component: panel.kind === "image" ? "runtime-image-panel" : "runtime-browser-panel",
+    enableClose: false,
+    enableDrag: true,
+    config: {
+      panelId: panel.panelId
+    }
+  };
 }
 
 export function removeInstanceFromWorkbench(document: WorkbenchDocument, instanceId: string): WorkbenchDocument {
@@ -426,11 +472,27 @@ function insertInstanceIntoLayout(
   anchorPaneId?: string | null
 ): WorkbenchLayoutModel {
   const nextTab = createWorkbenchTab(instance);
+  return insertTabIntoLayout(layoutModel, nextTab, openMode, anchorPaneId) ?? createWorkbenchLayoutModel([instance]);
+}
+
+function insertTabIntoLayout(
+  layoutModel: WorkbenchLayoutModel,
+  nextTab: FlexLayoutTabNode,
+  openMode: WorkbenchOpenMode,
+  anchorPaneId?: string | null
+): WorkbenchLayoutModel {
   if (openMode === "tab" || !anchorPaneId) {
     const fallback = cloneLayout(layoutModel);
     const targetTabset = findFirstTabset(fallback.layout);
     if (!targetTabset) {
-      return createWorkbenchLayoutModel([instance]);
+      return WorkbenchLayoutModelSchema.parse({
+        ...fallback,
+        layout: {
+          type: "row",
+          id: createLayoutContainerId("row"),
+          children: [createStandaloneTabset(nextTab)]
+        }
+      });
     }
     targetTabset.children.push(nextTab);
     targetTabset.selected = targetTabset.children.length - 1;
@@ -501,6 +563,40 @@ function pruneRowNode(row: FlexLayoutRowNode, paneId: string): FlexLayoutRowNode
     return nextChildren[0];
   }
 
+  return {
+    ...row,
+    children: nextChildren
+  };
+}
+
+function pruneRuntimePanelRowNode(row: FlexLayoutRowNode, panelId: string): FlexLayoutRowNode | null {
+  const nextChildren: FlexLayoutNode[] = [];
+  for (const child of row.children) {
+    if (child.type === "row") {
+      const normalized = pruneRuntimePanelRowNode(child, panelId);
+      if (normalized) {
+        nextChildren.push(normalized);
+      }
+      continue;
+    }
+
+    const nextTabs = child.children.filter((tab) => tab.config?.panelId !== panelId);
+    if (nextTabs.length === 0) {
+      continue;
+    }
+    nextChildren.push({
+      ...child,
+      selected: clampSelectedIndex(child.selected, nextTabs.length),
+      children: nextTabs
+    });
+  }
+
+  if (nextChildren.length === 0) {
+    return null;
+  }
+  if (nextChildren.length === 1 && nextChildren[0]?.type === "row") {
+    return nextChildren[0];
+  }
   return {
     ...row,
     children: nextChildren

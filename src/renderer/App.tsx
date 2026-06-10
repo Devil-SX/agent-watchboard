@@ -20,6 +20,7 @@ import { buildSkillsChatSessionKey, createSkillsChatInstance } from "@renderer/c
 import { canStartSkillsChatSession } from "@renderer/components/skillsChatStartup";
 import { applyOptimisticSettingsPreference, hasSettingsPreferenceChange } from "@renderer/components/settingsDraft";
 import { TitleBar } from "@renderer/components/TitleBar";
+import type { TerminalUrlOpenRequest } from "@renderer/components/TerminalTabView";
 import { WorkbenchView } from "@renderer/components/WorkbenchView";
 import {
   useWorkspaceQuickSearchItems,
@@ -28,6 +29,18 @@ import {
 } from "@renderer/components/WorkspaceQuickSearchPalette";
 import { WorkspaceSidebar } from "@renderer/components/WorkspaceSidebar";
 import { buildWorkspaceQuickSearchWorkspaceItems } from "@renderer/components/workspaceSearch";
+import {
+  CloseRuntimePanelInputSchema,
+  CreateBrowserPanelInputSchema,
+  CreateImagePanelInputSchema,
+  type AppControlActionDescriptor,
+  type AppControlRequest,
+  type AppControlResponse,
+  type LayoutSnapshot,
+  type LayoutSnapshotPane,
+  type RuntimePanel,
+  runtimePlacementToOpenMode
+} from "@shared/appControl";
 import { measureRendererAsync, reportRendererPerf } from "@renderer/perf";
 import {
   buildWorkspaceDirectoryRequest,
@@ -62,6 +75,8 @@ import {
   type TerminalInstance,
   type TerminalProfile,
   type WorkbenchDocument,
+  type FlexLayoutRowNode,
+  type FlexLayoutTabSetNode,
   type WorkbenchLayoutModel,
   type WorkspaceEnvironmentFilterMode,
   type WorkspaceFilterMode,
@@ -80,11 +95,44 @@ import {
   reconcileWorkbenchLayoutChange,
   removeAllInstancesFromWorkbench,
   removeInstanceFromWorkbench,
+  insertRuntimePanelIntoLayout,
+  removeRuntimePanelFromLayout,
   restoreInstance,
   updateWorkbenchInstance,
   updateWorkbenchWorkspaceInstances,
   updateWorkbenchActivePane
 } from "@shared/workbenchModel";
+
+const APP_CONTROL_ACTIONS: AppControlActionDescriptor[] = [
+  {
+    id: "layout.getSnapshot",
+    title: "Get Layout Snapshot",
+    description: "Read the current terminal and runtime panel split layout without mutating terminal panes.",
+    surfaces: ["protocol", "cli"],
+    risk: "safe"
+  },
+  {
+    id: "panel.createImage",
+    title: "Create Image Panel",
+    description: "Create a runtime image panel from an Agent Watchboard host-readable file path.",
+    surfaces: ["protocol", "cli"],
+    risk: "external"
+  },
+  {
+    id: "panel.createBrowser",
+    title: "Create Browser Panel",
+    description: "Create a runtime browser panel from a URL.",
+    surfaces: ["protocol", "cli"],
+    risk: "external"
+  },
+  {
+    id: "panel.close",
+    title: "Close Runtime Panel",
+    description: "Close an image or browser runtime panel. Terminal panes are not accepted.",
+    surfaces: ["protocol", "cli"],
+    risk: "safe"
+  }
+];
 
 export function App(): ReactElement {
   const bootStartedAtRef = useRef(performance.now());
@@ -105,6 +153,8 @@ export function App(): ReactElement {
   const [newWorkspaceSeed, setNewWorkspaceSeed] = useState<Workspace | null>(null);
   const [workbench, setWorkbench] = useState<WorkbenchDocument | null>(null);
   const [workbenchDirty, setWorkbenchDirty] = useState(false);
+  const [runtimePanels, setRuntimePanels] = useState<RuntimePanel[]>([]);
+  const [runtimeLayoutModel, setRuntimeLayoutModel] = useState<WorkbenchLayoutModel | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<AppSettings | null>(null);
   const [boardDocument, setBoardDocument] = useState<BoardDocument | null>(null);
@@ -147,6 +197,10 @@ export function App(): ReactElement {
   sessionsRef.current = sessions;
   const workbenchRef = useRef(workbench);
   workbenchRef.current = workbench;
+  const runtimePanelsRef = useRef(runtimePanels);
+  runtimePanelsRef.current = runtimePanels;
+  const runtimeLayoutModelRef = useRef(runtimeLayoutModel);
+  runtimeLayoutModelRef.current = runtimeLayoutModel;
 
   const savedWorkspace = workspaceList?.workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedWorkspace =
@@ -181,6 +235,7 @@ export function App(): ReactElement {
         : rootWorkspaceQuickSearchItems,
     [rootWorkspaceQuickSearchItems, workbench?.instances, workspaceQuickSearchWorkspace, workspaceSearchQuery]
   );
+  const activeLayoutModel = runtimeLayoutModel ?? workbench?.layoutModel ?? null;
 
   useEffect(() => {
     if (workspaceQuickSearchSelectedIndex < workspaceQuickSearchItems.length) {
@@ -209,6 +264,10 @@ export function App(): ReactElement {
     return () => window.removeEventListener("keydown", handleGlobalShortcut, true);
   }, [settingsDraft?.quickSearchOverridesTerminalShortcuts]);
 
+  useEffect(() => {
+    return window.watchboard.onAppControlRequest((request) => handleAppControlRequest(request));
+  }, []);
+
   function emitRendererDebugLog(message: string, details?: unknown): void {
     void window.watchboard.debugLog(message, details).catch(() => undefined);
   }
@@ -228,6 +287,161 @@ export function App(): ReactElement {
       id: errorNoticeIdRef.current,
       message: normalizedMessage
     });
+  }
+
+  async function handleAppControlRequest(request: AppControlRequest): Promise<AppControlResponse> {
+    try {
+      switch (request.method) {
+        case "layout.getSnapshot":
+          return appControlOk(request.id, buildCurrentLayoutSnapshot());
+        case "panel.createImage":
+          return appControlOk(request.id, createRuntimeImagePanel(CreateImagePanelInputSchema.parse(request.params)));
+        case "panel.createBrowser":
+          return appControlOk(request.id, createRuntimeBrowserPanel(CreateBrowserPanelInputSchema.parse(request.params)));
+        case "panel.close":
+          return appControlOk(request.id, closeRuntimePanelFromControl(CloseRuntimePanelInputSchema.parse(request.params).panelId));
+        case "action.list":
+          return appControlOk(request.id, APP_CONTROL_ACTIONS);
+        case "action.describe": {
+          const descriptor = APP_CONTROL_ACTIONS.find((action) => action.id === request.params.actionId);
+          if (!descriptor) {
+            return appControlError(request.id, "not-found", `Action ${request.params.actionId} is not registered`);
+          }
+          return appControlOk(request.id, descriptor);
+        }
+      }
+    } catch (error) {
+      return appControlError(request.id, "bad-request", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function buildCurrentLayoutSnapshot(): LayoutSnapshot {
+    const currentWorkbench = workbenchRef.current;
+    if (!currentWorkbench) {
+      throw new Error("Workbench is not loaded");
+    }
+    return buildLayoutSnapshot(runtimeLayoutModelRef.current ?? currentWorkbench.layoutModel, currentWorkbench, runtimePanelsRef.current);
+  }
+
+  function createRuntimeImagePanel(input: { title?: string; hostFilePath: string; placement?: { mode?: "tab" | "right" | "down"; anchorPaneId?: string } }): {
+    panel: RuntimePanel;
+    snapshot: LayoutSnapshot;
+  } {
+    return createRuntimePanel({
+      kind: "image",
+      title: input.title?.trim() || "Image",
+      hostFilePath: input.hostFilePath,
+      placement: {
+        mode: input.placement?.mode ?? "right",
+        anchorPaneId: input.placement?.anchorPaneId
+      }
+    });
+  }
+
+  function createRuntimeBrowserPanel(input: { title?: string; url: string; placement?: { mode?: "tab" | "right" | "down"; anchorPaneId?: string } }): {
+    panel: RuntimePanel;
+    snapshot: LayoutSnapshot;
+  } {
+    return createRuntimePanel({
+      kind: "browser",
+      title: input.title?.trim() || "Browser",
+      url: input.url,
+      placement: {
+        mode: input.placement?.mode ?? "right",
+        anchorPaneId: input.placement?.anchorPaneId
+      }
+    });
+  }
+
+  function createRuntimePanel(
+    input:
+      | { kind: "image"; title: string; hostFilePath: string; placement: { mode: "tab" | "right" | "down"; anchorPaneId?: string } }
+      | { kind: "browser"; title: string; url: string; placement: { mode: "tab" | "right" | "down"; anchorPaneId?: string } }
+  ): { panel: RuntimePanel; snapshot: LayoutSnapshot } {
+    const currentWorkbench = workbenchRef.current;
+    if (!currentWorkbench) {
+      throw new Error("Workbench is not loaded");
+    }
+    const panelId = `panel-${globalThis.crypto.randomUUID()}`;
+    const createdAt = new Date().toISOString();
+    const panel: RuntimePanel =
+      input.kind === "image"
+        ? {
+            panelId,
+            paneId: panelId,
+            kind: "image",
+            title: input.title,
+            hostFilePath: input.hostFilePath,
+            createdAt
+          }
+        : {
+            panelId,
+            paneId: panelId,
+            kind: "browser",
+            title: input.title,
+            url: input.url,
+            createdAt
+          };
+    const currentLayout = runtimeLayoutModelRef.current ?? buildRuntimeLayout(currentWorkbench.layoutModel, runtimePanelsRef.current);
+    const nextLayout = insertRuntimePanelIntoLayout(
+      currentLayout,
+      panel,
+      runtimePlacementToOpenMode({ mode: input.placement.mode, anchorPaneId: input.placement.anchorPaneId }),
+      input.placement.anchorPaneId ?? currentWorkbench.activePaneId
+    );
+    const nextPanels = [...runtimePanelsRef.current, panel];
+    setRuntimePanels(nextPanels);
+    setRuntimeLayoutModel(nextLayout);
+    setActiveTab("terminal");
+    return {
+      panel,
+      snapshot: buildLayoutSnapshot(nextLayout, currentWorkbench, nextPanels)
+    };
+  }
+
+  function closeRuntimePanelFromControl(panelId: string): { closedPanelId: string; snapshot: LayoutSnapshot } {
+    const currentPanels = runtimePanelsRef.current;
+    if (!currentPanels.some((panel) => panel.panelId === panelId)) {
+      throw new Error(`Runtime panel ${panelId} not found. Terminal panes cannot be closed through this protocol.`);
+    }
+    closeRuntimePanel(panelId);
+    const currentWorkbench = workbenchRef.current;
+    const nextPanels = currentPanels.filter((panel) => panel.panelId !== panelId);
+    const baseLayout = runtimeLayoutModelRef.current ?? currentWorkbench?.layoutModel ?? null;
+    const nextLayout = baseLayout ? removeRuntimePanelFromLayout(baseLayout, panelId) : null;
+    return {
+      closedPanelId: panelId,
+      snapshot: buildLayoutSnapshot(nextLayout ?? currentWorkbench?.layoutModel ?? buildRuntimeLayout(null, []), currentWorkbench, nextPanels)
+    };
+  }
+
+  function closeRuntimePanel(panelId: string): void {
+    const closingPanel = runtimePanelsRef.current.find((panel) => panel.panelId === panelId);
+    if (closingPanel?.kind === "browser") {
+      void window.watchboard.closeBrowserPanelView(panelId).catch(() => undefined);
+    }
+    const nextPanels = runtimePanelsRef.current.filter((panel) => panel.panelId !== panelId);
+    setRuntimePanels(nextPanels);
+    const currentWorkbench = workbenchRef.current;
+    const baseLayout = runtimeLayoutModelRef.current ?? currentWorkbench?.layoutModel ?? null;
+    if (!baseLayout) {
+      setRuntimeLayoutModel(null);
+      return;
+    }
+    const nextLayout = removeRuntimePanelFromLayout(baseLayout, panelId);
+    setRuntimeLayoutModel(nextPanels.length > 0 ? nextLayout : null);
+  }
+
+  function buildRuntimeLayout(baseLayout: WorkbenchLayoutModel | null, panels: RuntimePanel[]): WorkbenchLayoutModel {
+    const currentWorkbench = workbenchRef.current;
+    let nextLayout = baseLayout ?? currentWorkbench?.layoutModel;
+    if (!nextLayout) {
+      throw new Error("Workbench is not loaded");
+    }
+    for (const panel of panels) {
+      nextLayout = insertRuntimePanelIntoLayout(nextLayout, panel, "tab", currentWorkbench?.activePaneId);
+    }
+    return nextLayout;
   }
 
   function truncateForDebug(value: string, maxLength = 512): string {
@@ -860,8 +1074,11 @@ export function App(): ReactElement {
     setError("");
   }
 
-  function stageWorkbench(nextWorkbench: WorkbenchDocument): void {
+  function stageWorkbench(nextWorkbench: WorkbenchDocument, options?: { preserveRuntimeLayout?: boolean }): void {
     setWorkbench(nextWorkbench);
+    if (runtimePanelsRef.current.length > 0 && !options?.preserveRuntimeLayout) {
+      setRuntimeLayoutModel(buildRuntimeLayout(nextWorkbench.layoutModel, runtimePanelsRef.current));
+    }
     setWorkbenchDirty(true);
   }
 
@@ -1771,6 +1988,29 @@ export function App(): ReactElement {
     });
   }
 
+  function handleOpenTerminalUrl(request: TerminalUrlOpenRequest): void {
+    const currentWorkbench = workbenchRef.current;
+    if (!currentWorkbench) {
+      return;
+    }
+    const normalizedUrl = normalizeHttpUrlForBrowserPanel(request.url);
+    if (!normalizedUrl) {
+      void window.watchboard.debugLog("terminal-url-open-ignored", {
+        url: request.url,
+        reason: "unsupported-url"
+      });
+      return;
+    }
+    createRuntimeBrowserPanel({
+      title: createBrowserPanelTitle(normalizedUrl),
+      url: normalizedUrl,
+      placement: {
+        mode: request.placementMode,
+        anchorPaneId: request.sourcePaneId || currentWorkbench.activePaneId || undefined
+      }
+    });
+  }
+
   async function handleCloseAllPanes(): Promise<void> {
     const currentWorkbench = workbenchRef.current;
     if (!currentWorkbench || currentWorkbench.instances.length === 0) {
@@ -1812,13 +2052,16 @@ export function App(): ReactElement {
     if (!workbench) {
       return;
     }
+    if (runtimePanels.length > 0) {
+      setRuntimeLayoutModel(layoutModel);
+    }
     const { nextDocument, removedInstances } = reconcileWorkbenchLayoutChange(workbench, layoutModel);
     for (const instance of removedInstances) {
       if (sessions[instance.sessionId] && sessions[instance.sessionId]?.status !== "stopped") {
         void window.watchboard.stopSession(instance.sessionId);
       }
     }
-    stageWorkbench(nextDocument);
+    stageWorkbench(nextDocument, { preserveRuntimeLayout: runtimePanels.length > 0 });
   }
 
   function handleFocusPane(paneId: string): void {
@@ -1844,7 +2087,9 @@ export function App(): ReactElement {
   function handleWorkspaceQuickSearchSelect(item: WorkspaceQuickSearchItem): void {
     setActiveTab("terminal");
     if (item.kind === "command") {
-      if (item.action === "scroll-active-terminal-to-bottom") {
+      if (item.action === "enter-floating-mode") {
+        void window.watchboard.enterFloatingMode().catch(() => undefined);
+      } else if (item.action === "scroll-active-terminal-to-bottom") {
         handleScrollActiveTerminalToBottom();
       } else if (item.action === "collapse-all-instances") {
         handleCollapseAllPanes();
@@ -1953,6 +2198,8 @@ export function App(): ReactElement {
           <Profiler id="WorkbenchView" onRender={handleProfilerRender}>
             <WorkbenchView
               workbench={workbench}
+              layoutModel={activeLayoutModel ?? workbench.layoutModel}
+              runtimePanels={runtimePanels}
               workspaces={workspaceList.workspaces}
               sessions={sessions}
               cronCountdownByInstanceId={cronCountdownByInstanceId}
@@ -1962,6 +2209,7 @@ export function App(): ReactElement {
               getTerminalViewState={getTerminalViewState}
               attachSessionBacklog={attachSessionBacklog}
               onTerminalViewStateChange={updateTerminalViewState}
+              onOpenTerminalUrl={handleOpenTerminalUrl}
               canCreatePane={workspaceList.workspaces.length > 0}
               canSplitPane={Boolean(activePaneInstance ?? selectedWorkspace)}
               onLayoutChange={handleWorkbenchLayoutChange}
@@ -1971,6 +2219,7 @@ export function App(): ReactElement {
               onCollapseAllPanes={handleCollapseAllPanes}
               onCloseAllPanes={handleCloseAllPanes}
               onClosePane={(instanceId) => void handleClosePane(instanceId)}
+              onCloseRuntimePanel={closeRuntimePanel}
               onCollapsePane={handleCollapsePane}
               onRenameInstance={handleRenameInstance}
               onRegisterDraggedWorkspace={registerDraggedWorkspace}
@@ -2154,6 +2403,111 @@ function handleProfilerRender(
   });
 }
 
+function appControlOk(id: string, result: unknown): AppControlResponse {
+  return {
+    id,
+    ok: true,
+    result
+  };
+}
+
+function appControlError(id: string, code: string, message: string): AppControlResponse {
+  return {
+    id,
+    ok: false,
+    error: {
+      code,
+      message
+    }
+  };
+}
+
+function buildLayoutSnapshot(
+  layoutModel: WorkbenchLayoutModel,
+  workbench: WorkbenchDocument | null,
+  runtimePanels: RuntimePanel[]
+): LayoutSnapshot {
+  const terminalByPaneId = new Map((workbench?.instances ?? []).map((instance) => [instance.paneId, instance] as const));
+  const runtimeByPanelId = new Map(runtimePanels.map((panel) => [panel.panelId, panel] as const));
+  const activePaneId = findActivePaneIdInLayout(layoutModel);
+  const panes: LayoutSnapshotPane[] = [];
+  visitSnapshotTabsets(layoutModel.layout, (tabset) => {
+    for (const tab of tabset.children) {
+      if (tab.component === "terminal-instance") {
+        const instance = terminalByPaneId.get(tab.id);
+        panes.push({
+          kind: "terminal",
+          paneId: tab.id,
+          title: instance?.title ?? tab.name,
+          active: tab.id === activePaneId,
+          instanceId: instance?.instanceId ?? null
+        });
+        continue;
+      }
+      const panelId = typeof tab.config?.panelId === "string" ? tab.config.panelId : "";
+      const panel = runtimeByPanelId.get(panelId);
+      if (!panel) {
+        continue;
+      }
+      panes.push({
+        kind: panel.kind,
+        paneId: panel.paneId,
+        title: panel.title,
+        active: panel.paneId === activePaneId,
+        panelId: panel.panelId,
+        source: panel.kind === "image" ? panel.hostFilePath : panel.url
+      });
+    }
+  });
+  return {
+    activePaneId,
+    panes,
+    layoutModel
+  };
+}
+
+function findActivePaneIdInLayout(layoutModel: WorkbenchLayoutModel): string | null {
+  let activePaneId: string | null = null;
+  visitSnapshotTabsets(layoutModel.layout, (tabset) => {
+    if (!tabset.active) {
+      return;
+    }
+    const selected = clampSnapshotSelectedIndex(tabset.selected, tabset.children.length);
+    activePaneId = tabset.children[selected]?.id ?? activePaneId;
+  });
+  if (activePaneId) {
+    return activePaneId;
+  }
+  visitSnapshotTabsets(layoutModel.layout, (tabset) => {
+    if (activePaneId) {
+      return;
+    }
+    const selected = clampSnapshotSelectedIndex(tabset.selected, tabset.children.length);
+    activePaneId = tabset.children[selected]?.id ?? tabset.children[0]?.id ?? null;
+  });
+  return activePaneId;
+}
+
+function visitSnapshotTabsets(row: FlexLayoutRowNode, visitor: (tabset: FlexLayoutTabSetNode) => void): void {
+  for (const child of row.children) {
+    if (child.type === "tabset") {
+      visitor(child);
+      continue;
+    }
+    visitSnapshotTabsets(child, visitor);
+  }
+}
+
+function clampSnapshotSelectedIndex(selected: number | undefined, childCount: number): number {
+  if (childCount === 0) {
+    return 0;
+  }
+  if (typeof selected !== "number" || Number.isNaN(selected)) {
+    return Math.max(0, childCount - 1);
+  }
+  return Math.max(0, Math.min(childCount - 1, selected));
+}
+
 function isTerminalKeyboardEventTarget(event: KeyboardEvent): boolean {
   const path = typeof event.composedPath === "function" ? event.composedPath() : [];
   for (const target of path) {
@@ -2201,6 +2555,27 @@ function getNextDuplicateWorkspaceName(baseName: string, workspaces: Workspace[]
     suffix += 1;
   }
   return `${trimmedBaseName} Copy ${suffix}`;
+}
+
+function normalizeHttpUrlForBrowserPanel(rawUrl: string): string | null {
+  try {
+    const url = new URL(rawUrl.trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function createBrowserPanelTitle(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    return url.hostname || "Browser";
+  } catch {
+    return "Browser";
+  }
 }
 
 function normalizeTerminal(workspace: Workspace, diagnostics: DiagnosticsInfo | null, settings: AppSettings | null): TerminalProfile {

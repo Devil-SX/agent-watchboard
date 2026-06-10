@@ -144,6 +144,16 @@ export function RestoreWindowIcon({ className }: IconProps): ReactElement {
   );
 }
 
+export function FloatingWindowIcon({ className }: IconProps): ReactElement {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round">
+      <rect x="2.25" y="3" width="11.5" height="9.5" rx="1.8" />
+      <rect x="7.1" y="7" width="4.9" height="3.4" rx="1" />
+      <path d="M4.35 5.35h4.1" />
+    </svg>
+  );
+}
+
 export function CloseWindowIcon({ className }: IconProps): ReactElement {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">

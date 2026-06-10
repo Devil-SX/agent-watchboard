@@ -19,6 +19,10 @@ test("main process hides the native title bar and relays window state", () => {
   assert.match(mainIndexSource, /ipcMain\.handle\("watchboard:get-window-state"/);
   assert.match(mainIndexSource, /ipcMain\.handle\("watchboard:toggle-maximize-window"/);
   assert.match(mainIndexSource, /ipcMain\.handle\("watchboard:close-window"/);
+  assert.match(mainIndexSource, /ipcMain\.handle\("watchboard:enter-floating-mode"/);
+  assert.match(mainIndexSource, /alwaysOnTop:\s*true/);
+  assert.match(mainIndexSource, /skipTaskbar:\s*true/);
+  assert.match(mainIndexSource, /mainWindow\?\.hide\(\)/);
 });
 
 test("preload exposes custom title bar window controls", () => {
@@ -26,6 +30,8 @@ test("preload exposes custom title bar window controls", () => {
   assert.match(preloadSource, /minimizeWindow:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("watchboard:minimize-window"\)/);
   assert.match(preloadSource, /toggleMaximizeWindow:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("watchboard:toggle-maximize-window"\)/);
   assert.match(preloadSource, /closeWindow:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("watchboard:close-window"\)/);
+  assert.match(preloadSource, /enterFloatingMode:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("watchboard:enter-floating-mode"\)/);
+  assert.match(preloadSource, /exitFloatingMode:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("watchboard:exit-floating-mode"\)/);
   assert.match(preloadSource, /ipcRenderer\.on\("window-state", wrapped\)/);
 });
 
@@ -46,6 +52,7 @@ test("TitleBar renders custom window controls on non-mac platforms", () => {
   assert.match(html, /Agent Watchboard/);
   assert.match(html, /quantization · Settings/);
   assert.match(html, /v0\.14\.0/);
+  assert.match(html, /aria-label="Float window"/);
   assert.match(html, /aria-label="Minimize window"/);
   assert.match(html, /aria-label="Maximize window"/);
   assert.match(html, /aria-label="Close window"/);
@@ -58,6 +65,7 @@ test("TitleBar defers to native traffic lights on macOS", () => {
 
   assert.match(html, /titlebar is-macos/);
   assert.match(html, /titlebar-macos-spacer/);
+  assert.doesNotMatch(html, /Float window/);
   assert.doesNotMatch(html, /Minimize window/);
   assert.doesNotMatch(html, /Close window/);
 });

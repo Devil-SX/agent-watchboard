@@ -1,11 +1,13 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Menu, app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
+import { Menu, app, BrowserWindow, WebContentsView, clipboard, ipcMain, screen, shell } from "electron";
 import log from "electron-log/main.js";
 
 import { loadBoardDocument, watchBoardDocument } from "@main/boardSource";
@@ -91,6 +93,7 @@ import {
 } from "@shared/schema";
 import { createPerfEvent, type PerfEvent } from "@shared/perf";
 import type { TerminalInputTrace } from "@shared/ipc";
+import type { AppControlRequest, AppControlResponse } from "@shared/appControl";
 import { PerfRecorder } from "@shared/perfNode";
 import { createRequestId } from "@shared/requestId";
 import { resolveElectronRuntimePaths, type RuntimePaths } from "@shared/runtimePaths";
@@ -109,22 +112,31 @@ import type {
   AnalysisSessionSectionSummary,
   AnalysisSessionStatistics,
   AnalysisSessionSummary,
+  BrowserViewBounds,
   SkillListResult,
   WindowState
 } from "@shared/ipc";
 
 let mainWindow: BrowserWindow | null = null;
+let floatingWindow: BrowserWindow | null = null;
 let stopWatchingBoard: (() => void) | null = null;
 let currentBoard: BoardDocument | null = null;
 let runtimePaths: RuntimePaths;
 let mainPerfRecorder: PerfRecorder | null = null;
 let rendererPerfRecorder: PerfRecorder | null = null;
 let persistenceHealth: PersistenceStoreHealth[] = [];
+let appControlServer: Server | null = null;
+let appControlToken = "";
+const pendingAppControlRequests = new Map<string, (response: AppControlResponse) => void>();
+const browserPanelViews = new Map<string, { view: WebContentsView; url: string }>();
 let appResourcesCleanedUp = false;
 const skillScanCache = new Map<string, { result: SkillListResult; expiresAt: number }>();
 const pendingSessionStarts = createSessionStartWaiterMap();
 const SESSION_START_TIMEOUT_MS = 12_000;
 const SUPERVISOR_SNAPSHOT_TIMEOUT_MS = 1_500;
+const FLOATING_WINDOW_WIDTH = 340;
+const FLOATING_WINDOW_HEIGHT = 180;
+const FLOATING_WINDOW_MARGIN = 18;
 
 const supervisorClient = new SupervisorClient();
 const sessionStates = new Map<string, SessionState>();
@@ -318,10 +330,122 @@ function createWindow(): void {
     log.error("renderer render-process-gone", details);
   });
 
+  loadRenderer(mainWindow, "main");
+}
+
+function createFloatingWindow(): BrowserWindow {
+  const isHeadlessTest = isWatchboardHeadlessTest();
+  const bounds = resolveFloatingWindowBounds();
+  const nextWindow = new BrowserWindow({
+    width: FLOATING_WINDOW_WIDTH,
+    height: FLOATING_WINDOW_HEIGHT,
+    minWidth: FLOATING_WINDOW_WIDTH,
+    minHeight: FLOATING_WINDOW_HEIGHT,
+    maxWidth: 420,
+    maxHeight: 300,
+    x: bounds.x,
+    y: bounds.y,
+    show: false,
+    frame: false,
+    resizable: false,
+    movable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    autoHideMenuBar: true,
+    backgroundColor: "#0d1418",
+    webPreferences: {
+      preload: join(__dirname, "../preload/index.mjs"),
+      contextIsolation: true,
+      sandbox: false,
+      offscreen: isHeadlessTest
+    }
+  });
+
+  floatingWindow = nextWindow;
+  nextWindow.setAlwaysOnTop(true, "floating");
+  nextWindow.setMenuBarVisibility(false);
+  nextWindow.removeMenu();
+
+  nextWindow.on("closed", () => {
+    if (floatingWindow === nextWindow) {
+      floatingWindow = null;
+    }
+    restoreMainWindow();
+  });
+
+  nextWindow.on("ready-to-show", () => {
+    if (!isHeadlessTest) {
+      nextWindow.show();
+      mainWindow?.hide();
+    }
+  });
+
+  nextWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    log.info("floating-renderer-console", {
+      level,
+      message,
+      line,
+      sourceId
+    });
+  });
+
+  loadRenderer(nextWindow, "floating");
+  return nextWindow;
+}
+
+function loadRenderer(targetWindow: BrowserWindow, mode: "main" | "floating"): void {
   if (process.env.ELECTRON_RENDERER_URL) {
-    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+    const url = new URL(process.env.ELECTRON_RENDERER_URL);
+    if (mode === "floating") {
+      url.searchParams.set("mode", "floating");
+    }
+    void targetWindow.loadURL(url.toString());
+    return;
+  }
+
+  void targetWindow.loadFile(join(__dirname, "../renderer/index.html"), mode === "floating" ? { query: { mode: "floating" } } : undefined);
+}
+
+function resolveFloatingWindowBounds(): { x: number; y: number } {
+  const sourceBounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : undefined;
+  const display = sourceBounds ? screen.getDisplayMatching(sourceBounds) : screen.getPrimaryDisplay();
+  const area = display.workArea;
+  return {
+    x: area.x + area.width - FLOATING_WINDOW_WIDTH - FLOATING_WINDOW_MARGIN,
+    y: area.y + area.height - FLOATING_WINDOW_HEIGHT - FLOATING_WINDOW_MARGIN
+  };
+}
+
+function restoreMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  mainWindow.show();
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.focus();
+}
+
+function enterFloatingMode(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (floatingWindow && !floatingWindow.isDestroyed()) {
+    floatingWindow.show();
+    mainWindow.hide();
+    return;
+  }
+  createFloatingWindow();
+}
+
+function exitFloatingMode(): void {
+  const currentFloatingWindow = floatingWindow;
+  floatingWindow = null;
+  if (currentFloatingWindow && !currentFloatingWindow.isDestroyed()) {
+    currentFloatingWindow.close();
   } else {
-    void mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+    restoreMainWindow();
   }
 }
 
@@ -365,6 +489,247 @@ function logRendererSnapshot(label: string): void {
 
 function emit(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload);
+  floatingWindow?.webContents.send(channel, payload);
+}
+
+async function startAppControlServer(): Promise<void> {
+  if (appControlServer) {
+    return;
+  }
+  appControlToken = randomBytes(24).toString("hex");
+  appControlServer = createServer((request, response) => {
+    void handleAppControlHttpRequest(request, response).catch((error) => {
+      writeJsonResponse(response, 500, {
+        ok: false,
+        error: {
+          code: "server-error",
+          message: error instanceof Error ? error.message : String(error)
+        }
+      });
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    appControlServer?.once("error", reject);
+    appControlServer?.listen(0, "127.0.0.1", () => {
+      appControlServer?.off("error", reject);
+      resolve();
+    });
+  });
+
+  const address = appControlServer.address();
+  if (!address || typeof address === "string") {
+    throw new Error("App control server did not return a TCP address");
+  }
+  await writeFile(
+    runtimePaths.controlDiscoveryPath,
+    JSON.stringify(
+      {
+        version: 1,
+        protocol: "http-jsonrpc",
+        host: "127.0.0.1",
+        port: address.port,
+        token: appControlToken,
+        url: `http://127.0.0.1:${address.port}/rpc`,
+        updatedAt: new Date().toISOString()
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  log.info("app-control-server-ready", {
+    host: "127.0.0.1",
+    port: address.port,
+    discoveryPath: runtimePaths.controlDiscoveryPath
+  });
+}
+
+async function handleAppControlHttpRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  if (request.method === "GET" && request.url === "/health") {
+    writeJsonResponse(response, 200, { ok: true });
+    return;
+  }
+  if (request.method !== "POST" || request.url !== "/rpc") {
+    writeJsonResponse(response, 404, { ok: false, error: { code: "not-found", message: "Use POST /rpc" } });
+    return;
+  }
+  const authorization = request.headers.authorization ?? "";
+  if (authorization !== `Bearer ${appControlToken}`) {
+    writeJsonResponse(response, 401, { ok: false, error: { code: "unauthorized", message: "Invalid app control token" } });
+    return;
+  }
+  const payload = await readJsonRequestBody(request);
+  const controlRequest = normalizeAppControlRequest(payload);
+  if (!isAllowedAppControlMethod(controlRequest.method)) {
+    writeJsonResponse(response, 403, {
+      id: controlRequest.id,
+      ok: false,
+      error: {
+        code: "not-allowed",
+        message: "This protocol only allows layout snapshots and image/browser runtime panel operations"
+      }
+    });
+    return;
+  }
+  const result = await dispatchAppControlRequest(controlRequest);
+  writeJsonResponse(response, result.ok ? 200 : 400, result);
+}
+
+function normalizeAppControlRequest(payload: unknown): AppControlRequest {
+  const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const id = typeof record.id === "string" && record.id.trim() ? record.id : `request-${Date.now()}`;
+  const method = typeof record.method === "string" ? record.method : "";
+  const params = record.params && typeof record.params === "object" ? record.params : {};
+  return { id, method, params } as AppControlRequest;
+}
+
+function isAllowedAppControlMethod(method: string): method is AppControlRequest["method"] {
+  return ["layout.getSnapshot", "panel.createImage", "panel.createBrowser", "panel.close", "action.list", "action.describe"].includes(method);
+}
+
+async function dispatchAppControlRequest(request: AppControlRequest): Promise<AppControlResponse> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return {
+      id: request.id,
+      ok: false,
+      error: {
+        code: "window-unavailable",
+        message: "Agent Watchboard renderer is not available"
+      }
+    };
+  }
+  return await new Promise<AppControlResponse>((resolve) => {
+    const timeout = setTimeout(() => {
+      pendingAppControlRequests.delete(request.id);
+      resolve({
+        id: request.id,
+        ok: false,
+        error: {
+          code: "timeout",
+          message: "Timed out waiting for renderer to handle app control request"
+        }
+      });
+    }, 5000);
+    pendingAppControlRequests.set(request.id, (response) => {
+      clearTimeout(timeout);
+      resolve(response);
+    });
+    mainWindow?.webContents.send("app-control-request", request);
+  });
+}
+
+async function readJsonRequestBody(request: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    if (Buffer.concat(chunks).length > 1024 * 1024) {
+      throw new Error("Request body is too large");
+    }
+  }
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return raw ? JSON.parse(raw) : {};
+}
+
+function writeJsonResponse(response: ServerResponse, statusCode: number, payload: unknown): void {
+  response.writeHead(statusCode, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store"
+  });
+  response.end(`${JSON.stringify(payload)}\n`);
+}
+
+function normalizeBrowserPanelUrl(rawUrl: string): string {
+  const url = new URL(rawUrl.trim());
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Browser panels only support http and https URLs");
+  }
+  return url.toString();
+}
+
+function errorMessageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function ensureBrowserPanelView(panelId: string, rawUrl: string): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error("Main window is not available");
+  }
+  const url = normalizeBrowserPanelUrl(rawUrl);
+  const existing = browserPanelViews.get(panelId);
+  if (existing) {
+    if (existing.url !== url) {
+      existing.url = url;
+      void existing.view.webContents.loadURL(url).catch((error) => {
+        log.warn("browser-panel-load-failed", { panelId, url, message: errorMessageOf(error) });
+      });
+    }
+    return;
+  }
+
+  const view = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: "persist:watchboard-browser"
+    }
+  });
+  view.setVisible(false);
+  view.setBackgroundColor("#ffffff");
+  view.webContents.setWindowOpenHandler((details) => {
+    try {
+      const nextUrl = normalizeBrowserPanelUrl(details.url);
+      void view.webContents.loadURL(nextUrl).catch((error) => {
+        log.warn("browser-panel-popup-load-failed", { panelId, url: nextUrl, message: errorMessageOf(error) });
+      });
+    } catch (error) {
+      log.warn("browser-panel-popup-blocked", { panelId, url: details.url, message: errorMessageOf(error) });
+    }
+    return { action: "deny" };
+  });
+  mainWindow.contentView.addChildView(view);
+  browserPanelViews.set(panelId, { view, url });
+  void view.webContents.loadURL(url).catch((error) => {
+    log.warn("browser-panel-load-failed", { panelId, url, message: errorMessageOf(error) });
+  });
+}
+
+function setBrowserPanelViewBounds(panelId: string, bounds: BrowserViewBounds, visible: boolean): void {
+  const entry = browserPanelViews.get(panelId);
+  if (!entry) {
+    return;
+  }
+  const nextBounds = normalizeBrowserPanelBounds(bounds);
+  entry.view.setBounds(nextBounds);
+  entry.view.setVisible(visible && nextBounds.width > 0 && nextBounds.height > 0);
+}
+
+function closeBrowserPanelView(panelId: string): void {
+  const entry = browserPanelViews.get(panelId);
+  if (!entry) {
+    return;
+  }
+  browserPanelViews.delete(panelId);
+  mainWindow?.contentView.removeChildView(entry.view);
+  if (!entry.view.webContents.isDestroyed()) {
+    entry.view.webContents.close();
+  }
+}
+
+function closeAllBrowserPanelViews(): void {
+  for (const panelId of [...browserPanelViews.keys()]) {
+    closeBrowserPanelView(panelId);
+  }
+}
+
+function normalizeBrowserPanelBounds(bounds: BrowserViewBounds): Electron.Rectangle {
+  return {
+    x: Math.max(0, Math.round(bounds.x)),
+    y: Math.max(0, Math.round(bounds.y)),
+    width: Math.max(0, Math.round(bounds.width)),
+    height: Math.max(0, Math.round(bounds.height))
+  };
 }
 
 function cleanupAppResources(): void {
@@ -373,9 +738,12 @@ function cleanupAppResources(): void {
   }
   appResourcesCleanedUp = true;
 
+  closeAllBrowserPanelViews();
   stopWatchingBoard?.();
   stopWatchingBoard = null;
   supervisorClient.disconnect();
+  appControlServer?.close();
+  appControlServer = null;
   mainPerfRecorder?.close();
   mainPerfRecorder = null;
   rendererPerfRecorder?.close();
@@ -727,6 +1095,14 @@ function setupIpc(): void {
   }));
 
   ipcMain.handle("watchboard:get-window-state", async (): Promise<WindowState> => resolveWindowState(mainWindow));
+  ipcMain.on("watchboard:app-control-response", (_event, response: AppControlResponse) => {
+    const resolver = pendingAppControlRequests.get(response.id);
+    if (!resolver) {
+      return;
+    }
+    pendingAppControlRequests.delete(response.id);
+    resolver(response);
+  });
   ipcMain.handle("watchboard:minimize-window", async () => {
     mainWindow?.minimize();
   });
@@ -743,6 +1119,27 @@ function setupIpc(): void {
   });
   ipcMain.handle("watchboard:close-window", async () => {
     mainWindow?.close();
+  });
+  ipcMain.handle("watchboard:enter-floating-mode", async () => {
+    enterFloatingMode();
+  });
+  ipcMain.handle("watchboard:exit-floating-mode", async () => {
+    exitFloatingMode();
+  });
+  ipcMain.handle("watchboard:get-floating-mode-state", async () => ({
+    active: Boolean(floatingWindow && !floatingWindow.isDestroyed())
+  }));
+
+  ipcMain.handle("watchboard:ensure-browser-panel-view", async (_event, panelId: string, url: string) => {
+    ensureBrowserPanelView(panelId, url);
+  });
+
+  ipcMain.handle("watchboard:set-browser-panel-view-bounds", async (_event, panelId: string, bounds: BrowserViewBounds, visible: boolean) => {
+    setBrowserPanelViewBounds(panelId, bounds, visible);
+  });
+
+  ipcMain.handle("watchboard:close-browser-panel-view", async (_event, panelId: string) => {
+    closeBrowserPanelView(panelId);
   });
 
   ipcMain.handle("watchboard:open-debug-path", async (_event, debugPath: string) => {
@@ -1754,6 +2151,7 @@ async function bootstrap(): Promise<void> {
   });
   upsertPersistenceHealth(workbenchResult.health);
   setupIpc();
+  await startAppControlServer();
   createWindow();
 
   app.on("activate", () => {

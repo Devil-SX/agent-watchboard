@@ -54,9 +54,24 @@ type TerminalWritePerfSample = {
   chars: number;
 };
 
+export type TerminalUrlOpenRequest = {
+  url: string;
+  sourcePaneId: string;
+  placementMode: "right" | "down";
+};
+
 const TERMINAL_ECHO_TRACKING_TTL_MS = 5000;
 const TERMINAL_WRITE_PERF_SAMPLE_SIZE = 32;
 const terminalInputTextEncoder = new TextEncoder();
+const TERMINAL_BROWSER_SPLIT_ASPECT_RATIO = 1.1;
+type TerminalRuntimeTerminal = ReturnType<typeof createTerminalRuntime>["terminal"];
+
+export function resolveTerminalBrowserSplitMode(width: number, height: number): "right" | "down" {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return "right";
+  }
+  return width / height >= TERMINAL_BROWSER_SPLIT_ASPECT_RATIO ? "right" : "down";
+}
 
 function scheduleTerminalMicrotask(callback: () => void): void {
   if (typeof queueMicrotask === "function") {
@@ -107,6 +122,46 @@ function buildForcedSelectionMouseEvent(sourceEvent: MouseEvent, useAltModifier:
   }) as ForcedSelectionMouseEvent;
   syntheticEvent.__watchboardForcedSelection = true;
   return syntheticEvent;
+}
+
+function normalizeHttpUrl(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function readTerminalScrollOffsetFromBottom(xterm: TerminalRuntimeTerminal): number | null {
+  const activeBuffer = xterm.buffer?.active;
+  if (!activeBuffer || !Number.isFinite(activeBuffer.baseY) || !Number.isFinite(activeBuffer.viewportY)) {
+    return null;
+  }
+  return Math.max(0, Math.round(activeBuffer.baseY - activeBuffer.viewportY));
+}
+
+function restoreTerminalScrollOffsetFromBottom(xterm: TerminalRuntimeTerminal, offsetFromBottom: number | null): void {
+  if (offsetFromBottom === null) {
+    return;
+  }
+  const activeBuffer = xterm.buffer?.active;
+  if (!activeBuffer || !Number.isFinite(activeBuffer.baseY)) {
+    return;
+  }
+  const targetLine = Math.max(0, Math.round(activeBuffer.baseY - Math.max(0, offsetFromBottom)));
+  if (offsetFromBottom === 0) {
+    xterm.scrollToBottom();
+    return;
+  }
+  xterm.scrollToLine?.(targetLine);
 }
 
 function createTerminalInputTraceId(sessionId: string, inputSeq: number): string {
@@ -167,6 +222,7 @@ type Props = {
   terminalViewState?: TerminalViewState | null;
   attachSessionBacklog: (sessionId: string) => Promise<string>;
   onTerminalViewStateChange: (sessionId: string, state: TerminalViewState) => void;
+  onOpenUrl?: (request: TerminalUrlOpenRequest) => void;
 };
 
 export function TerminalTabView({
@@ -177,7 +233,8 @@ export function TerminalTabView({
   sessionBacklog = "",
   terminalViewState = null,
   attachSessionBacklog,
-  onTerminalViewStateChange
+  onTerminalViewStateChange,
+  onOpenUrl
 }: Props): ReactElement {
   const sessionId = instance.sessionId;
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -221,15 +278,34 @@ export function TerminalTabView({
   const lastStartedAtRef = useRef<string | null>(null);
   const backlogHydrationTargetRef = useRef<string | null>(null);
   const sessionBacklogRef = useRef(sessionBacklog);
+  const onOpenUrlRef = useRef(onOpenUrl);
+  const onTerminalViewStateChangeRef = useRef(onTerminalViewStateChange);
+  const sessionStartedAtRef = useRef<string | null>(session?.startedAt ?? null);
   const redrawNudgeAttemptedRef = useRef(false);
   const fallbackPhaseRef = useRef<TerminalFallbackPhase>(terminalViewState?.fallbackPhase ?? "waiting");
+  const scrollOffsetFromBottomRef = useRef<number | null>(terminalViewState?.scrollOffsetFromBottom ?? null);
   const [localError, setLocalError] = useState<string>("");
   const [fallbackPhase, setFallbackPhase] = useState<TerminalFallbackPhase>(terminalViewState?.fallbackPhase ?? "waiting");
   const [hasVisibleContent, setHasVisibleContent] = useState(terminalViewState?.hasVisibleContent ?? false);
   sessionBacklogRef.current = sessionBacklog;
+  onOpenUrlRef.current = onOpenUrl;
+  onTerminalViewStateChangeRef.current = onTerminalViewStateChange;
+  sessionStartedAtRef.current = session?.startedAt ?? null;
   isVisibleRef.current = isVisible;
   hasVisibleContentRef.current = terminalViewState?.hasVisibleContent ?? hasVisibleContentRef.current;
   fallbackPhaseRef.current = fallbackPhase;
+
+  const persistTerminalViewState = (): void => {
+    onTerminalViewStateChangeRef.current(
+      sessionId,
+      createTerminalViewState(
+        sessionStartedAtRef.current,
+        hasVisibleContentRef.current,
+        fallbackPhaseRef.current,
+        scrollOffsetFromBottomRef.current
+      )
+    );
+  };
 
   const focusTerminal = (): void => {
     terminalRef.current?.focus();
@@ -237,7 +313,23 @@ export function TerminalTabView({
 
   const scrollTerminalToBottom = (): void => {
     terminalRef.current?.scrollToBottom();
+    scrollOffsetFromBottomRef.current = 0;
+    persistTerminalViewState();
     focusTerminal();
+  };
+
+  const openUrlInWorkbench = (rawUrl: string, sourceHost: HTMLElement): void => {
+    const normalizedUrl = normalizeHttpUrl(rawUrl);
+    const openUrl = onOpenUrlRef.current;
+    if (!normalizedUrl || !openUrl) {
+      return;
+    }
+    const bounds = sourceHost.getBoundingClientRect();
+    openUrl({
+      url: normalizedUrl,
+      sourcePaneId: instance.paneId,
+      placementMode: resolveTerminalBrowserSplitMode(bounds.width || sourceHost.clientWidth, bounds.height || sourceHost.clientHeight)
+    });
   };
 
   useEffect(() => {
@@ -262,8 +354,13 @@ export function TerminalTabView({
     }
     hasVisibleContentRef.current = terminalViewState.hasVisibleContent;
     fallbackPhaseRef.current = terminalViewState.fallbackPhase;
+    scrollOffsetFromBottomRef.current = terminalViewState.scrollOffsetFromBottom ?? null;
     setHasVisibleContent(terminalViewState.hasVisibleContent);
     setFallbackPhase(terminalViewState.fallbackPhase);
+    const xterm = terminalRef.current;
+    if (xterm) {
+      restoreTerminalScrollOffsetFromBottom(xterm, scrollOffsetFromBottomRef.current);
+    }
   }, [terminalViewState]);
 
   useEffect(() => {
@@ -276,6 +373,14 @@ export function TerminalTabView({
     const isAgentTerminal = agentKind === "claude" || agentKind === "codex" || agentKind === "opencode";
 
     const { terminal: xterm, fitAddon } = createTerminalRuntime({
+      linkHandler: {
+        activate: (event: MouseEvent, text: string) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openUrlInWorkbench(text, host);
+        },
+        allowNonHttpProtocols: false
+      },
       cursorBlink: !isAgentTerminal,
       cursorStyle: isAgentTerminal ? "bar" : "block",
       cursorInactiveStyle: isAgentTerminal ? "none" : "outline",
@@ -398,7 +503,10 @@ export function TerminalTabView({
         return false;
       }
       const fitStartedAt = performance.now();
+      const previousScrollOffset = scrollOffsetFromBottomRef.current ?? readTerminalScrollOffsetFromBottom(xterm);
       fitAddon.fit();
+      restoreTerminalScrollOffsetFromBottom(xterm, previousScrollOffset);
+      scrollOffsetFromBottomRef.current = readTerminalScrollOffsetFromBottom(xterm) ?? previousScrollOffset;
       reportRendererPerf({
         category: "terminal",
         name: reason.startsWith("commit:") ? "fit-commit" : "fit-local",
@@ -477,6 +585,7 @@ export function TerminalTabView({
       xtermWriteInFlightRef.current = false;
       recordXtermWritePerf(writeFinishedAt - writeStartedAt, chunk.length);
       updateVisibleContent(true);
+      scrollOffsetFromBottomRef.current = readTerminalScrollOffsetFromBottom(xterm) ?? scrollOffsetFromBottomRef.current;
       if (!firstLiveWriteReportedRef.current) {
         firstLiveWriteReportedRef.current = true;
         reportRendererPerf({
@@ -649,6 +758,7 @@ export function TerminalTabView({
       .then(() => {
         if (xterm.element) {
           xterm.refresh(0, xterm.rows - 1);
+          restoreTerminalScrollOffsetFromBottom(xterm, scrollOffsetFromBottomRef.current);
         }
       })
       .catch(() => undefined);
@@ -657,6 +767,7 @@ export function TerminalTabView({
     if (initialBacklogDecision.kind === "hydrate") {
       updateFallbackPhase("hydrating");
       xterm.write(initialBacklogDecision.normalizedBacklog, () => {
+        restoreTerminalScrollOffsetFromBottom(xterm, scrollOffsetFromBottomRef.current);
         updateVisibleContent(true);
         reportRendererPerf({
           category: "terminal",
@@ -727,6 +838,20 @@ export function TerminalTabView({
       }
       void window.watchboard.syncTerminalSelection(selection).catch(() => undefined);
     });
+    const scrollDisposable = xterm.onScroll?.(() => {
+      scrollOffsetFromBottomRef.current = readTerminalScrollOffsetFromBottom(xterm);
+      persistTerminalViewState();
+    });
+    const handleTerminalLinkClick = (event: MouseEvent): void => {
+      const target = event.target instanceof Element ? event.target : null;
+      const href = target?.closest("a[href]")?.getAttribute("href") ?? "";
+      if (!href) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      openUrlInWorkbench(href, host);
+    };
     const handleMouseTrackingSelectionCompatibility = (event: MouseEvent): void => {
       const mouseTrackingMode = xterm.modes?.mouseTrackingMode;
       if (!shouldTriggerMouseTrackingSelectionCompatibility(event, mouseTrackingMode)) {
@@ -740,6 +865,7 @@ export function TerminalTabView({
       const syntheticEvent = buildForcedSelectionMouseEvent(event, isMacPointerSelectionPlatform());
       (xterm.element ?? host).dispatchEvent(syntheticEvent);
     };
+    host.addEventListener("click", handleTerminalLinkClick, true);
     host.addEventListener("mousedown", handleMouseTrackingSelectionCompatibility, true);
     window.addEventListener("watchboard:terminal-data", handleTerminalData);
 
@@ -801,7 +927,9 @@ export function TerminalTabView({
       sessionStartMeasureRef.current = null;
       observer.disconnect();
       selectionDisposable?.dispose?.();
+      scrollDisposable?.dispose?.();
       host.removeEventListener("mousedown", handleMouseTrackingSelectionCompatibility, true);
+      host.removeEventListener("click", handleTerminalLinkClick, true);
       window.removeEventListener("watchboard:terminal-data", handleTerminalData);
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -840,6 +968,7 @@ export function TerminalTabView({
       setHasVisibleContent(false);
       fallbackPhaseRef.current = "waiting";
       setFallbackPhase("waiting");
+      scrollOffsetFromBottomRef.current = null;
       backlogHydrationTargetRef.current = null;
       redrawNudgeAttemptedRef.current = false;
       xterm.reset();
@@ -896,6 +1025,7 @@ export function TerminalTabView({
         fallbackPhaseRef.current = "hydrating";
         setFallbackPhase("hydrating");
         xterm.write(replayDecision.normalizedBacklog, () => {
+          restoreTerminalScrollOffsetFromBottom(xterm, scrollOffsetFromBottomRef.current);
           updateVisibleContentRef.current?.(true);
           reportRendererPerf({
             category: "terminal",
@@ -964,12 +1094,12 @@ export function TerminalTabView({
     };
   }, [fallbackPhase, hasVisibleContent, localError, session, sessionId]);
 
-  useEffect(() => {
-    onTerminalViewStateChange(
-      sessionId,
-      createTerminalViewState(session?.startedAt ?? null, hasVisibleContent, fallbackPhase)
-    );
-  }, [fallbackPhase, hasVisibleContent, onTerminalViewStateChange, session?.startedAt, sessionId]);
+    useEffect(() => {
+      onTerminalViewStateChange(
+        sessionId,
+        createTerminalViewState(session?.startedAt ?? null, hasVisibleContent, fallbackPhase, scrollOffsetFromBottomRef.current)
+      );
+    }, [fallbackPhase, hasVisibleContent, onTerminalViewStateChange, session?.startedAt, sessionId]);
 
   const showFallback = shouldShowTerminalFallback(fallbackPhase, hasVisibleContent, localError);
   const fallbackText = getTerminalFallbackText(fallbackPhase);

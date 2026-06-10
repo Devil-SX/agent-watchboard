@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Added a floating desktop status window that hides the main window, stays on top, and shows currently working runtime instances with the existing orbit activity effect.
+- Added a token-protected Watchboard UI control protocol, runtime image/browser panels, and a reusable `watchboard-ui` skill package with a global CLI installer for agent-driven non-terminal panels.
+- Added internal terminal hyperlink handling so clicked terminal URLs open as draggable/splittable browser panes inside the runtime workbench, with automatic right/down split selection based on pane aspect ratio.
+- Added Electron `WebContentsView` backing for runtime browser panels so embedded browser panes load as independent webContents instead of iframe content.
+
+### Fixed
+- Fixed runtime browser panel tab controls so close buttons use the same visible action chrome as terminal instances and browser content follows workbench tab drag/split bounds.
+- Fixed runtime browser panel drag/drop so split layouts persist after releasing a dragged browser tab instead of being rebuilt back into the default layout.
+- Fixed terminal scroll position preservation across workbench layout changes, remounts, and terminal resize fitting.
+
 ## [0.15.0] - 2026-05-21
 
 > **Code Stats** | Total: 61,800 lines | Delta: +9,150 (-3,197) = **+5,953 net** | Change: **+10.66%** vs v0.14.0

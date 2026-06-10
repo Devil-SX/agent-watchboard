@@ -1,6 +1,170 @@
 @import url("./styles/chrome.css");
 @import url("./styles/workspace.css");
 
+.floating-status-window {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  border: 1px solid rgba(148, 176, 192, 0.26);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(18, 28, 34, 0.98), rgba(13, 18, 24, 0.98)),
+    rgba(13, 20, 24, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 16px 42px rgba(0, 0, 0, 0.38);
+  overflow: hidden;
+  -webkit-app-region: drag;
+}
+
+.floating-status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+}
+
+.floating-status-title {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.floating-status-title span {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.floating-status-title strong {
+  color: #edf7fb;
+  font-size: 0.92rem;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.floating-status-restore {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(132, 206, 182, 0.28);
+  border-radius: 8px;
+  background: rgba(70, 156, 130, 0.16);
+  color: #d9fff2;
+  font-size: 0.76rem;
+  line-height: 1;
+  -webkit-app-region: no-drag;
+}
+
+.floating-status-restore:hover,
+.floating-status-restore:focus-visible {
+  border-color: rgba(132, 206, 182, 0.48);
+  background: rgba(70, 156, 130, 0.28);
+  outline: none;
+}
+
+.floating-status-content {
+  min-height: 0;
+  margin-top: 8px;
+  border-radius: 10px;
+  overflow: hidden auto;
+  -webkit-app-region: no-drag;
+}
+
+.floating-status-content:focus-visible {
+  outline: 1px solid rgba(126, 194, 255, 0.58);
+  outline-offset: 2px;
+}
+
+.floating-status-list {
+  display: grid;
+  gap: 6px;
+}
+
+.floating-status-instance {
+  position: relative;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 7px 9px;
+  border: 1px solid rgba(126, 194, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  overflow: hidden;
+}
+
+.floating-status-instance > .status-orbit {
+  inset: -5px;
+  border-radius: inherit;
+}
+
+.floating-status-instance > :not(.status-orbit) {
+  position: relative;
+  z-index: 1;
+}
+
+.floating-status-instance-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #8fffd9;
+  box-shadow: 0 0 12px rgba(143, 255, 217, 0.68);
+}
+
+.floating-status-instance-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.floating-status-instance-copy strong,
+.floating-status-instance-copy span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.floating-status-instance-copy strong {
+  color: #f0f8fb;
+  font-size: 0.8rem;
+  line-height: 1.05;
+}
+
+.floating-status-instance-copy span {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.floating-status-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 5px;
+  height: 100%;
+  min-height: 96px;
+  padding: 16px;
+  border: 1px dashed rgba(148, 176, 192, 0.24);
+  border-radius: 10px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.floating-status-empty strong {
+  color: #eff7fb;
+  font-size: 0.86rem;
+}
+
+.floating-status-empty span {
+  font-size: 0.7rem;
+}
+
 .terminal-workbench {
   position: relative;
   display: grid;
@@ -35,6 +199,58 @@
   min-height: 0;
   overflow: hidden;
   background: transparent;
+}
+
+.runtime-panel,
+.runtime-panel-placeholder {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(8, 12, 16, 0.72);
+  overflow: hidden;
+}
+
+.runtime-panel-image {
+  place-items: center;
+  padding: 10px;
+}
+
+.runtime-panel-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.runtime-panel-browser {
+  position: relative;
+  background: #fff;
+}
+
+.runtime-browser-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #52616b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.runtime-panel-placeholder {
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.pane-tab-label.is-runtime-panel .pane-tab-title {
+  color: #f5f9fc;
 }
 
 .workbench-toolbar {
@@ -262,6 +478,10 @@
   align-items: center;
   gap: 4px;
   min-width: 40px;
+}
+
+.pane-tab-actions-runtime {
+  min-width: 18px;
 }
 
 .pane-tab-label {

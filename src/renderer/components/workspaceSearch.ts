@@ -3,7 +3,7 @@ import type { TerminalInstance, Workspace } from "@shared/schema";
 export type WorkspaceQuickSearchItem =
   | {
       kind: "command";
-      action: "collapse-all-instances" | "close-all-instances" | "scroll-active-terminal-to-bottom";
+      action: "collapse-all-instances" | "close-all-instances" | "scroll-active-terminal-to-bottom" | "enter-floating-mode";
       id: string;
       title: string;
       subtitle: string;
@@ -74,6 +74,14 @@ export function buildWorkspaceQuickSearchItems(
   const tokens = tokenizeWorkspaceSearchQuery(searchQuery);
   const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace] as const));
   const commandItems: WorkspaceQuickSearchCommandItem[] = [];
+  commandItems.push({
+    kind: "command",
+    action: "enter-floating-mode",
+    id: "command:enter-floating-mode",
+    title: "Float Watchboard",
+    subtitle: "Hide the main window and keep active instances in a desktop floating frame",
+    searchText: "floating float window mini desktop hover 悬浮 悬浮框 小窗"
+  });
   if (instances.length > 0) {
     if (activeInstance && !activeInstance.collapsed) {
       commandItems.push({

@@ -1,25 +1,40 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import React from "react";
 import { act } from "react";
 import ReactDOMClient from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { RuntimePanelTabCloseButton } from "../../src/renderer/components/runtimePanelTabActions";
 import { PaneTabActions, PaneTabLabel } from "../../src/renderer/components/workbenchTabActions";
 import { createDomTestHarness } from "./helpers/domTestHarness";
+import { loadCssBundleText } from "./helpers/loadCssBundleText";
 
 (globalThis as Record<string, unknown>).self = globalThis;
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
-function createSyntheticEvent(): { event: { stopPropagation: () => void }; wasStopped: () => boolean } {
+const styles = loadCssBundleText(new URL("../../src/renderer/styles.css", import.meta.url));
+const workbenchViewSource = readFileSync(new URL("../../src/renderer/components/WorkbenchView.tsx", import.meta.url), "utf8");
+
+function createSyntheticEvent(): {
+  event: { preventDefault: () => void; stopPropagation: () => void };
+  wasPrevented: () => boolean;
+  wasStopped: () => boolean;
+} {
+  let prevented = false;
   let stopped = false;
   return {
     event: {
+      preventDefault: () => {
+        prevented = true;
+      },
       stopPropagation: () => {
         stopped = true;
       }
     }
     ,
+    wasPrevented: () => prevented,
     wasStopped: () => stopped
   };
 }
@@ -43,17 +58,72 @@ test("PaneTabActions keeps collapse and close handlers distinct", async () => {
 
   const collapseMouseDown = createSyntheticEvent();
   buttons[0]!.props.onMouseDown(collapseMouseDown.event);
+  assert.equal(collapseMouseDown.wasPrevented(), true);
   assert.equal(collapseMouseDown.wasStopped(), true);
 
   const collapseClick = createSyntheticEvent();
   buttons[0]!.props.onClick(collapseClick.event);
+  assert.equal(collapseClick.wasPrevented(), true);
   assert.equal(collapseClick.wasStopped(), true);
   assert.deepEqual(calls, ["collapse:instance-1"]);
 
   const closeClick = createSyntheticEvent();
   await buttons[1]!.props.onClick(closeClick.event);
+  assert.equal(closeClick.wasPrevented(), true);
   assert.equal(closeClick.wasStopped(), true);
   assert.deepEqual(calls, ["collapse:instance-1", "close:instance-1"]);
+});
+
+test("RuntimePanelTabCloseButton isolates browser panel close clicks from FlexLayout tab handling", () => {
+  const calls: string[] = [];
+  const element = RuntimePanelTabCloseButton({
+    panel: {
+      panelId: "panel-browser-1",
+      paneId: "panel-browser-1",
+      kind: "browser",
+      title: "example.com",
+      url: "https://example.com/",
+      createdAt: "2026-06-10T00:00:00.000Z"
+    },
+    onCloseRuntimePanel: (panelId) => {
+      calls.push(panelId);
+    }
+  });
+  assert.equal(element.props.className, "pane-tab-actions pane-tab-actions-runtime");
+  const button = React.Children.only(element.props.children) as React.ReactElement;
+  assert.equal(button.props.className, "pane-tab-close");
+
+  const pointerDown = createSyntheticEvent();
+  button.props.onPointerDown(pointerDown.event);
+  assert.equal(pointerDown.wasPrevented(), true);
+  assert.equal(pointerDown.wasStopped(), true);
+
+  const mouseUp = createSyntheticEvent();
+  button.props.onMouseUp(mouseUp.event);
+  assert.equal(mouseUp.wasPrevented(), true);
+  assert.equal(mouseUp.wasStopped(), true);
+
+  const click = createSyntheticEvent();
+  button.props.onClick(click.event);
+  assert.equal(click.wasPrevented(), true);
+  assert.equal(click.wasStopped(), true);
+  assert.deepEqual(calls, ["panel-browser-1"]);
+});
+
+test("runtime browser panels keep close affordances visible and expose a native-view placeholder", () => {
+  assert.match(styles, /\.pane-tab-actions-runtime\s*\{[^}]*min-width:\s*18px;/s);
+  assert.match(styles, /\.runtime-panel-browser\s*\{[^}]*position:\s*relative;[^}]*background:\s*#fff;/s);
+  assert.match(styles, /\.runtime-browser-placeholder\s*\{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/s);
+});
+
+test("WorkbenchView suspends native browser views while FlexLayout drag/drop is active", () => {
+  assert.match(workbenchViewSource, /function suspendBrowserPanelViewsForLayoutDrag\(\): void/);
+  assert.match(workbenchViewSource, /function scheduleResumeBrowserPanelViewsAfterLayoutDrag\(\): void/);
+  assert.match(workbenchViewSource, /setBrowserPanelViewBounds\(panel\.panelId,\s*\{\s*x: 0,\s*y: 0,\s*width: 0,\s*height: 0\s*\},\s*false\)/s);
+  assert.match(workbenchViewSource, /onDragStartCapture=\{suspendBrowserPanelViewsForLayoutDrag\}/);
+  assert.match(workbenchViewSource, /onDragEndCapture=\{scheduleResumeBrowserPanelViewsAfterLayoutDrag\}/);
+  assert.match(workbenchViewSource, /onDropCapture=\{\(event\) => \{[\s\S]*scheduleResumeBrowserPanelViewsAfterLayoutDrag\(\);[\s\S]*\}\}/);
+  assert.doesNotMatch(workbenchViewSource, /onDropCapture=\{\(event\) => \{\s*resumeBrowserPanelViewsAfterLayoutDrag\(\);/s);
 });
 
 test("PaneTabLabel renders truncation-friendly markup for long titles and metadata", () => {

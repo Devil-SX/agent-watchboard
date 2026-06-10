@@ -141,6 +141,11 @@ export function PaneTabActions({
   onCollapsePane,
   onClosePane
 }: PaneTabActionsProps): ReactElement {
+  const stopTabActionEvent = (event: { preventDefault: () => void; stopPropagation: () => void }): void => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   // Keep the action region deterministic: text must yield space before these controls do.
   return (
     <span className="pane-tab-actions" data-node-id={nodeId}>
@@ -149,12 +154,12 @@ export function PaneTabActions({
         className="pane-tab-collapse"
         aria-label={`Collapse ${instanceTitle}`}
         title={`Collapse ${instanceTitle}`}
+        onPointerDown={stopTabActionEvent}
+        onMouseDown={stopTabActionEvent}
+        onMouseUp={stopTabActionEvent}
         onClick={(event) => {
-          event.stopPropagation();
+          stopTabActionEvent(event);
           onCollapsePane(instanceId);
-        }}
-        onMouseDown={(event) => {
-          event.stopPropagation();
         }}
       >
         −
@@ -164,12 +169,12 @@ export function PaneTabActions({
         className="pane-tab-close"
         aria-label={`Close ${instanceTitle}`}
         title={`Close ${instanceTitle}`}
+        onPointerDown={stopTabActionEvent}
+        onMouseDown={stopTabActionEvent}
+        onMouseUp={stopTabActionEvent}
         onClick={(event) => {
-          event.stopPropagation();
+          stopTabActionEvent(event);
           void onClosePane(instanceId);
-        }}
-        onMouseDown={(event) => {
-          event.stopPropagation();
         }}
       >
         ×

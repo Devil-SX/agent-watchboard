@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import {
   CloseWindowIcon,
+  FloatingWindowIcon,
   MaximizeWindowIcon,
   MinimizeWindowIcon,
   RestoreWindowIcon
@@ -76,6 +77,19 @@ export function TitleBar({ activeTabLabel, workspaceName = null, appVersion = nu
         </div>
         {!isMac ? (
           <div className="titlebar-window-controls">
+            <button
+              type="button"
+              className="titlebar-control"
+              aria-label="Float window"
+              title="Float"
+              onClick={() => {
+                void window.watchboard.enterFloatingMode().catch(() => undefined);
+              }}
+            >
+              <span className="titlebar-control-icon" aria-hidden="true">
+                <FloatingWindowIcon />
+              </span>
+            </button>
             <button
               type="button"
               className="titlebar-control"

@@ -13,7 +13,7 @@ import { FakeFitAddon, FakeTerminal, resetFakeXterm } from "./helpers/fakeXterm"
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 const { configureTerminalRuntimeForTests } = await import("../../src/renderer/components/terminalRuntime");
-const { TerminalTabView } = await import("../../src/renderer/components/TerminalTabView");
+const { TerminalTabView, resolveTerminalBrowserSplitMode } = await import("../../src/renderer/components/TerminalTabView");
 
 function createSettings() {
   return {
@@ -71,7 +71,9 @@ async function renderTerminal(options?: {
     startedAt: string | null;
     hasVisibleContent: boolean;
     fallbackPhase: "idle" | "waiting" | "hydrating";
+    scrollOffsetFromBottom?: number | null;
   } | null;
+  onOpenUrl?: (request: { url: string; sourcePaneId: string; placementMode: "right" | "down" }) => void;
 }) {
   resetFakeXterm();
   configureTerminalRuntimeForTests({
@@ -83,7 +85,14 @@ async function renderTerminal(options?: {
   const perfEvents: Array<Record<string, unknown>> = [];
   const resizeCalls: Array<{ cols: number; rows: number }> = [];
   const selectionSyncs: string[] = [];
+  const urlOpenRequests: Array<{ url: string; sourcePaneId: string; placementMode: "right" | "down" }> = [];
   const writeCalls: Array<{ sessionId: string; data: string; sentAtUnixMs?: number; trace?: { traceId: string; inputSeq: number } }> = [];
+  const viewStateUpdates: Array<{
+    startedAt: string | null;
+    hasVisibleContent: boolean;
+    fallbackPhase: "idle" | "waiting" | "hydrating";
+    scrollOffsetFromBottom: number | null;
+  }> = [];
   let attachCalls = 0;
   let currentProps = {
     instance: createInstance() as never,
@@ -138,7 +147,8 @@ async function renderTerminal(options?: {
         sessionBacklog={currentProps.sessionBacklog}
         terminalViewState={currentProps.terminalViewState}
         attachSessionBacklog={attachSessionBacklog}
-        onTerminalViewStateChange={() => undefined}
+        onTerminalViewStateChange={(_sessionId, state) => viewStateUpdates.push(state)}
+        onOpenUrl={options?.onOpenUrl ?? ((request) => urlOpenRequests.push(request))}
       />
     );
   });
@@ -187,7 +197,9 @@ async function renderTerminal(options?: {
     getPerfEvents: () => perfEvents,
     getResizeCalls: () => resizeCalls,
     getSelectionSyncs: () => selectionSyncs,
+    getUrlOpenRequests: () => urlOpenRequests,
     getWriteCalls: () => writeCalls,
+    getViewStateUpdates: () => viewStateUpdates,
     getAttachCalls: () => attachCalls,
     rerender: async (
       next: Partial<{
@@ -198,6 +210,7 @@ async function renderTerminal(options?: {
           startedAt: string | null;
           hasVisibleContent: boolean;
           fallbackPhase: "idle" | "waiting" | "hydrating";
+          scrollOffsetFromBottom?: number | null;
         } | null;
       }>
     ) => {
@@ -215,7 +228,8 @@ async function renderTerminal(options?: {
             sessionBacklog={currentProps.sessionBacklog}
             terminalViewState={currentProps.terminalViewState}
             attachSessionBacklog={attachSessionBacklog}
-            onTerminalViewStateChange={() => undefined}
+            onTerminalViewStateChange={(_sessionId, state) => viewStateUpdates.push(state)}
+            onOpenUrl={options?.onOpenUrl ?? ((request) => urlOpenRequests.push(request))}
           />
         );
       });
@@ -339,12 +353,13 @@ test("TerminalTabView scroll-to-bottom button jumps the instance output to the l
     assert.ok(button);
     const terminal = view.getTerminal();
     const previousFocusCount = terminal.focusCount;
+    const previousScrollToBottomCount = terminal.scrollToBottomCount;
 
     await act(async () => {
       button.click();
     });
 
-    assert.equal(terminal.scrollToBottomCount, 1);
+    assert.equal(terminal.scrollToBottomCount, previousScrollToBottomCount + 1);
     assert.equal(terminal.focusCount, previousFocusCount + 1);
   } finally {
     await view.cleanup();
@@ -359,6 +374,7 @@ test("TerminalTabView scroll-to-bottom command jumps the active instance output 
     await view.flushBoot();
     const terminal = view.getTerminal();
     const previousFocusCount = terminal.focusCount;
+    const previousScrollToBottomCount = terminal.scrollToBottomCount;
 
     await act(async () => {
       window.dispatchEvent(
@@ -371,11 +387,104 @@ test("TerminalTabView scroll-to-bottom command jumps the active instance output 
       );
     });
 
-    assert.equal(terminal.scrollToBottomCount, 1);
+    assert.equal(terminal.scrollToBottomCount, previousScrollToBottomCount + 1);
     assert.equal(terminal.focusCount, previousFocusCount + 1);
   } finally {
     await view.cleanup();
   }
+});
+
+test("TerminalTabView preserves manual scroll position across layout resize", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    sessionBacklog: "one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n"
+  });
+  try {
+    await view.flushBoot();
+    const terminal = view.getTerminal();
+
+    terminal.scrollToLine(2);
+    assert.equal(terminal.buffer.active.baseY - terminal.buffer.active.viewportY, 3);
+    assert.equal(view.getViewStateUpdates().at(-1)?.scrollOffsetFromBottom, 3);
+
+    view.harness.setElementSize(view.host, 360, 600);
+    await view.stabilizeGeometry();
+
+    assert.equal(terminal.buffer.active.baseY - terminal.buffer.active.viewportY, 3);
+    assert.equal(terminal.scrollToLineCalls.includes(2), true);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView restores saved scroll position after layout remount", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    sessionBacklog: "one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n",
+    terminalViewState: {
+      startedAt: "2026-03-15T00:00:00.000Z",
+      hasVisibleContent: true,
+      fallbackPhase: "idle",
+      scrollOffsetFromBottom: 2
+    }
+  });
+  try {
+    await view.flushBoot();
+    const terminal = view.getTerminal();
+
+    assert.equal(terminal.buffer.active.baseY, 5);
+    assert.equal(terminal.buffer.active.viewportY, 3);
+    assert.equal(terminal.scrollToLineCalls.includes(3), true);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView opens xterm hyperlinks inside a runtime browser split", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    sessionBacklog: "ready\r\n"
+  });
+  try {
+    await view.flushBoot();
+    view.harness.setElementSize(view.host, 900, 500);
+    const event = view.getTerminal().activateLink("https://example.com/path?q=1");
+
+    assert.equal(event.defaultPrevented, true);
+    assert.deepEqual(view.getUrlOpenRequests(), [
+      {
+        url: "https://example.com/path?q=1",
+        sourcePaneId: "pane-1",
+        placementMode: "right"
+      }
+    ]);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("TerminalTabView chooses a down split for tall hyperlink panes", { concurrency: false }, async () => {
+  const view = await renderTerminal({
+    sessionBacklog: "ready\r\n"
+  });
+  try {
+    await view.flushBoot();
+    view.harness.setElementSize(view.host, 420, 780);
+    view.getTerminal().activateLink("https://example.com/tall");
+
+    assert.deepEqual(view.getUrlOpenRequests(), [
+      {
+        url: "https://example.com/tall",
+        sourcePaneId: "pane-1",
+        placementMode: "down"
+      }
+    ]);
+  } finally {
+    await view.cleanup();
+  }
+});
+
+test("resolveTerminalBrowserSplitMode uses the terminal pane aspect ratio", () => {
+  assert.equal(resolveTerminalBrowserSplitMode(1200, 700), "right");
+  assert.equal(resolveTerminalBrowserSplitMode(600, 900), "down");
+  assert.equal(resolveTerminalBrowserSplitMode(0, 0), "right");
 });
 
 test("TerminalTabView records keypress-to-echo-visible latency after echoed input is written", { concurrency: false }, async () => {

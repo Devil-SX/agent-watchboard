@@ -265,8 +265,11 @@ test("buildWorkspaceQuickSearchItems includes global instance commands for Ctrl+
   const allItems = buildWorkspaceQuickSearchItems([alpha], [alphaInstance], "", alphaInstance);
   assert.deepEqual(
     allItems.filter((item) => item.kind === "command").map((item) => item.title),
-    ["Scroll Active Terminal to Bottom", "Collapse All Instances", "Close All Instances"]
+    ["Float Watchboard", "Scroll Active Terminal to Bottom", "Collapse All Instances", "Close All Instances"]
   );
+
+  const floatingItems = buildWorkspaceQuickSearchItems([alpha], [alphaInstance], "悬浮");
+  assert.deepEqual(floatingItems.map((item) => item.id), ["command:enter-floating-mode"]);
 
   const closeItems = buildWorkspaceQuickSearchItems([alpha], [alphaInstance], "close all");
   assert.deepEqual(closeItems.map((item) => item.id), ["command:close-all-instances"]);

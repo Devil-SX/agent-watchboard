@@ -28,6 +28,13 @@ const api: WatchboardApi = {
   minimizeWindow: () => ipcRenderer.invoke("watchboard:minimize-window"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("watchboard:toggle-maximize-window"),
   closeWindow: () => ipcRenderer.invoke("watchboard:close-window"),
+  enterFloatingMode: () => ipcRenderer.invoke("watchboard:enter-floating-mode"),
+  exitFloatingMode: () => ipcRenderer.invoke("watchboard:exit-floating-mode"),
+  getFloatingModeState: () => ipcRenderer.invoke("watchboard:get-floating-mode-state"),
+  ensureBrowserPanelView: (panelId, url) => ipcRenderer.invoke("watchboard:ensure-browser-panel-view", panelId, url),
+  setBrowserPanelViewBounds: (panelId, bounds, visible) =>
+    ipcRenderer.invoke("watchboard:set-browser-panel-view-bounds", panelId, bounds, visible),
+  closeBrowserPanelView: (panelId) => ipcRenderer.invoke("watchboard:close-browser-panel-view", panelId),
   openDebugPath: (debugPath) => ipcRenderer.invoke("watchboard:open-debug-path", debugPath),
   openWorkspaceInEditor: (request) => ipcRenderer.invoke("watchboard:open-workspace-in-editor", request),
   completePath: (request) => ipcRenderer.invoke("watchboard:complete-path", request),
@@ -57,6 +64,25 @@ const api: WatchboardApi = {
     const wrapped = (_event: unknown, state: unknown) => listener(state as never);
     ipcRenderer.on("window-state", wrapped);
     return () => ipcRenderer.removeListener("window-state", wrapped);
+  },
+  onAppControlRequest: (listener) => {
+    const wrapped = (_event: unknown, request: unknown) => {
+      void Promise.resolve(listener(request as never))
+        .then((response) => ipcRenderer.send("watchboard:app-control-response", response))
+        .catch((error) => {
+          const requestId = typeof request === "object" && request && "id" in request ? String((request as { id: unknown }).id) : "unknown";
+          ipcRenderer.send("watchboard:app-control-response", {
+            id: requestId,
+            ok: false,
+            error: {
+              code: "renderer-error",
+              message: error instanceof Error ? error.message : String(error)
+            }
+          });
+        });
+    };
+    ipcRenderer.on("app-control-request", wrapped);
+    return () => ipcRenderer.removeListener("app-control-request", wrapped);
   },
   listSkills: (location, options) => ipcRenderer.invoke("watchboard:list-skills", location, options),
   readSkillContent: (skillPath) => ipcRenderer.invoke("watchboard:read-skill-content", skillPath),

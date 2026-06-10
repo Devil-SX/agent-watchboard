@@ -25,6 +25,7 @@ import type {
   WorkspaceList
 } from "@shared/schema";
 import type { PerfEvent } from "@shared/perf";
+import type { AppControlRequest, AppControlResponse } from "@shared/appControl";
 
 export type PathCompletionRequest = {
   query: string;
@@ -84,6 +85,17 @@ export type WindowState = {
   isFocused: boolean;
 };
 
+export type FloatingModeState = {
+  active: boolean;
+};
+
+export type BrowserViewBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type WatchboardApi = {
   listWorkspaces: () => Promise<WorkspaceList>;
   getWorkbench: () => Promise<WorkbenchDocument>;
@@ -107,6 +119,12 @@ export type WatchboardApi = {
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<WindowState>;
   closeWindow: () => Promise<void>;
+  enterFloatingMode: () => Promise<void>;
+  exitFloatingMode: () => Promise<void>;
+  getFloatingModeState: () => Promise<FloatingModeState>;
+  ensureBrowserPanelView: (panelId: string, url: string) => Promise<void>;
+  setBrowserPanelViewBounds: (panelId: string, bounds: BrowserViewBounds, visible: boolean) => Promise<void>;
+  closeBrowserPanelView: (panelId: string) => Promise<void>;
   openDebugPath: (debugPath: string) => Promise<void>;
   openWorkspaceInEditor: (request: OpenWorkspaceInEditorRequest) => Promise<void>;
   completePath: (request: PathCompletionRequest) => Promise<PathCompletionResult>;
@@ -117,6 +135,7 @@ export type WatchboardApi = {
   onSessionState: (listener: (payload: SessionState | SessionState[]) => void) => () => void;
   onBoardUpdate: (listener: (document: BoardDocument) => void) => () => void;
   onWindowState: (listener: (state: WindowState) => void) => () => void;
+  onAppControlRequest: (listener: (request: AppControlRequest) => Promise<AppControlResponse> | AppControlResponse) => () => void;
   listSkills: (location: AgentPathLocation, options?: SkillListOptions) => Promise<SkillListResult>;
   readSkillContent: (skillPath: string) => Promise<string>;
   listAgentConfigs: (location: AgentPathLocation) => Promise<AgentConfigEntry[]>;

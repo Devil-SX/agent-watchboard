@@ -20,6 +20,7 @@ export type RuntimePaths = {
   settingsStorePath: string;
   sshSecretsPath: string;
   doctorDiagnosticsPath: string;
+  controlDiscoveryPath: string;
   supervisorStatePath: string;
   configLayersDir: string;
   defaultHostBoardPath: string;
@@ -42,6 +43,7 @@ export function resolveRuntimePaths(baseDir: string): RuntimePaths {
     settingsStorePath: join(baseDir, "settings.json"),
     sshSecretsPath: join(baseDir, "ssh-secrets.json"),
     doctorDiagnosticsPath: join(baseDir, "doctor-diagnostics.json"),
+    controlDiscoveryPath: join(baseDir, "control.json"),
     supervisorStatePath: join(baseDir, "supervisor-state.json"),
     configLayersDir: join(baseDir, "config-layers"),
     defaultHostBoardPath: DEFAULT_BOARD_PATH,
