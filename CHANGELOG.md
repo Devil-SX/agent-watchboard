@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-10
+
+> **Code Stats** | Total: 64,476 lines | Delta: +2,732 (-58) = **+2,674 net** | Change: **+4.33%** vs v0.15.0
+
 ### Added
 - Added a floating desktop status window that hides the main window, stays on top, and shows currently working runtime instances with the existing orbit activity effect.
 - Added a token-protected Watchboard UI control protocol, runtime image/browser panels, and a reusable `watchboard-ui` skill package with a global CLI installer for agent-driven non-terminal panels.
