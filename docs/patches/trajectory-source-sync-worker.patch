@@ -1,0 +1,26 @@
+--- a/src/main/trajectoryWorker.ts
++++ b/src/main/trajectoryWorker.ts
+@@ -3,6 +3,7 @@
+ import { join, basename } from "node:path";
+ import { FileLogger } from "../shared/fileLogger";
+ import { TrajectoryCollector } from "./trajectory/collector";
++import { TrajectorySourceSync } from "./trajectorySourceSync";
+ import { sourceHomes, type SourceMode } from "./trajectory/sources";
+ import { digest, type Ecosystem, type ProjectMapping } from "./trajectory/projection";
+ 
+@@ -12,6 +13,7 @@
+   roots: string; projectRoots: string; interval: number; stateDir: string; logsDir: string;
+ };
+ const port = parentPort;
++const nativeSourceSync = new TrajectorySourceSync();
+ if (!port) throw new Error("Trajectory worker requires worker_threads");
+ let config: TrajectoryConfig | null = null;
+ let collector: TrajectoryCollector | null = null;
+@@ -112,6 +114,7 @@
+       try { const result=collector.scan(next.value.path,next.value.ecosystem); bytes+=result.bytes; records+=result.records; if (result.blocked) break; } catch { logger?.warn("source-read-failed"); }
+     }
+     await sync(settings);
++    if (settings.sync && settings.url) void nativeSourceSync.trigger(settings.wslDistro);
+     await saveStatus({state:"ready",bytes,records,scanMilliseconds:performance.now()-started});
+   } catch {
+     failures++; syncAt=Date.now()+Math.min(3600000,15000 * 2 ** Math.min(failures,8));
